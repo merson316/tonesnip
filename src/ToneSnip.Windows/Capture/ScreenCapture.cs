@@ -1,13 +1,16 @@
 using System.Runtime.InteropServices;
 using SharpGen.Runtime;
+using ToneSnip.Core.Capture;
 using ToneSnip.Core.Diagnostics;
 using ToneSnip.Windows.Display;
+using ToneSnip.Windows.Interop;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
+using Windows.Security.Authorization.AppCapabilityAccess;
 using WinRT;
 
 namespace ToneSnip.Windows.Capture;
@@ -288,7 +291,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
 
     /// <summary>
     /// Asked once per process. An unpackaged app is allowed borderless capture outright; a packaged one declares
-    /// graphicsCaptureWithoutBorder. The answer is only logged: a refusal just shows the yellow border briefly.
+    /// graphicsCaptureWithoutBorder and is asked once per install. A refusal only shows the yellow border briefly.
     /// </summary>
     private void AskForBorderlessOnce()
     {
@@ -296,10 +299,31 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         _accessAsked = true;
         try
         {
+            // A packaged app's first request shows a consent prompt. The snip waits for the answer and for the prompt to
+            // close; capturing sooner puts the prompt in the snip.
+            bool prompt = BorderlessPromptPending();
+            BorderlessConsent.Plan plan = BorderlessConsent.PlanFor(prompt);
             var ask = GraphicsCaptureAccess.RequestAccessAsync(GraphicsCaptureAccessKind.Borderless).AsTask();
-            log.Info("capture: borderless access " + (ask.Wait(2000) ? ask.Result.ToString() : "not answered in 2 s"));
+            bool answered = ask.Wait(plan.AnswerWaitMs);
+            log.Info("capture: borderless access " + (answered ? ask.Result.ToString() : $"not answered in {plan.AnswerWaitMs / 1000} s") + (prompt ? " (the user was asked)" : ""));
+            if (plan.SettleMs > 0)
+            {
+                Thread.Sleep(plan.SettleMs);
+                Dwm.Flush();
+                Dwm.Flush();
+            }
         }
         catch (Exception e) { log.Debug("capture: borderless access not asked: " + e.Message); }
+    }
+
+    /// <summary>Whether asking for a borderless capture would show the user a prompt, checked without showing it.</summary>
+    private bool BorderlessPromptPending()
+    {
+        try
+        {
+            return AppCapability.Create("graphicsCaptureWithoutBorder").CheckAccess() == AppCapabilityAccessStatus.UserPromptRequired;
+        }
+        catch (Exception e) { log.Debug("capture: borderless access state unknown: " + e.Message); return false; }
     }
 
     public void Dispose()

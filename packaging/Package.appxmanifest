@@ -23,7 +23,7 @@
   <Identity
     Name="merson316.ToneSnip"
     Publisher="CN=merson316"
-    Version="1.0.0.0"
+    Version="1.0.1.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
