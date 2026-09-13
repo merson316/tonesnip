@@ -1,0 +1,45 @@
+<interop:PopupWindow x:Class="ToneSnip.App.Annotate.TextEntryWindow"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:interop="using:ToneSnip.App.Interop">
+  <!-- A Grid, not a Border, so the collapsed Tok swatches can be siblings of the frame. -->
+  <Grid>
+    <!-- The frame is a Stroke hairline that turns Accent while the box has focus (set in code-behind). The box has no
+         focus visual of its own, and the caret cannot stand in for one: it is the annotation colour, which may match
+         the picture. -->
+    <Border x:Name="Frame" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}" BorderThickness="1"
+            CornerRadius="{StaticResource SmallCornerRadius}" Padding="4">
+      <!-- The box grows along its line up to 600 instead of wrapping; Shift+Enter starts a new line, and the window is
+           re-placed on every TextChanged.
+           An accessible name rather than Header or PlaceholderText, which would draw words over the picture.
+           Padding 4,2 is the caret's clearance from the frame, so the typed glyphs line up with where the text lands.
+           Left and Top alignment keep the box arranged at its desired size: stretched, it would be arranged to the
+           window's initial parking size and report that stale height on a later measure. -->
+      <TextBox x:Name="Box" MinWidth="160" MaxWidth="600" MinHeight="0" AcceptsReturn="True" TextWrapping="NoWrap" VerticalAlignment="Top"
+               AutomationProperties.Name="Annotation text" AutomationProperties.AutomationId="TextEntry_Box"
+               HorizontalAlignment="Left" ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollBarVisibility="Hidden"
+               BorderThickness="0" Background="Transparent" FontFamily="{StaticResource UiFont}" Padding="4,2">
+        <!-- The stock field chrome would paint its own box on hover and focus; the surrounding Border is the frame here.
+             The foregrounds are set in code: they are the annotation colour, which changes per snip. -->
+        <TextBox.Resources>
+          <SolidColorBrush x:Key="TextControlBackground" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
+          <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="Transparent"/>
+          <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
+          <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+        </TextBox.Resources>
+      </TextBox>
+    </Border>
+    <!-- The two frame brushes, resolved by XAML so this window's theme picks them; a code-side resource lookup would
+         read the app dictionary instead. -->
+    <Grid Visibility="Collapsed">
+      <Border x:Name="TokStroke" Background="{ThemeResource Stroke}"/>
+      <Border x:Name="TokAccent" Background="{ThemeResource Accent}"/>
+    </Grid>
+  </Grid>
+</interop:PopupWindow>

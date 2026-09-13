@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>ToneSnip.Core.Tests</RootNamespace>
+    <!-- The repo-wide Directory.Build.props sets InvariantGlobalization (the app ships English-only, codereview 6.1),
+         which also makes `new CultureInfo("th-TH")` throw. The tests are exactly where a real culture has to exist:
+         FileNamingTests proves a saved file name stays Gregorian under a Buddhist/Hijri default calendar (6.2).
+         Tests only — the app's own setting is untouched. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <PredefinedCulturesOnly>false</PredefinedCulturesOnly>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <ProjectReference Include="../../src/ToneSnip.Core/ToneSnip.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,106 @@
+<interop:PopupWindow x:Class="ToneSnip.App.Output.ToastWindow"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:interop="using:ToneSnip.App.Interop">
+  <!--
+    ToneSnip's own notification card. A custom no-activate PopupWindow rather than InfoBar or TeachingTip, which need
+    an activated host window; the app has none on screen when a snip finishes. The Windows app notification remains
+    available through the Notification setting.
+    The window never takes focus, so there is no keyboard handling: it is dismissed by the close button, an action,
+    the dwell timer or the Recent flyout opening.
+  -->
+  <!-- Vertical padding is 11 rather than 12 so the 1 px border leaves the thumbnail its full 60 px. -->
+  <Border x:Name="Root" Width="364" Height="84" Padding="12,11,12,11" Opacity="0"
+          Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}" BorderThickness="1"
+          CornerRadius="{StaticResource CornerRadius}"
+          AutomationProperties.AutomationId="Toast_Card">
+    <Border.Resources>
+      <ResourceDictionary>
+        <!-- Keeps this card's links in the accent colour on hover and press (the app-wide aliases use TextPrimary).
+             Declared per theme because a StaticResource in an untyped dictionary would freeze the first theme
+             loaded. -->
+        <ResourceDictionary.ThemeDictionaries>
+          <ResourceDictionary x:Key="Dark">
+            <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="AccentTextFillColorPrimaryBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="AccentTextFillColorPrimaryBrush"/>
+          </ResourceDictionary>
+          <ResourceDictionary x:Key="Light">
+            <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="AccentTextFillColorPrimaryBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="AccentTextFillColorPrimaryBrush"/>
+          </ResourceDictionary>
+          <ResourceDictionary x:Key="HighContrast">
+            <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="AccentTextFillColorPrimaryBrush"/>
+            <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="AccentTextFillColorPrimaryBrush"/>
+          </ResourceDictionary>
+        </ResourceDictionary.ThemeDictionaries>
+
+        <!-- A link on the card's third line. The 4 px inset makes the hover fill read as a chip.
+             Foreground is the SDK's AccentTextFillColorPrimaryBrush rather than the Accent token: Accent is a fill
+             colour and fails text contrast on light surfaces, while the SDK brush is adjusted for text in each
+             theme. -->
+        <Style x:Key="ToastLink" TargetType="HyperlinkButton">
+          <Setter Property="Padding" Value="4,2,4,2"/>
+          <Setter Property="MinWidth" Value="0"/>
+          <Setter Property="MinHeight" Value="0"/>
+          <Setter Property="FontFamily" Value="{StaticResource UiFontSmall}"/>
+          <Setter Property="FontSize" Value="12"/>
+          <Setter Property="CornerRadius" Value="{StaticResource SmallCornerRadius}"/>
+          <Setter Property="Foreground" Value="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
+        </Style>
+      </ResourceDictionary>
+    </Border.Resources>
+
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+
+      <!-- Letterboxed thumbnail: the picture keeps its aspect and the box keeps its size. -->
+      <Border Width="96" Height="60" CornerRadius="{StaticResource SmallCornerRadius}"
+              Background="{ThemeResource SurfaceLayer}" VerticalAlignment="Center">
+        <Border.Clip>
+          <RectangleGeometry Rect="0,0,96,60"/>
+        </Border.Clip>
+        <!-- Raw: the text lines already describe the snip, so screen readers skip the picture. -->
+        <Image x:Name="Thumb" Stretch="Uniform" AutomationProperties.AccessibilityView="Raw"/>
+      </Border>
+
+      <Grid Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- A Polite live region: nothing waits on a finished snip, so it should not interrupt Narrator. A live region
+             announces on a name change, so Bind() sets the name as well as the text. The right margin clears the
+             close button. -->
+        <TextBlock x:Name="TitleText" Style="{StaticResource BodyStrong}" Margin="0,0,28,0"
+                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                   AutomationProperties.LiveSetting="Polite"/>
+        <!-- Line 2: the file name and the pixel size, or "Copied to clipboard" when nothing was saved. -->
+        <TextBlock x:Name="DetailText" Grid.Row="1" Style="{StaticResource Caption}"
+                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+        <!-- The negative left margin cancels the first link's inset so it aligns with the lines above. -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="4" Margin="-4,2,0,0">
+          <HyperlinkButton x:Name="OpenLink" Style="{StaticResource ToastLink}" Content="Open" Click="OnOpen"
+                           AutomationProperties.Name="Open" AutomationProperties.AutomationId="Toast_Open"/>
+          <HyperlinkButton x:Name="FolderLink" Style="{StaticResource ToastLink}" Content="Show in folder" Click="OnFolder"
+                           AutomationProperties.Name="Show in folder" AutomationProperties.AutomationId="Toast_Folder"/>
+          <HyperlinkButton x:Name="EditLink" Style="{StaticResource ToastLink}" Content="Edit" Click="OnEdit"
+                           AutomationProperties.Name="Edit" AutomationProperties.AutomationId="Toast_Edit"/>
+        </StackPanel>
+      </Grid>
+
+      <!-- The foreground is set on the icon rather than the button, because the stock template changes the button's
+           content foreground on hover. -->
+      <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource SubtleButton}"
+              Width="24" Height="24" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Top"
+              Click="OnClose"
+              AutomationProperties.Name="Dismiss" AutomationProperties.AutomationId="Toast_Close">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphToastClose}" FontSize="12" Foreground="{ThemeResource TextSecondary}"/>
+      </Button>
+    </Grid>
+  </Border>
+</interop:PopupWindow>

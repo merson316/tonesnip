@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!--
+    ToneSnip app icon, direction B, "Two frames": an HDR frame behind its
+    SDR copy. No plate. Back square: white-to-accent gradient, unfilled
+    outline read as the bright original; front square: flat accent with a
+    white keyline, the tonemapped copy on top, also reads as the
+    copy-to-clipboard gesture. Collapses to two overlapping squares at 16 px,
+    still distinct thanks to the keyline.
+  -->
+  <defs>
+    <linearGradient id="back-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="30%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#0078D4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- back: the HDR original, offset up-right -->
+  <rect x="72" y="24" width="160" height="160" rx="40" ry="40" fill="url(#back-gradient)"/>
+  <!-- front: the tonemapped SDR copy, offset down-left, with its keyline -->
+  <rect x="24" y="72" width="160" height="160" rx="40" ry="40" fill="#0078D4" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="10"/>
+</svg>

@@ -1,0 +1,19 @@
+<interop:PopupWindow x:Class="ToneSnip.App.Overlay.CountdownWindow"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:interop="using:ToneSnip.App.Interop">
+  <!-- A square in the monitor's top-right corner on the accent colour, sized by Core.Geometry.CountdownLayout (the
+       code-behind sets Width, Height and the digit's size). Escape cancels through the hotkey table.
+       The corner radius stays 8 because DWM rounds the window itself at 8; a larger radius would show the window's
+       ground in the corners.
+       LiveSetting is Assertive so Narrator interrupts with each second: an announcement is worthless once the screen
+       has been captured. -->
+  <Border x:Name="Card" CornerRadius="{StaticResource CornerRadius}" Background="{ThemeResource Accent}">
+    <!-- Set() writes the accessible name alongside the digit, since "3" alone says nothing about what is counting
+         down. -->
+    <TextBlock x:Name="Label" FontFamily="{StaticResource UiFontDisplay}" FontWeight="SemiBold" Foreground="{ThemeResource AccentText}"
+               AutomationProperties.AutomationId="Countdown_Digit"
+               AutomationProperties.LiveSetting="Assertive"
+               HorizontalAlignment="Center" VerticalAlignment="Center" TextLineBounds="Tight"/>
+  </Border>
+</interop:PopupWindow>

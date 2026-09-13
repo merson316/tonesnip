@@ -1,0 +1,10 @@
+is_global = true
+
+# Severity overrides for Microsoft.WindowsAppSDK.Analyzers, applied only when the analyzer is loaded (see
+# WinUIAnalyzerDir in Directory.Build.props).
+#
+# WUI2020 ("Interactive control missing AutomationId") ships as Info, which MSBuild does not print at normal
+# verbosity. Promoted to warning so missing AutomationIds are visible and fail tools/publish.sh.
+dotnet_diagnostic.WUI2020.severity = warning
+
+# WUI1010 ("UWP feature area has migration guidance") stays at Info: this app was never a UWP app.

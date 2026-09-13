@@ -1,0 +1,153 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+# Read-only by default; only the tag-gated release job below gets write access.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The WinUI 3 app and the MSIX need the Windows .NET SDK. ci.yml covers the cross-platform checks.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Core tests
+        run: dotnet test tests/ToneSnip.Core.Tests -c Release
+
+      # The WUI rules come from the Windows App SDK analyzer, which is only loaded when WinUIAnalyzerDir points at
+      # its payload. tools/publish.sh supplies it locally; the runner has no copy, so the log says so explicitly.
+      - name: WUI analyzer status
+        shell: pwsh
+        run: |
+          Write-Host "analyzer: NOT SUPPLIED - the WindowsAppSDK analyzer ships with the WinUI plugin, which is not installed on this runner."
+          Write-Host "analyzer: the publishes in this job therefore prove 0 MSBuild warnings and nothing about the WUI rules."
+          Write-Host "analyzer: for that claim, run tools/publish.sh on a machine that has the plugin, or set WinUIAnalyzerDir."
+
+      # .NET framework-dependent (the .NET 9 Desktop Runtime is a prerequisite), but the Windows App SDK must be
+      # self-contained: single-file with a framework-dependent Windows App SDK is unsupported and every XAML window
+      # throws XamlParseException. ToneSnip.csproj refuses that combination.
+      - name: Publish the production exe
+        run: dotnet publish src/ToneSnip -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:WindowsAppSDKSelfContained=true -o dist/tonesnip
+
+      - name: Smoke-test the production exe
+        # `--help` is answered in Program.Main before the log and the single-instance mutex, so it starts no tray
+        # instance and writes nothing, but proves the host, the runtime and the assembly load. It creates no window,
+        # so it is not a XAML check.
+        #
+        # The exe is a GUI-subsystem binary: PowerShell neither waits for it nor sets $LASTEXITCODE when it is run as
+        # a native command, hence Start-Process -Wait -PassThru. The redirect puts its output in the log.
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\tonesnip\tonesnip.exe -ArgumentList '--help' -Wait -PassThru -NoNewWindow -RedirectStandardOutput exe-help.log
+          Get-Content exe-help.log
+          if ($p.ExitCode -ne 0) { throw "dist\tonesnip\tonesnip.exe --help exited $($p.ExitCode); the exe this job is about to release does not start" }
+          Write-Host "tonesnip.exe: starts, and --help exits 0"
+
+      - name: Self-test
+        # --selftest exists only in the debug build (-p:ToneSnipHarness=true, tonesnip-debug.exe), so this publishes
+        # the same commit with the harness compiled in, as `tools/publish.sh debug` does.
+        shell: pwsh
+        run: |
+          dotnet publish src/ToneSnip -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:WindowsAppSDKSelfContained=true -p:ToneSnipHarness=true -o dist/selftest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Start-Process -Wait -PassThru for the real exit code of a GUI-subsystem exe (see the smoke test).
+          $p = Start-Process dist\selftest\tonesnip-debug.exe -ArgumentList '--selftest','--no-capture' -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest.log
+          Get-Content selftest.log
+          exit $p.ExitCode
+
+      # The publishes share obj/, and the self-test one compiled with -p:ToneSnipHarness=true. Start the MSIX from
+      # a clean obj/ rather than rely on MSBuild's incremental check to drop the harness (publish.sh's clean_obj).
+      - name: Clean the harness build out of obj/
+        shell: pwsh
+        run: |
+          # Collect first, then delete: piping Get-ChildItem straight into Remove-Item -Recurse can reach a nested
+          # obj/bin that an earlier removal already took, which is a terminating error under Actions' pwsh.
+          $stale = @(Get-ChildItem -Path src -Recurse -Directory -Include obj,bin)
+          foreach ($dir in $stale) {
+            if (Test-Path -LiteralPath $dir.FullName) { Remove-Item -LiteralPath $dir.FullName -Recurse -Force }
+          }
+          Write-Host "cleaned $($stale.Count) obj/bin directories under src/"
+          if (Test-Path dist/selftest) { Remove-Item -Recurse -Force dist/selftest }
+
+      - name: Decode the signing certificate
+        id: cert
+        shell: pwsh
+        env:
+          MSIX_PFX_BASE64: ${{ secrets.MSIX_PFX_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MSIX_PFX_BASE64)) {
+            Write-Host "MSIX_PFX_BASE64 is not set: building the MSIX unsigned (it will not install)."
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:MSIX_PFX_BASE64))
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Publish the MSIX
+        shell: pwsh
+        env:
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD }}
+        run: |
+          $out = "$PWD\dist\msix\"
+          $publishArgs = @(
+            '-p:WindowsPackageType=MSIX', '-p:GenerateAppxPackageOnBuild=true', "-p:AppxPackageDir=$out"
+          )
+          if ('${{ steps.cert.outputs.signed }}' -eq 'true') {
+            $publishArgs += @('-p:AppxPackageSigningEnabled=true', "-p:PackageCertificateKeyFile=$PWD\cert.pfx",
+                       "-p:PackageCertificatePassword=$env:MSIX_PFX_PASSWORD")
+          } else {
+            $publishArgs += '-p:AppxPackageSigningEnabled=false'
+          }
+          dotnet publish src/ToneSnip -c Release -r win-x64 @publishArgs -o dist/msix-publish
+          # The appx targets write ToneSnip_<version>_x64.msix into a ..._Test folder; copy it out under the release name.
+          $pkg = Get-ChildItem -Path dist/msix -Recurse -Filter *.msix | Select-Object -First 1
+          if (-not $pkg) { throw "no .msix was produced under dist/msix" }
+          Copy-Item $pkg.FullName dist/msix/tonesnip-x64.msix
+          "MSIX: {0:N1} MB" -f ($pkg.Length / 1MB)
+          "tonesnip.exe: {0:N1} MB" -f ((Get-Item dist/tonesnip/tonesnip.exe).Length / 1MB)
+
+      - name: Remove the signing certificate
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force -ErrorAction SilentlyContinue "$PWD\cert.pfx"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tonesnip-exe
+          path: dist/tonesnip/tonesnip.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tonesnip-msix
+          path: dist/msix/tonesnip-x64.msix
+
+  # A separate job so that `contents: write` is only granted to tag builds.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # packaging/tonesnip.cer exists only once packaging/make-cert.ps1 has been run and its output committed;
+      # fail_on_unmatched_files: false lets a release go out without it.
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: false
+          files: |
+            dist/tonesnip-msix/tonesnip-x64.msix
+            dist/tonesnip-exe/tonesnip.exe
+            packaging/tonesnip.cer

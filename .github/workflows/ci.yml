@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read   # releases are windows.yml's job
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet test tests/ToneSnip.Core.Tests -c Release
+      # assets/ is generated from the SVGs in assets/; --check fails if anything committed is stale. It runs on
+      # Linux because cairosvg needs a native cairo library that windows-latest does not ship.
+      - run: sudo apt-get update && sudo apt-get install -y libcairo2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      # Pinned: --check compares bytes, so a Pillow or cairosvg release that changes PNG output would fail it.
+      - run: python -m pip install "pillow==12.3.*" "cairosvg==2.9.*"
+      - run: python tools/gen-assets.py --check
+      # The WinUI app itself needs the Windows SDK; windows.yml builds it and owns the release.

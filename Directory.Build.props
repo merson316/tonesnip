@@ -1,0 +1,35 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- The switch between the production app and the debug build. Off by default. `-p:ToneSnipHarness=true`
+       (tools/publish.sh debug) compiles the harness in, names the assembly tonesnip-debug, gives it its own mutex,
+       pipes and data folder, and lowers the log floor to Debug.
+       Defined here rather than in the app's csproj because ToneSnip.Core also reads the constant, and a global
+       property reaches every project in the build. -->
+  <PropertyGroup Condition="'$(ToneSnipHarness)' == 'true'">
+    <DefineConstants>$(DefineConstants);TONESNIP_HARNESS</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Optional Microsoft.WindowsAppSDK.Analyzers (the WinUI XAML rules, such as a missing AutomationId). Off unless
+       WinUIAnalyzerDir points at a Windows-visible folder holding the .dll and .targets, for example:
+
+         WSLENV=WinUIAnalyzerDir WinUIAnalyzerDir='C:\Users\<you>\AppData\Local\Temp\winui-analyzer' \
+           TONESNIP_NO_INSTALL=1 tools/publish.sh exe
+
+       WSLENV is required from WSL: a Windows process inherits only the variables it names, so without it the build
+       silently runs no analyzer. The .targets file feeds the XAML pages in as AdditionalFiles.
+       Exists() rather than a non-empty test, because the Linux SDK leg of tools/publish.sh cannot see a Windows path. -->
+  <ItemGroup Condition="Exists('$(WinUIAnalyzerDir)\Microsoft.WindowsAppSDK.Analyzers.dll')">
+    <Analyzer Include="$(WinUIAnalyzerDir)\Microsoft.WindowsAppSDK.Analyzers.dll" />
+    <!-- Raises the rule severities; the missing-AutomationId rule ships at Info, which MSBuild never prints. -->
+    <EditorConfigFiles Include="$(MSBuildThisFileDirectory)tools\winui-analyzer.globalconfig" />
+  </ItemGroup>
+  <Import Project="$(WinUIAnalyzerDir)\Microsoft.WindowsAppSDK.Analyzers.targets"
+          Condition="Exists('$(WinUIAnalyzerDir)\Microsoft.WindowsAppSDK.Analyzers.targets')" />
+</Project>

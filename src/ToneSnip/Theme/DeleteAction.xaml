@@ -1,0 +1,33 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The destructive palette for the Recent flyout's delete button, merged into that Button's own Resources.
+       WinUI styles cannot carry resources, so a palette distinct from the neighbouring subtle buttons has to be
+       element scoped. Every entry is an alias onto an existing token, so the per-row cost is small and the accent
+       still follows the desktop.
+       Hover is Error under AccentText, matching an armed delete. Pressed falls back to SurfaceCard with an Error ring
+       and glyph. Other borders stay transparent (the SDK's hover border would ring the red chip); DeleteAction in
+       Theme/Controls.xaml reserves the 1 px border so the ring never moves the glyph.
+       Light and Dark are identical because the tokens are already per theme. No HighContrast entry, so the SDK's own
+       contrast SubtleButton resources apply. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <StaticResource x:Key="SubtleButtonBackgroundPointerOver" ResourceKey="Error"/>
+      <StaticResource x:Key="SubtleButtonForegroundPointerOver" ResourceKey="AccentText"/>
+      <StaticResource x:Key="SubtleButtonBackgroundPressed" ResourceKey="SurfaceCard"/>
+      <StaticResource x:Key="SubtleButtonForegroundPressed" ResourceKey="Error"/>
+      <StaticResource x:Key="SubtleButtonBorderBrushPressed" ResourceKey="Error"/>
+      <StaticResource x:Key="SubtleButtonBorderBrush" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="SubtleButtonBorderBrushPointerOver" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="SubtleButtonBorderBrushDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <StaticResource x:Key="SubtleButtonBackgroundPointerOver" ResourceKey="Error"/>
+      <StaticResource x:Key="SubtleButtonForegroundPointerOver" ResourceKey="AccentText"/>
+      <StaticResource x:Key="SubtleButtonBackgroundPressed" ResourceKey="SurfaceCard"/>
+      <StaticResource x:Key="SubtleButtonForegroundPressed" ResourceKey="Error"/>
+      <StaticResource x:Key="SubtleButtonBorderBrushPressed" ResourceKey="Error"/>
+      <StaticResource x:Key="SubtleButtonBorderBrush" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="SubtleButtonBorderBrushPointerOver" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="SubtleButtonBorderBrushDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

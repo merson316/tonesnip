@@ -1,0 +1,54 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The picker palette: makes an open picker look different from an active tool on the stock ToggleButton
+       template. Merged into the ToggleButton.Resources of the annotate bar's pickers and the zebra toggles, which sit
+       in the same row as the tool toggles styled by Theme/Dark.xaml and Theme/Light.xaml. WinUI styles cannot carry
+       resources, so a second palette has to be element scoped.
+       Checked is SurfaceLayer under a 1 px Stroke ring with a TextPrimary glyph, so an open picker reads as showing
+       rather than as the live tool. PickerToggle in Theme/Controls.xaml reserves the border so the ring moves nothing.
+       ToggleButtonCheckedStateBackgroundSizing: the SDK's checked state uses OuterBorderEdge, which runs the fill under
+       the ring and changes its colour; InnerBorderEdge keeps the ring true.
+       The disabled background keys live only here: at application scope they would also reach the Toolkit
+       SettingsExpander header, which is a bare ToggleButton.
+       Light and Dark are identical because the tokens are already per theme. No HighContrast entry, so the SDK's own
+       contrast ToggleButton resources apply. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="SurfaceLayer"/>
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="SurfaceLayer"/>
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="SurfaceLayer"/>
+      <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="TextPrimary"/>
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="TextPrimary"/>
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="TextPrimary"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="Stroke"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPointerOver" ResourceKey="Stroke"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPressed" ResourceKey="Stroke"/>
+      <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushPointerOver" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushPressed" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBackgroundDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <BackgroundSizing x:Key="ToggleButtonCheckedStateBackgroundSizing">InnerBorderEdge</BackgroundSizing>
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="SurfaceLayer"/>
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="SurfaceLayer"/>
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="SurfaceLayer"/>
+      <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="TextPrimary"/>
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="TextPrimary"/>
+      <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="TextPrimary"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="Stroke"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPointerOver" ResourceKey="Stroke"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPressed" ResourceKey="Stroke"/>
+      <StaticResource x:Key="ToggleButtonBorderBrush" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushPointerOver" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushPressed" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBackgroundDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedDisabled" ResourceKey="ControlFillColorTransparentBrush"/>
+      <BackgroundSizing x:Key="ToggleButtonCheckedStateBackgroundSizing">InnerBorderEdge</BackgroundSizing>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

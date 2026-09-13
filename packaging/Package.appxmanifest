@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest for the sideloaded ToneSnip package.
+
+  Version: the build stamps Identity/@Version from <Version> in src/ToneSnip/ToneSnip.csproj (target
+  StampAppxManifestVersion writes a copy into obj/), so the number below is only the checked-in default.
+  Bump the csproj, not this file.
+
+  There is no PackageDependency on Microsoft.WindowsAppRuntime: the MSIX is published with
+  WindowsAppSDKSelfContained=true, so the runtime ships inside the package.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:uap11="http://schemas.microsoft.com/appx/manifest/uap/windows10/11"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap5 uap11 desktop desktop6 com rescap">
+
+  <Identity
+    Name="merson316.ToneSnip"
+    Publisher="CN=merson316"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>ToneSnip</DisplayName>
+    <PublisherDisplayName>merson316</PublisherDisplayName>
+    <Logo>assets\tiles\StoreLogo.png</Logo>
+    <!-- Both builds keep settings, history and logs in the real %LOCALAPPDATA%\tonesnip and the real
+         HKCU, so a portable install and a packaged install share one profile and an upgrade keeps it. -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <!-- Windows 11 only: snips use Windows.Graphics.Capture with IsBorderRequired = false (10.0.20348 and later). -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="tonesnip.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="ToneSnip"
+        Description="ToneSnip: a snipping tool for HDR desktops on Windows."
+        BackgroundColor="transparent"
+        Square150x150Logo="assets\tiles\Square150x150Logo.png"
+        Square44x44Logo="assets\tiles\Square44x44Logo.png">
+        <uap:DefaultTile
+          ShortName="ToneSnip"
+          Wide310x150Logo="assets\tiles\Wide310x150Logo.png"
+          Square71x71Logo="assets\tiles\Square71x71Logo.png"
+          Square310x310Logo="assets\tiles\Square310x310Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+      </uap:VisualElements>
+      <Extensions>
+        <!-- "Start with Windows" in Settings > General toggles this task; Windows Settings > Startup Apps
+             can veto it (state DisabledByUser), which Autostart logs and leaves alone. -->
+        <uap5:Extension Category="windows.startupTask" Executable="tonesnip.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask TaskId="ToneSnipStartup" Enabled="false" DisplayName="ToneSnip" />
+        </uap5:Extension>
+        <!-- Windows-style notifications from the package: AppNotificationManager.Register() (the parameterless, packaged
+             overload) takes its activator from these two entries, and a click on a toast while the app is closed
+             launches tonesnip.exe through the COM server with the arguments below. The two GUIDs must match. -->
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="697DA471-8395-44D9-BF37-6B5CCCCC808A" />
+        </desktop:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="tonesnip.exe" DisplayName="ToneSnip" Arguments="----AppNotificationActivated:">
+              <com:Class Id="697DA471-8395-44D9-BF37-6B5CCCCC808A" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Required by the two write-virtualization opt-outs in <Properties> above. -->
+    <rescap:Capability Name="unvirtualizedResources" />
+    <!-- Windows.Graphics.Capture from a package: capturing a monitor without the system picker, and without the
+         yellow capture border. -->
+    <uap11:Capability Name="graphicsCaptureProgrammatic" />
+    <uap11:Capability Name="graphicsCaptureWithoutBorder" />
+  </Capabilities>
+</Package>

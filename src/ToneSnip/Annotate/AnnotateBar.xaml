@@ -1,0 +1,214 @@
+<UserControl x:Class="ToneSnip.App.Annotate.AnnotateBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <UserControl.Resources>
+    <!-- The band cells are built in code, so their styles are defined here, resolved by the parser and read from this
+         dictionary rather than through a runtime resource lookup. -->
+    <Style x:Key="SwatchCell" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+      <Setter Property="Width" Value="32"/><Setter Property="Height" Value="32"/><Setter Property="Padding" Value="0"/>
+    </Style>
+    <!-- Width and size cells are tool toggles: the picked value is accent-filled, as in the tool row. -->
+    <Style x:Key="BandCell" TargetType="ToggleButton" BasedOn="{StaticResource ToolToggle}"/>
+    <Style x:Key="BandDivider" TargetType="Rectangle" BasedOn="{StaticResource ToolDivider}"/>
+    <!-- The "A" drawn as a text size sample, in the size picker button and in each band cell. Not a type ramp step:
+         the band's cells override the size from GlyphPx so small, medium and large draw to scale. -->
+    <Style x:Key="CellGlyph" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <!-- 40 high including its padding, 32 px buttons, 4 px gaps; the band under it repeats the same rhythm.
+         XYFocusKeyboardNavigation gives the tool radios arrow key navigation in the editor; on the overlay's tool row
+         the window never takes focus, so it does nothing there (see ModeGroup.xaml). -->
+    <StackPanel x:Name="Row" Orientation="Horizontal" Spacing="4" Padding="4" Height="40" HorizontalAlignment="Center"
+                XYFocusKeyboardNavigation="Enabled">
+      <!-- The tools are RadioButtons so a screen reader announces one single-select set. No GroupName: grouping by the
+           immediate parent keeps the overlay's and the editor's bars independent.
+           PositionInSet counts the twelve tools only. Crop is counted even while collapsed, so the numbering does not
+           shift when the crop tool appears. -->
+      <RadioButton x:Name="TSelect" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Select" AutomationProperties.AutomationId="Tools_Select"
+                   AutomationProperties.PositionInSet="1" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Select (V)" Tag="Select" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSelect}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TPen" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pen" AutomationProperties.AutomationId="Tools_Pen"
+                   AutomationProperties.PositionInSet="2" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Pen (P)" Tag="Pen" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPen}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="THigh" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Highlighter" AutomationProperties.AutomationId="Tools_Highlighter"
+                   AutomationProperties.PositionInSet="3" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Highlighter (H)" Tag="Highlighter" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHighlighter}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TLine" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Line" AutomationProperties.AutomationId="Tools_Line"
+                   AutomationProperties.PositionInSet="4" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Line (I)" Tag="Line" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphLine}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TArrow" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Arrow" AutomationProperties.AutomationId="Tools_Arrow"
+                   AutomationProperties.PositionInSet="5" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Arrow (O)" Tag="Arrow" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphArrow}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TRect" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Rectangle" AutomationProperties.AutomationId="Tools_Rectangle"
+                   AutomationProperties.PositionInSet="6" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Rectangle (Ctrl+R)" Tag="Rect" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRectangle}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TEllipse" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Ellipse" AutomationProperties.AutomationId="Tools_Ellipse"
+                   AutomationProperties.PositionInSet="7" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Ellipse (E)" Tag="Ellipse" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphEllipse}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TText" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Text" AutomationProperties.AutomationId="Tools_Text"
+                   AutomationProperties.PositionInSet="8" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Text (T)" Tag="Text" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphText}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TCounter" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Counter" AutomationProperties.AutomationId="Tools_Counter"
+                   AutomationProperties.PositionInSet="9" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Counter (N)" Tag="Counter" Click="OnTool">
+        <FontIcon x:Name="CounterIcon" Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCounter}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TBlur" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Blur" AutomationProperties.AutomationId="Tools_Blur"
+                   AutomationProperties.PositionInSet="10" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Blur (B)" Tag="Blur" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphBlur}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TPixel" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pixelate" AutomationProperties.AutomationId="Tools_Pixelate"
+                   AutomationProperties.PositionInSet="11" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Pixelate (X)" Tag="Pixelate" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPixelate}" FontSize="16"/>
+      </RadioButton>
+      <RadioButton x:Name="TCrop" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Crop" AutomationProperties.AutomationId="Tools_Crop"
+                   AutomationProperties.PositionInSet="12" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Crop (C)" Tag="Crop" Click="OnTool" Visibility="Collapsed">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCrop}" FontSize="16"/>
+      </RadioButton>
+      <!-- The Success green is set on the icon, not the button, because the button template swaps the content
+           Foreground on hover. The tick glyph and the name already say the action; the green is a second signal. -->
+      <Button x:Name="CropApply" Style="{StaticResource ToolButton}" AutomationProperties.Name="Apply crop" AutomationProperties.AutomationId="Tools_ApplyCrop"
+              ToolTipService.ToolTip="Apply crop (Enter)" Click="OnApplyCrop" Visibility="Collapsed">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphApplyCrop}" FontSize="16" Foreground="{ThemeResource Success}"/>
+      </Button>
+      <Rectangle Style="{StaticResource ToolDivider}"/>
+      <!-- Colour, width and size open a band under the row, so they are pickers rather than tools. WinUI 3 has no
+           ExpandCollapseState attached property, so SyncPickerNames appends ", collapsed" or ", expanded" to each
+           name when a band opens or closes.
+           Each picker and view toggle merges Theme/PickerToggle.xaml into its own Resources so "checked" reads as
+           SurfaceLayer under a Stroke ring rather than the tools' accent fill. Lightweight styling is scope based and
+           a Style cannot carry a dictionary, so the merge is repeated per element. -->
+      <ToggleButton x:Name="SwatchBtn" Style="{StaticResource PickerToggle}" AutomationProperties.Name="Colour" AutomationProperties.AutomationId="Tools_ColourPicker"
+                    ToolTipService.ToolTip="Colour" Click="OnSwatch">
+        <ToggleButton.Resources>
+          <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+              <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+          </ResourceDictionary>
+        </ToggleButton.Resources>
+        <!-- ControlEdge, not Stroke: Stroke is too faint for a white swatch on a light surface or a black one on dark
+             to show an edge. In high contrast ControlEdge resolves to a system contrast colour.
+             StrokeThickness stays in markup and must match SwatchEdgePx in AnnotateBar.xaml.cs: setting it from code
+             after InitializeComponent made every later LoadComponent in the process throw XamlParseException. -->
+        <Ellipse x:Name="Swatch" Width="16" Height="16" Stroke="{ThemeResource ControlEdge}" StrokeThickness="1"/>
+      </ToggleButton>
+      <!-- Width and text size are pickers, not cyclers: the current value is drawn to scale inside a fixed 16x16 box so
+           the row keeps its width whatever is selected. -->
+      <ToggleButton x:Name="WidthBtn" Style="{StaticResource PickerToggle}" AutomationProperties.Name="Stroke width" AutomationProperties.AutomationId="Tools_WidthPicker"
+                    ToolTipService.ToolTip="Stroke width" Click="OnWidth">
+        <ToggleButton.Resources>
+          <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+              <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+          </ResourceDictionary>
+        </ToggleButton.Resources>
+        <Grid Width="16" Height="16"><Rectangle x:Name="WidthBar" Width="16" Height="4" RadiusX="2" RadiusY="2" VerticalAlignment="Center"/></Grid>
+      </ToggleButton>
+      <!-- One picker sets both text and counter size, so its glyph shows which is in hand: the "A", or the counter
+           glyph (built in code by CounterGlyph) while the counter tool is live or a counter is selected. -->
+      <ToggleButton x:Name="SizeBtn" Style="{StaticResource PickerToggle}" AutomationProperties.Name="Text and counter size" AutomationProperties.AutomationId="Tools_SizePicker"
+                    ToolTipService.ToolTip="Text and counter size" Click="OnTextSize">
+        <ToggleButton.Resources>
+          <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+              <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+          </ResourceDictionary>
+        </ToggleButton.Resources>
+        <Grid Width="16" Height="16">
+          <TextBlock x:Name="SizeGlyph" Text="A" Style="{StaticResource CellGlyph}"/>
+          <Grid x:Name="SizeCounterHost" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Grid>
+      </ToggleButton>
+      <Rectangle Style="{StaticResource ToolDivider}"/>
+      <Button x:Name="UndoBtn" Style="{StaticResource ToolButton}" AutomationProperties.Name="Undo" AutomationProperties.AutomationId="Tools_UndoButton"
+              ToolTipService.ToolTip="Undo (Ctrl+Z)" Click="OnUndo">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphUndo}" FontSize="16"/>
+      </Button>
+      <Button x:Name="RedoBtn" Style="{StaticResource ToolButton}" AutomationProperties.Name="Redo" AutomationProperties.AutomationId="Tools_RedoButton"
+              ToolTipService.ToolTip="Redo (Ctrl+Y)" Click="OnRedo">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRedo}" FontSize="16"/>
+      </Button>
+      <Rectangle x:Name="HdrDivider" Style="{StaticResource ToolDivider}"/>
+      <!-- A disabled control takes no pointer input, so its own tooltip never shows. These hit-testable wrappers carry
+           the tooltip explaining why exposure and zebra are disabled. -->
+      <Grid x:Name="ExposureHost" Background="Transparent">
+        <ToggleButton x:Name="ExposureBtn" Style="{StaticResource PickerToggle}" AutomationProperties.Name="Exposure" AutomationProperties.AutomationId="Tools_ExposurePicker"
+                      ToolTipService.ToolTip="Exposure" Click="OnExposure">
+          <ToggleButton.Resources>
+            <ResourceDictionary>
+              <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+              </ResourceDictionary.MergedDictionaries>
+            </ResourceDictionary>
+          </ToggleButton.Resources>
+          <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphExposure}" FontSize="16"/>
+        </ToggleButton>
+      </Grid>
+      <Grid x:Name="ZebraHost" Background="Transparent">
+        <!-- Zebra toggles a view, so it uses the ViewToggle chrome, kept square and icon-only here. -->
+        <ToggleButton x:Name="ZebraBtn" Style="{StaticResource ViewToggle}" Width="32" Padding="0"
+                      AutomationProperties.Name="Show clipping (zebra)" AutomationProperties.AutomationId="Tools_ZebraToggle"
+                      ToolTipService.ToolTip="Show clipping (zebra)" Click="OnZebra">
+          <ToggleButton.Resources>
+            <ResourceDictionary>
+              <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+              </ResourceDictionary.MergedDictionaries>
+            </ResourceDictionary>
+          </ToggleButton.Resources>
+          <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZebra}" FontSize="16"/>
+        </ToggleButton>
+      </Grid>
+      <Rectangle x:Name="DoneDivider" Style="{StaticResource ToolDivider}" Visibility="Collapsed"/>
+      <Button x:Name="DoneBtn" Style="{StaticResource AccentButton}" Content="Done" Height="32" Padding="14,0"
+              AutomationProperties.AutomationId="Tools_DoneButton" Click="OnDone" Visibility="Collapsed"/>
+    </StackPanel>
+
+    <!-- The pickers open inside the bar rather than in a flyout: the overlay's bar window never activates and is sized
+         to its content, and a WinUI popup is clipped to its window. Opening one grows the window.
+         No horizontal padding: the Band style's inset already lines the band's content up with the row. -->
+    <Border x:Name="BandHost" Style="{StaticResource Band}" Padding="0,4" HorizontalAlignment="Stretch" Visibility="Collapsed">
+      <Grid x:Name="BandContent">
+        <!-- AlignUnder places each panel under the button that opened it, clamped so it stays inside the row. -->
+        <StackPanel x:Name="PaletteRow" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"/>
+        <StackPanel x:Name="WidthList" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"/>
+        <StackPanel x:Name="SizeList" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"/>
+        <StackPanel x:Name="ExposurePanel" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed">
+          <!-- No thumb tooltip: it is a popup that would be clipped to this window, and the EV label beside it already
+               shows the value. The slider's UIA value is the EV in stops. -->
+          <Slider x:Name="ExposureSlider" Width="200" Height="32" Minimum="-3" Maximum="3" Value="0" StepFrequency="0.25" TickFrequency="0.25" SnapsTo="StepValues"
+                  AutomationProperties.Name="Exposure" AutomationProperties.AutomationId="Tools_ExposureSlider"
+                  IsThumbToolTipEnabled="False" ValueChanged="OnExposureValue" VerticalAlignment="Center"/>
+          <!-- No LabeledBy: on a TextBlock it replaces the name computed from its Text ("+1.25 EV"), losing the value. -->
+          <TextBlock x:Name="ExposureText" Style="{StaticResource Caption}" MinWidth="56" TextAlignment="Right" VerticalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Brushes for the shapes drawn in code, resolved by XAML so the element's theme picks them: a Rectangle or
+         Ellipse has no Foreground to inherit, and a code-side resource lookup would read the app's theme instead. -->
+    <Grid Visibility="Collapsed">
+      <Border x:Name="TokPrimary" Background="{ThemeResource TextPrimary}"/>
+      <Border x:Name="TokOnAccent" Background="{ThemeResource AccentText}"/>
+      <Border x:Name="TokDisabled" Background="{ThemeResource TextDisabled}"/>
+      <Border x:Name="TokSurface" Background="{ThemeResource SurfaceBase}"/>
+      <Border x:Name="TokEdge" Background="{ThemeResource ControlEdge}"/>
+    </Grid>
+  </StackPanel>
+</UserControl>

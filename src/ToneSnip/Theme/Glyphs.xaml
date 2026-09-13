@@ -1,0 +1,83 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Every icon in the app as a Segoe Fluent Icons codepoint, one key per purpose; FontIcons reference these rather
+       than codepoints. Keys with the same glyph but a different meaning stay separate (GlyphZebra, GlyphKnee).
+       Merged before Theme/Controls.xaml in App.xaml, whose DelayPill template reads GlyphDelay. -->
+
+  <!-- Overlay: the mode group, the toolbar, the delay pill both hosts share -->
+  <x:String x:Key="GlyphModeRectangle">&#xF407;</x:String>
+  <x:String x:Key="GlyphModeWindow">&#xF7ED;</x:String>
+  <x:String x:Key="GlyphModeFullScreen">&#xE9A6;</x:String>
+  <x:String x:Key="GlyphModeFreeform">&#xF408;</x:String>
+  <x:String x:Key="GlyphDelay">&#xE916;</x:String>
+  <x:String x:Key="GlyphAnnotate">&#xE70F;</x:String>
+  <x:String x:Key="GlyphCancel">&#xE711;</x:String>
+
+  <!-- The annotate bar (overlay and editor) -->
+  <x:String x:Key="GlyphSelect">&#xE8B0;</x:String>
+  <x:String x:Key="GlyphPen">&#xF67B;</x:String>
+  <x:String x:Key="GlyphHighlighter">&#xE7E6;</x:String>
+  <x:String x:Key="GlyphLine">&#xE738;</x:String>
+  <x:String x:Key="GlyphArrow">&#xE741;</x:String>
+  <x:String x:Key="GlyphRectangle">&#xE71A;</x:String>
+  <x:String x:Key="GlyphEllipse">&#xEA3A;</x:String>
+  <x:String x:Key="GlyphText">&#xE8D2;</x:String>
+  <x:String x:Key="GlyphCounter">&#xF146;</x:String>
+  <x:String x:Key="GlyphBlur">&#xED1A;</x:String>
+  <x:String x:Key="GlyphPixelate">&#xF0E2;</x:String>
+  <x:String x:Key="GlyphCrop">&#xE7A8;</x:String>
+  <x:String x:Key="GlyphApplyCrop">&#xE8FB;</x:String>
+  <x:String x:Key="GlyphUndo">&#xE7A7;</x:String>
+  <x:String x:Key="GlyphRedo">&#xE7A6;</x:String>
+  <x:String x:Key="GlyphExposure">&#xE706;</x:String>
+  <x:String x:Key="GlyphZebra">&#xE7A1;</x:String>
+
+  <!-- The editor's command bar -->
+  <x:String x:Key="GlyphCopy">&#xE8C8;</x:String>
+  <x:String x:Key="GlyphSave">&#xE74E;</x:String>
+  <x:String x:Key="GlyphSaveAs">&#xE792;</x:String>
+  <x:String x:Key="GlyphZoomOut">&#xE71F;</x:String>
+  <x:String x:Key="GlyphZoomIn">&#xE8A3;</x:String>
+  <x:String x:Key="GlyphMore">&#xE712;</x:String>
+  <x:String x:Key="GlyphFolder">&#xE8B7;</x:String>
+
+  <!-- The Recent flyout -->
+  <x:String x:Key="GlyphSettings">&#xE713;</x:String>
+  <x:String x:Key="GlyphOpenInViewer">&#xE8A7;</x:String>
+  <x:String x:Key="GlyphShowInFolder">&#xE838;</x:String>
+  <x:String x:Key="GlyphDelete">&#xE74D;</x:String>
+  <x:String x:Key="GlyphThumbnail">&#xE91B;</x:String>
+
+  <!-- Settings: the nav pane -->
+  <x:String x:Key="GlyphGeneral">&#xE713;</x:String>
+  <x:String x:Key="GlyphHotkeys">&#xE765;</x:String>
+  <x:String x:Key="GlyphTonemap">&#xE706;</x:String>
+  <x:String x:Key="GlyphOutput">&#xE8B7;</x:String>
+  <x:String x:Key="GlyphAbout">&#xE946;</x:String>
+
+  <!-- Settings: the cards, page by page -->
+  <x:String x:Key="GlyphTheme">&#xE771;</x:String>
+  <x:String x:Key="GlyphTrayIcon">&#xE90E;</x:String>
+  <x:String x:Key="GlyphHistory">&#xE81C;</x:String>
+  <x:String x:Key="GlyphStartWithWindows">&#xE7E8;</x:String>
+  <x:String x:Key="GlyphNitsReadout">&#xE793;</x:String>
+  <x:String x:Key="GlyphAfterSelect">&#xE8FF;</x:String>
+  <x:String x:Key="GlyphPrivacyMode">&#xEA18;</x:String>
+  <x:String x:Key="GlyphAllMonitors">&#xE7F4;</x:String>
+  <x:String x:Key="GlyphActiveWindow">&#xE7C4;</x:String>
+  <x:String x:Key="GlyphKeyboardShortcut">&#xEDA7;</x:String>
+  <x:String x:Key="GlyphPreview">&#xE91B;</x:String>
+  <x:String x:Key="GlyphTonemapper">&#xE9E9;</x:String>
+  <x:String x:Key="GlyphKnee">&#xE7A1;</x:String>
+  <x:String x:Key="GlyphAutoExposure">&#xE945;</x:String>
+  <x:String x:Key="GlyphAdvanced">&#xE90F;</x:String>
+  <x:String x:Key="GlyphFormat">&#xE8A5;</x:String>
+  <x:String x:Key="GlyphJpegQuality">&#xE8B9;</x:String>
+  <x:String x:Key="GlyphHdrCopy">&#xEE71;</x:String>
+  <!-- OpenLocal for "pick a folder"; FolderOpen already means "reveal in Explorer" (GlyphShowInFolder). -->
+  <x:String x:Key="GlyphChooseFolder">&#xE8DA;</x:String>
+  <x:String x:Key="GlyphNotification">&#xEA8F;</x:String>
+  <x:String x:Key="GlyphNotificationStyle">&#xE8BD;</x:String>
+
+  <!-- The toast card -->
+  <x:String x:Key="GlyphToastClose">&#xE8BB;</x:String>
+</ResourceDictionary>

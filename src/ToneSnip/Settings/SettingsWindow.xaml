@@ -1,0 +1,462 @@
+<Window x:Class="ToneSnip.App.Settings.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:ToneSnip.App.Settings"
+        xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
+        Title="ToneSnip settings">
+  <!-- No Background: Mica shows through. Theme/Backdrop applies SolidWindowRoot where Mica is unavailable. -->
+  <Grid x:Name="RootGrid">
+    <!-- The window keeps the system title bar: ExtendsContentIntoTitleBar leaks GDI handles on every close, which a
+         long-running tray app cannot afford. ThemeManager.ApplyTitleBarTheme and AppIcon.SetWindowIcon style it. -->
+    <!-- Always expanded, with no back button or settings entry. About is a footer item, so each item's Tag carries the
+         page index. CompactPaneLength stays at the stock 48 because it also sizes the icon column when expanded. -->
+    <NavigationView x:Name="Nav" PaneDisplayMode="Left" OpenPaneLength="240"
+                     IsSettingsVisible="False" IsBackButtonVisible="Collapsed" IsPaneToggleButtonVisible="False"
+                     SelectionChanged="OnNav">
+      <!-- Stock items: a glyph in Icon and the page name as Content, which is also the UIA name. Content must not
+           be a StackPanel pulled into the icon column, which would crop the selection indicator. -->
+      <NavigationView.MenuItems>
+        <NavigationViewItem Tag="0" Content="General" AutomationProperties.AutomationId="Settings_NavGeneral">
+          <NavigationViewItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphGeneral}"/></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Tag="1" Content="Hotkeys" AutomationProperties.AutomationId="Settings_NavHotkeys">
+          <NavigationViewItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHotkeys}"/></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Tag="2" Content="Tonemap" AutomationProperties.AutomationId="Settings_NavTonemap">
+          <NavigationViewItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphTonemap}"/></NavigationViewItem.Icon>
+        </NavigationViewItem>
+        <NavigationViewItem Tag="3" Content="Output" AutomationProperties.AutomationId="Settings_NavOutput">
+          <NavigationViewItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphOutput}"/></NavigationViewItem.Icon>
+        </NavigationViewItem>
+      </NavigationView.MenuItems>
+      <NavigationView.FooterMenuItems>
+        <NavigationViewItem Tag="4" Content="About" AutomationProperties.AutomationId="Settings_NavAbout">
+          <NavigationViewItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAbout}"/></NavigationViewItem.Icon>
+        </NavigationViewItem>
+      </NavigationView.FooterMenuItems>
+
+      <!-- The page title stays fixed above the scroller. MaxWidth caps card width on large displays. The inset is
+           on the content rather than the scroller, so the bottom margin scrolls and the scrollbar sits at the window
+           edge. -->
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock x:Name="PageTitle" Grid.Row="0" MaxWidth="1064" Margin="24,24,36,0"
+                   Style="{StaticResource Subtitle}" AutomationProperties.HeadingLevel="Level1"/>
+
+        <ScrollView Grid.Row="1" Padding="0" VerticalScrollBarVisibility="Auto">
+          <!-- Stretched rather than left-aligned: a narrow stack would push every SettingsCard below its wrap threshold
+               and drop its content under the header. -->
+          <StackPanel MaxWidth="1064" Margin="24,16,36,36">
+
+            <!-- ===== General ===== -->
+            <StackPanel x:Name="PageGeneral" Spacing="4">
+              <TextBlock Text="Appearance" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <!-- Header icons use the Toolkit's slot at its stock 20 px; the card's disabled state greys them through
+                   Foreground. -->
+              <toolkit:SettingsCard Header="Theme">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphTheme}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="ThemeCombo" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Theme" AutomationProperties.AutomationId="Settings_ThemeCombo">
+                  <ComboBoxItem Content="Follow Windows"/><ComboBoxItem Content="Light"/><ComboBoxItem Content="Dark"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Tray icon"
+                                    Description="Monochrome follows the taskbar theme; Accent uses your Windows accent colour.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphTrayIcon}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="TrayIconCombo" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Tray icon" AutomationProperties.AutomationId="Settings_TrayIconCombo">
+                  <ComboBoxItem Content="Colour"/><ComboBoxItem Content="Monochrome"/><ComboBoxItem Content="Accent"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <!-- The two Recent flyout layouts, drawn as schematics. A RadioButtons group rather than loose
+                   RadioButtons, so it is one tab stop, uses arrow keys and reports set position to screen readers. -->
+              <toolkit:SettingsCard Header="Recent flyout" Description="How recent snips are listed when you click the tray icon.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHistory}"/></toolkit:SettingsCard.HeaderIcon>
+                <RadioButtons x:Name="LayoutPicker" MaxColumns="2" AutomationProperties.Name="Recent flyout layout"
+                              AutomationProperties.AutomationId="Settings_LayoutPicker">
+                  <!-- Tag is the stored setting value, Content the label, ContentTemplate the schematic. The schematics
+                       are drawings at about 1 : 6 scale, so their sizes are deliberately off the 4 px grid. -->
+
+                  <RadioButton x:Name="LayoutRow" Style="{StaticResource LayoutOption}" Tag="row" Content="Row"
+                               AutomationProperties.Name="Row" AutomationProperties.AutomationId="Settings_LayoutRow"
+                               Checked="OnLayoutChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <StackPanel Margin="6" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource Accent}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                        </StackPanel>
+                        <Rectangle Height="1" Fill="{ThemeResource Stroke}"/>
+                        <StackPanel Spacing="4">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Width="72" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
+                          </StackPanel>
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Width="72" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
+                          </StackPanel>
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Width="52" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+                  <RadioButton x:Name="LayoutGrid" Style="{StaticResource LayoutOption}" Tag="grid" Content="Grid"
+                               AutomationProperties.Name="Grid" AutomationProperties.AutomationId="Settings_LayoutGrid"
+                               Checked="OnLayoutChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <StackPanel Margin="6" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource Accent}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                        </StackPanel>
+                        <Rectangle Height="1" Fill="{ThemeResource Stroke}"/>
+                        <Grid ColumnSpacing="4" RowSpacing="4">
+                          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                          <Rectangle Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Grid.Row="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Grid.Row="1" Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                        </Grid>
+                      </StackPanel>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+                </RadioButtons>
+              </toolkit:SettingsCard>
+
+              <TextBlock Text="Startup &amp; capture" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Start with Windows">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphStartWithWindows}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="StartWithWindows" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Start with Windows" AutomationProperties.AutomationId="Settings_StartWithWindows"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Show nits under the cursor"
+                                    Description="On HDR monitors only. Readout follows the pixel under the pointer.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphNitsReadout}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="NitsReadout" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Show nits under the cursor" AutomationProperties.AutomationId="Settings_NitsReadout"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Default delay" Description="Used when a snip starts from the hotkey or the tray.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphDelay}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="DefaultDelay" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Default delay" AutomationProperties.AutomationId="Settings_DefaultDelay">
+                  <ComboBoxItem Content="None"/><ComboBoxItem Content="3 seconds"/><ComboBoxItem Content="5 seconds"/><ComboBoxItem Content="10 seconds"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="After selecting" Description="What happens once a region is chosen.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAfterSelect}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="AfterSelect" MinWidth="220" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="After selecting" AutomationProperties.AutomationId="Settings_AfterSelect">
+                  <ComboBoxItem Content="Save straight away"/><ComboBoxItem Content="Annotate then save"/>
+                  <ComboBoxItem Content="Annotate first"/><ComboBoxItem Content="Save then open the editor"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+
+              <TextBlock Text="Annotation" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Privacy mode for Blur and Pixelate"
+                                    Description="Destroys the source pixels so the effect can't be reversed.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPrivacyMode}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="PrivacyMode" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Privacy mode for Blur and Pixelate"
+                              AutomationProperties.AutomationId="Settings_PrivacyMode"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Clip annotations to the lasso" Description="Freeform snips only.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphModeFreeform}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="ClipToLasso" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Clip annotations to the lasso"
+                              AutomationProperties.AutomationId="Settings_ClipToLasso"/>
+              </toolkit:SettingsCard>
+
+              <TextBlock Text="Deleting" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Delete to the Recycle Bin"
+                                    Description="Snips removed from the Recent list go to the Recycle Bin instead of being deleted outright.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphDelete}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="DeleteToRecycleBin" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Delete to the Recycle Bin"
+                              AutomationProperties.AutomationId="Settings_RecycleBin"/>
+              </toolkit:SettingsCard>
+            </StackPanel>
+
+            <!-- ===== Hotkeys =====
+                 Pages are filled on first visit (SettingsWindow.Realise) but not deferred with x:Load: this XAML is
+                 rooted on a Window, which has no FindName or namescope, so deferred elements can never be realised.
+                 Deferral would need the content moved into a UserControl or Page. -->
+            <StackPanel x:Name="PageHotkeys" Visibility="Collapsed" Spacing="4">
+              <TextBlock Text="Snip shortcuts" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Rectangle snip">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphModeRectangle}"/></toolkit:SettingsCard.HeaderIcon>
+                <local:HotkeyBox x:Name="HkRegion" Label="Rectangle snip" AutomationProperties.AutomationId="Settings_HkRegion"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Window snip">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphModeWindow}"/></toolkit:SettingsCard.HeaderIcon>
+                <local:HotkeyBox x:Name="HkWindow" Label="Window snip" AutomationProperties.AutomationId="Settings_HkWindow"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="All monitors">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAllMonitors}"/></toolkit:SettingsCard.HeaderIcon>
+                <local:HotkeyBox x:Name="HkFullAll" Label="All monitors" AutomationProperties.AutomationId="Settings_HkFullAll"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Active window">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphActiveWindow}"/></toolkit:SettingsCard.HeaderIcon>
+                <local:HotkeyBox x:Name="HkActive" Label="Active window" AutomationProperties.AutomationId="Settings_HkActive"/>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Recent flyout">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHistory}"/></toolkit:SettingsCard.HeaderIcon>
+                <local:HotkeyBox x:Name="HkHistory" Label="Recent flyout" AutomationProperties.AutomationId="Settings_HkHistory"/>
+              </toolkit:SettingsCard>
+
+              <TextBlock Text="Windows integration" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Also use Win + Shift + S for region snips"
+                                    Description="Replaces the Windows Snipping Tool shortcut while ToneSnip runs.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphKeyboardShortcut}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="ReplaceSnippingTool" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Also use Win + Shift + S for region snips"
+                              AutomationProperties.AutomationId="Settings_ReplaceSnippingTool"/>
+              </toolkit:SettingsCard>
+              <!-- Assertive: a hotkey that will never fire is the one message here a screen-reader user must not miss.
+                   -->
+              <TextBlock x:Name="Conflicts" Style="{StaticResource Caption}" Foreground="{ThemeResource Error}"
+                         Margin="0,8,0,0" AutomationProperties.LiveSetting="Assertive"/>
+            </StackPanel>
+
+            <!-- ===== Tonemap ===== -->
+            <StackPanel x:Name="PageTonemap" Visibility="Collapsed" Spacing="4">
+              <TextBlock Text="Preview" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <!-- Preview first, so slider changes are visible without scrolling. It sits in ItemsHeader, the Toolkit's
+                   slot for arbitrary content above the items. -->
+              <toolkit:SettingsExpander x:Name="PreviewExpander" Header="Preview" IsExpanded="True"
+                                        AutomationProperties.AutomationId="Settings_PreviewExpander">
+                <toolkit:SettingsExpander.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPreview}"/></toolkit:SettingsExpander.HeaderIcon>
+                <toolkit:SettingsExpander.ItemsHeader>
+                  <StackPanel Spacing="8" Margin="16,12,16,12">
+                    <!-- Height is set in code from the frame's aspect, capped at 360. Hidden until there is a frame to
+                         show. -->
+                    <Border x:Name="PreviewBox" Background="{ThemeResource SurfaceLayer}" CornerRadius="{StaticResource SmallCornerRadius}"
+                            MaxWidth="860" Height="360" HorizontalAlignment="Left" Visibility="Collapsed">
+                      <Image x:Name="Preview" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             AutomationProperties.Name="Tonemap preview"/>
+                    </Border>
+                    <TextBlock x:Name="PreviewHint" Style="{StaticResource Caption}"/>
+                  </StackPanel>
+                </toolkit:SettingsExpander.ItemsHeader>
+              </toolkit:SettingsExpander>
+
+              <TextBlock Text="Tonemapping" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Tonemapper" Description="Desktop matches what Windows shows on an SDR display.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphTonemapper}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="Tonemap" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Tonemapper" AutomationProperties.AutomationId="Settings_Tonemap">
+                  <ComboBoxItem Content="Desktop" Tag="desktop"/>
+                  <ComboBoxItem Content="Hable" Tag="hable"/>
+                  <ComboBoxItem Content="ACES" Tag="aces"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Exposure" Description="&#x2212;3 to +3 stops.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphExposure}"/></toolkit:SettingsCard.HeaderIcon>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Slider x:Name="Exposure" AutomationProperties.Name="Exposure" AutomationProperties.AutomationId="Settings_Exposure"
+                          Width="240" Minimum="-3" Maximum="3" StepFrequency="0.25" ValueChanged="OnSliderChanged"/>
+                  <TextBlock x:Name="ExposureText" Style="{StaticResource Body}" Width="64" TextAlignment="Right" VerticalAlignment="Center"/>
+                </StackPanel>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Knee" Description="Where highlights start to roll off.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphKnee}"/></toolkit:SettingsCard.HeaderIcon>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Slider x:Name="Knee" AutomationProperties.Name="Knee" AutomationProperties.AutomationId="Settings_Knee"
+                          Width="240" Minimum="0.3" Maximum="1" StepFrequency="0.05" ValueChanged="OnSliderChanged"/>
+                  <TextBlock x:Name="KneeText" Style="{StaticResource Body}" Width="64" TextAlignment="Right" VerticalAlignment="Center"/>
+                </StackPanel>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Auto exposure per snip"
+                                    Description="Meters the selected region and ignores the Exposure slider.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAutoExposure}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="AutoExposure" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Auto exposure per snip" AutomationProperties.AutomationId="Settings_AutoExposure"/>
+              </toolkit:SettingsCard>
+
+              <toolkit:SettingsExpander x:Name="AdvancedExpander" Header="Advanced" IsExpanded="False"
+                                        AutomationProperties.AutomationId="Settings_AdvancedExpander">
+                <toolkit:SettingsExpander.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAdvanced}"/></toolkit:SettingsExpander.HeaderIcon>
+                <toolkit:SettingsExpander.Items>
+                  <toolkit:SettingsCard x:Name="SdrWhiteRow" Header="Override SDR white">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <!-- Blank uses the monitor's value, shown as the placeholder. "nits" sits beside the box because
+                           NumberBox has no suffix slot. -->
+                      <NumberBox x:Name="SdrWhite" AutomationProperties.Name="Override SDR white, nits"
+                                 AutomationProperties.AutomationId="Settings_SdrWhite"
+                                 Width="120" MinHeight="32" SpinButtonPlacementMode="Hidden"
+                                 Minimum="1" Maximum="10000" ValueChanged="OnNumberChanged"/>
+                      <TextBlock Text="nits" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </toolkit:SettingsCard>
+                  <toolkit:SettingsCard x:Name="PeakRow" Header="Override peak">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <NumberBox x:Name="Peak" AutomationProperties.Name="Override peak, nits"
+                                 AutomationProperties.AutomationId="Settings_Peak"
+                                 Width="120" MinHeight="32" SpinButtonPlacementMode="Hidden"
+                                 Minimum="1" Maximum="10000" ValueChanged="OnNumberChanged"/>
+                      <TextBlock Text="nits" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </toolkit:SettingsCard>
+                </toolkit:SettingsExpander.Items>
+              </toolkit:SettingsExpander>
+            </StackPanel>
+
+            <!-- ===== Output ===== -->
+            <StackPanel x:Name="PageOutput" Visibility="Collapsed" Spacing="4">
+              <TextBlock Text="Files" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Copy to clipboard">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopy}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="CopyToClipboard" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Copy to clipboard" AutomationProperties.AutomationId="Settings_CopyToClipboard"/>
+              </toolkit:SettingsCard>
+              <!-- The switch is the expander's Content and the folder is its nested card. The path is selectable text
+                   trimmed to one line, with a tooltip enabled only while it is trimmed. The expander is never disabled,
+                   since the switch is inside it; UpdateOutputLabels enables the Location card instead. -->
+              <toolkit:SettingsExpander x:Name="SaveExpander" Header="Save automatically" Description="Every snip is written to the folder below"
+                                        AutomationProperties.AutomationId="Settings_SaveExpander">
+                <toolkit:SettingsExpander.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSave}"/></toolkit:SettingsExpander.HeaderIcon>
+                <ToggleSwitch x:Name="AutoSave" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Save automatically" AutomationProperties.AutomationId="Settings_AutoSave"/>
+                <toolkit:SettingsExpander.Items>
+                  <toolkit:SettingsCard x:Name="SaveFolderRow" Header="Location">
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <TextBlock x:Name="SaveFolderText" Style="{StaticResource Caption}" MaxWidth="286" VerticalAlignment="Center"
+                                 MaxLines="1" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True"
+                                 AutomationProperties.AutomationId="Settings_SaveFolder">
+                        <!-- {Binding}, not x:Bind: a compiled binding in a ToolTip in a Window's XAML keeps the window
+                             alive after Close (microsoft-ui-xaml #7282). -->
+                        <ToolTipService.ToolTip>
+                          <ToolTip Content="{Binding Text, ElementName=SaveFolderText}"
+                                   IsEnabled="{Binding IsTextTrimmed, ElementName=SaveFolderText, Mode=OneWay}"/>
+                        </ToolTipService.ToolTip>
+                      </TextBlock>
+                      <!-- A stock Button, deliberately unstyled so it keeps the Windows chip look. FontIcon does not
+                           inherit FontSize (its default is 20), so the button's content size is set explicitly. -->
+                      <Button Grid.Column="1"
+                              ToolTipService.ToolTip="Choose folder" AutomationProperties.Name="Choose folder"
+                              AutomationProperties.AutomationId="Settings_SaveFolderBrowse" Click="OnBrowse">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphChooseFolder}"
+                                  FontSize="{ThemeResource ControlContentThemeFontSize}"/>
+                      </Button>
+                    </Grid>
+                  </toolkit:SettingsCard>
+                </toolkit:SettingsExpander.Items>
+              </toolkit:SettingsExpander>
+              <!-- One row, two containers. An expander with nothing to expand still shows a chevron and an empty band,
+                   so Format sits in a plain card and moves into the expander only for JPEG, which has a quality option.
+                   PlaceFormat moves the single ComboBox between them, so only one is visible and there is nothing to
+                   sync. -->
+              <toolkit:SettingsCard x:Name="FormatCard" Header="Format" AutomationProperties.AutomationId="Settings_FormatCard">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphFormat}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="Format" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Format" AutomationProperties.AutomationId="Settings_Format">
+                  <ComboBoxItem Content="PNG" Tag="png"/><ComboBoxItem Content="JPEG" Tag="jpeg"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsExpander x:Name="FormatExpander" Header="Format" IsExpanded="False" Visibility="Collapsed"
+                                        AutomationProperties.AutomationId="Settings_FormatExpander">
+                <toolkit:SettingsExpander.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphFormat}"/></toolkit:SettingsExpander.HeaderIcon>
+                <toolkit:SettingsExpander.Items>
+                  <toolkit:SettingsCard x:Name="JpegQualityRow" Header="JPEG quality">
+                    <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphJpegQuality}"/></toolkit:SettingsCard.HeaderIcon>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Slider x:Name="JpegQuality" AutomationProperties.Name="JPEG quality" AutomationProperties.AutomationId="Settings_JpegQuality"
+                              Width="240" Minimum="50" Maximum="100" StepFrequency="5" ValueChanged="OnSliderChanged"/>
+                      <TextBlock x:Name="JpegQualityText" Style="{StaticResource Body}" Width="64" TextAlignment="Right" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </toolkit:SettingsCard>
+                </toolkit:SettingsExpander.Items>
+              </toolkit:SettingsExpander>
+
+              <TextBlock Text="HDR" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <!-- Same shape as Format: HdrFile moves into the expander only for JPEG XR, which has the Lossless option
+                   (PlaceHdrFile). Whichever container is showing is disabled while Save automatically is off. -->
+              <toolkit:SettingsCard x:Name="HdrCard" Header="HDR copy" AutomationProperties.AutomationId="Settings_HdrCard">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHdrCopy}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="HdrFile" MinWidth="220" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="HDR copy" AutomationProperties.AutomationId="Settings_HdrFile">
+                  <ComboBoxItem Content="None" Tag="none"/><ComboBoxItem Content="JPEG XR" Tag="jxr"/>
+                  <ComboBoxItem Content="PNG 16-bit" Tag="png"/><ComboBoxItem Content="JPEG with gain map" Tag="jpeg"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsExpander x:Name="HdrExpander" Header="HDR copy" IsExpanded="False" Visibility="Collapsed"
+                                        AutomationProperties.AutomationId="Settings_HdrExpander">
+                <toolkit:SettingsExpander.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHdrCopy}"/></toolkit:SettingsExpander.HeaderIcon>
+                <toolkit:SettingsExpander.Items>
+                  <toolkit:SettingsCard Header="Lossless" Description="Larger files; exact scRGB values.">
+                    <ToggleSwitch x:Name="JxrLossless" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                                  AutomationProperties.Name="Lossless" AutomationProperties.AutomationId="Settings_JxrLossless"/>
+                  </toolkit:SettingsCard>
+                </toolkit:SettingsExpander.Items>
+              </toolkit:SettingsExpander>
+
+              <TextBlock Text="Notifications" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <toolkit:SettingsCard Header="Show a notification after each snip">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphNotification}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="ShowToast" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Show a notification after each snip"
+                              AutomationProperties.AutomationId="Settings_ShowToast"/>
+              </toolkit:SettingsCard>
+              <!-- Disabled rather than hidden while notifications are off (UpdateOutputLabels). -->
+              <toolkit:SettingsCard x:Name="NotificationStyleRow" Header="Notification style"
+                                    Description="ToneSnip's own card above the tray, or a Windows notification (appears in the notification centre).">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphNotificationStyle}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="NotificationStyle" MinWidth="200" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Notification style" AutomationProperties.AutomationId="Settings_NotificationStyle">
+                  <ComboBoxItem Content="ToneSnip" Tag="tonesnip"/><ComboBoxItem Content="Windows" Tag="windows"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+            </StackPanel>
+
+            <!-- ===== About =====
+                 An expander with the app icon, name and version over three clickable cards. -->
+            <StackPanel x:Name="PageAbout" Visibility="Collapsed" Spacing="4">
+              <toolkit:SettingsExpander x:Name="AboutExpander" Header="ToneSnip" IsExpanded="True"
+                                        AutomationProperties.AutomationId="Settings_AboutExpander">
+                <toolkit:SettingsExpander.Resources>
+                  <!-- Raises the Toolkit's 20 px header-icon cap for the app icon only. It must stay scoped to this
+                       expander: the Viewbox scales uniformly, so an app-wide 32 would enlarge every glyph header icon
+                       too. -->
+                  <x:Double x:Key="SettingsCardHeaderIconMaxSize">32</x:Double>
+                </toolkit:SettingsExpander.Resources>
+                <toolkit:SettingsExpander.HeaderIcon>
+                  <!-- Rasterised by Controls/AppIcon. Never collapsed while loading: a collapsed ImageIcon is never
+                       rendered, so it would never load. -->
+                  <ImageIcon x:Name="AboutIcon" Width="32" Height="32" AutomationProperties.AccessibilityView="Raw"/>
+                </toolkit:SettingsExpander.HeaderIcon>
+                <toolkit:SettingsExpander.Items>
+                  <!-- No AutomationProperties.Name: a clickable SettingsCard takes its name from Header. Controls
+                       inside the other cards need one because the card does not lend them its Header. -->
+                  <toolkit:SettingsCard Header="Open log" Description="The rolling log this session writes to."
+                                        IsClickEnabled="True" Click="OnOpenLog"
+                                        AutomationProperties.AutomationId="Settings_OpenLog"/>
+                  <toolkit:SettingsCard Header="Open settings folder" Description="Where settings.json and the snip history live."
+                                        IsClickEnabled="True" Click="OnOpenSettingsFolder"
+                                        AutomationProperties.AutomationId="Settings_OpenSettingsFolder"/>
+                  <toolkit:SettingsCard Header="GitHub" Description="github.com/merson316/tonesnip"
+                                        IsClickEnabled="True" Click="OnGitHub"
+                                        AutomationProperties.AutomationId="Settings_GitHub"/>
+                </toolkit:SettingsExpander.Items>
+              </toolkit:SettingsExpander>
+            </StackPanel>
+          </StackPanel>
+        </ScrollView>
+      </Grid>
+    </NavigationView>
+  </Grid>
+</Window>

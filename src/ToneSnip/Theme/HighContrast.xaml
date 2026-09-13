@@ -1,0 +1,20 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The eleven tokens in a contrast theme, mapped onto the user's SystemColor* brushes by role: Window/WindowText
+       for content, ButtonFace for interactive surfaces, Highlight/HighlightText for selected or checked, GrayText for
+       disabled. Never add colours of our own or an Opacity here.
+       The control aliases in Light.xaml and Dark.xaml are deliberately absent, so the SDK's own HighContrast
+       resources for those controls apply. -->
+  <StaticResource x:Key="TextPrimary" ResourceKey="SystemColorWindowTextColorBrush"/>
+  <StaticResource x:Key="TextSecondary" ResourceKey="SystemColorWindowTextColorBrush"/>
+  <StaticResource x:Key="TextDisabled" ResourceKey="SystemColorGrayTextColorBrush"/>
+  <StaticResource x:Key="SurfaceBase" ResourceKey="SystemColorWindowColorBrush"/>
+  <StaticResource x:Key="SurfaceLayer" ResourceKey="SystemColorWindowColorBrush"/>
+  <StaticResource x:Key="SurfaceCard" ResourceKey="SystemColorButtonFaceColorBrush"/>
+  <StaticResource x:Key="Stroke" ResourceKey="SystemColorWindowTextColorBrush"/>
+  <StaticResource x:Key="Accent" ResourceKey="SystemColorHighlightColorBrush"/>
+  <StaticResource x:Key="AccentText" ResourceKey="SystemColorHighlightTextColorBrush"/>
+  <!-- Contrast themes have no semantic colours, so Success and Error read as ordinary text; both always appear with
+       a word beside them. -->
+  <StaticResource x:Key="Success" ResourceKey="SystemColorWindowTextColorBrush"/>
+  <StaticResource x:Key="Error" ResourceKey="SystemColorWindowTextColorBrush"/>
+</ResourceDictionary>

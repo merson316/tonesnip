@@ -1,0 +1,368 @@
+<interop:PopupWindow x:Class="ToneSnip.App.Tray.HistoryFlyout"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:interop="using:ToneSnip.App.Interop"
+                     xmlns:controls="using:ToneSnip.App.Controls"
+                     xmlns:tray="using:ToneSnip.App.Tray">
+  <!-- The card is the window itself: a WinUI window has no per-pixel transparency, so DWM draws the rounded
+       corners and shadow, and Place() adds the margin a shadow would otherwise need to the placement inset. -->
+  <!-- Hidden suppresses the "Esc" accelerator tooltip the framework would otherwise show over the header band.
+       Escape still closes the card. -->
+  <Border x:Name="Root" Width="380" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}" BorderThickness="1"
+          CornerRadius="{StaticResource CornerRadius}" Opacity="0" PointerExited="OnHoverRegionPointerExited"
+          KeyboardAcceleratorPlacementMode="Hidden">
+    <Border.Resources>
+      <!-- A glyph in a subtle square: the header gear (32) and the row actions (30). -->
+      <Style x:Key="GlyphButton" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Width" Value="32"/>
+        <Setter Property="Height" Value="32"/>
+      </Style>
+      <Style x:Key="RowAction" TargetType="Button" BasedOn="{StaticResource GlyphButton}">
+        <Setter Property="Width" Value="30"/>
+        <Setter Property="Height" Value="30"/>
+      </Style>
+      <!-- RowAction's metrics on the destructive style; the palette is Theme/DeleteAction.xaml, merged onto each
+           delete button. -->
+      <Style x:Key="RowDelete" TargetType="Button" BasedOn="{StaticResource DeleteAction}">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Width" Value="30"/>
+        <Setter Property="Height" Value="30"/>
+      </Style>
+      <!-- The delete prompt's buttons, sized to replace the row actions in place. The red resting fill comes from a
+           wrapper Border in the templates, because a template state would paint over a Background on the button. -->
+      <Style x:Key="ConfirmDelete" TargetType="Button" BasedOn="{StaticResource DeleteAction}">
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Padding" Value="10,0,10,0"/>
+      </Style>
+      <Style x:Key="ConfirmCancel" TargetType="Button" BasedOn="{StaticResource SubtleButton}">
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Padding" Value="10,0,10,0"/>
+      </Style>
+      <!-- BasedOn the SDK container style, setting metrics only, so the stock focus, selection and HighContrast
+           visuals survive. Hover and press fills are the ListViewItemBackground* keys in the theme files. Content
+           stretches so the action strip's gradient spans the full row height. -->
+      <Style x:Key="HistoryRowContainer" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+        <Setter Property="Height" Value="52"/>
+        <Setter Property="Padding" Value="8,0,8,0"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+      </Style>
+      <!-- The grid layout's cell; the 2 px margin on each side makes the 4 px gap. -->
+      <Style x:Key="HistoryCellContainer" TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+        <Setter Property="Width" Value="172"/>
+        <Setter Property="Padding" Value="4,4,4,4"/>
+        <Setter Property="Margin" Value="2"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Top"/>
+      </Style>
+    </Border.Resources>
+    <Border.KeyboardAccelerators>
+      <KeyboardAccelerator Key="Escape" Invoked="OnEscape"/>
+    </Border.KeyboardAccelerators>
+    <StackPanel>
+      <!-- Collapsed swatches that expose this window's theme brushes to code; a lookup in Application.Resources
+           would return the application theme's brushes instead. -->
+      <Grid Visibility="Collapsed">
+        <Border x:Name="TokPrimary" Background="{ThemeResource TextPrimary}"/>
+        <Border x:Name="TokSecondary" Background="{ThemeResource TextSecondary}"/>
+        <Border x:Name="TokLayer" Background="{ThemeResource SurfaceLayer}"/>
+        <Border x:Name="TokBase" Background="{ThemeResource SurfaceBase}"/>
+        <Border x:Name="TokError" Background="{ThemeResource Error}"/>
+        <Border x:Name="TokAccentText" Background="{ThemeResource AccentText}"/>
+      </Grid>
+      <!-- Header: capture modes (clicking one starts a snip), the delay pill and the settings button. -->
+      <Grid Height="48" Padding="8,8,8,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <controls:ModeGroup x:Name="Modes" VerticalAlignment="Center" AutomationProperties.AutomationId="Flyout_Modes"
+                            AutomationProperties.Name="Capture mode"/>
+        <!-- The DelayPill template supplies the glyph. ShowDelay extends the accessible name to include the value,
+             e.g. "Delay, 3 seconds". -->
+        <Button x:Name="DelayBtn" Grid.Column="2" Style="{StaticResource DelayPill}" VerticalAlignment="Center" Margin="4,0,4,0"
+                AutomationProperties.AutomationId="Flyout_DelayPill" AutomationProperties.Name="Delay"
+                ToolTipService.ToolTip="Delay before the snip" Click="OnDelayPicker"/>
+        <Button x:Name="SettingsBtn" Grid.Column="3" Style="{StaticResource GlyphButton}"
+                AutomationProperties.AutomationId="Flyout_SettingsButton" AutomationProperties.Name="Settings"
+                Foreground="{ThemeResource TextSecondary}" ToolTipService.ToolTip="Settings" Click="OnSettings">
+          <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSettings}" FontSize="16"/>
+        </Button>
+      </Grid>
+      <!-- Hidden while the delay band is open, since the band draws its own separator. -->
+      <Rectangle x:Name="HeaderLine" Height="1" Fill="{ThemeResource Stroke}"/>
+      <!-- Delay choices expand inline rather than in a popup: a flyout's own window takes the foreground, and this
+           card closes when it loses the foreground. -->
+      <controls:DelayBand x:Name="DelayRow" Visibility="Collapsed" AutomationProperties.AutomationId="Flyout_DelayBand" IdPrefix="Flyout"
+                          AutomationProperties.Name="Delay"/>
+      <Grid>
+        <TextBlock x:Name="Empty" Style="{StaticResource Caption}" Margin="12,8,12,16" TextWrapping="Wrap"/>
+        <!-- Row layout (default). PointerMoved shares PointerEntered's handler: after a wheel scroll no PointerEntered
+             arrives for the row now under the pointer. IsItemClickEnabled is on only so hover works: with SelectionMode
+             None and item clicks off the container never reaches PointerOver. Rows open on DoubleTapped. MaxHeight
+             keeps virtualisation working inside the vertical StackPanel; the code lowers it to fit the work area. Both
+             layouts exist because x:Load cannot work in a Window-rooted file; the unused one stays Collapsed and
+             unbound. -->
+        <ListView x:Name="List" MaxHeight="440" Background="Transparent" BorderThickness="0" Padding="4,4,4,8"
+                  AutomationProperties.AutomationId="Flyout_List" AutomationProperties.Name="Recent snips"
+                  SelectionMode="None" IsItemClickEnabled="True" ItemContainerStyle="{StaticResource HistoryRowContainer}"
+                  ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  KeyDown="OnListKey" GotFocus="OnListFocusChanged" LostFocus="OnListFocusChanged"
+                  PointerExited="OnHoverRegionPointerExited">
+          <ListView.ItemTemplate>
+            <DataTemplate x:DataType="tray:HistoryRow">
+              <Grid Background="Transparent" Tag="{x:Bind}" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}"
+                    Loaded="OnRowLoaded" DoubleTapped="OnRowDoubleTapped"
+                    PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Border Width="64" Height="40" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceLayer}"
+                        VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
+                  <Grid>
+                    <Image Source="{x:Bind ThumbSource, Mode=OneWay}" Stretch="Uniform" x:Phase="1"
+                           AutomationProperties.AccessibilityView="Raw"/>
+                    <!-- Shown when the thumbnail is missing or cannot be decoded, so it does not look like it is still
+                         loading. -->
+                    <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphThumbnail}" FontSize="16" Foreground="{ThemeResource TextDisabled}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              AutomationProperties.AccessibilityView="Raw"
+                              Visibility="{x:Bind PlaceholderVisibility, Mode=OneWay}"/>
+                  </Grid>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="8,0,0,0" Spacing="2" VerticalAlignment="Center">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind ShownTitle, Mode=OneWay}" Style="{StaticResource Body}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                               Opacity="{x:Bind ShownTitleOpacity, Mode=OneWay}" VerticalAlignment="Center"/>
+                    <!-- The badges keep their width and the name ellipsises into the rest. -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="6,0,0,0" VerticalAlignment="Center"
+                                Visibility="{x:Bind RestingVisibility, Mode=OneWay}">
+                      <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource Accent}"
+                              AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind HdrVisibility, Mode=OneWay}">
+                        <TextBlock Text="HDR" Style="{StaticResource Tag}" Foreground="{ThemeResource AccentText}"/>
+                      </Border>
+                      <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" BorderBrush="{ThemeResource Stroke}" BorderThickness="1"
+                              AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind SdrVisibility, Mode=OneWay}">
+                        <TextBlock Text="SDR" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
+                      </Border>
+                      <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" BorderBrush="{ThemeResource Stroke}" BorderThickness="1"
+                              AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind HdrFileVisibility, Mode=OneWay}">
+                        <TextBlock Text="{x:Bind HdrFileText, Mode=OneWay}" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
+                      </Border>
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Text="{x:Bind ShownSubtitle, Mode=OneWay}" Style="{StaticResource Caption}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <!-- Row actions, shown on hover or keyboard focus. The 24 px fade into an opaque strip keeps the name
+                     legible beneath them. HoverFade and HoverSolid are OneWay because they are built in code (an opaque
+                     composite of SurfaceLayer on SurfaceBase that XAML cannot express), so HistoryRow.Restyle re-raises
+                     them when the theme changes. -->
+                <StackPanel x:Name="Actions" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Opacity="0"
+                            Visibility="{x:Bind RestingVisibility, Mode=OneWay}">
+                  <Rectangle Width="24" Fill="{x:Bind HoverFade, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw"/>
+                  <Border Background="{x:Bind HoverSolid, Mode=OneWay}" AutomationProperties.AccessibilityView="Raw">
+                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowCopy"
+                              AutomationProperties.Name="Copy" ToolTipService.ToolTip="Copy" Click="OnCopy" Tag="{x:Bind}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopy}" FontSize="16"/>
+                      </Button>
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowOpen"
+                              AutomationProperties.Name="Open in viewer" ToolTipService.ToolTip="Open in viewer" Click="OnOpen" Tag="{x:Bind}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphOpenInViewer}" FontSize="16"/>
+                      </Button>
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowEdit"
+                              AutomationProperties.Name="Edit" ToolTipService.ToolTip="Edit" Click="OnEdit" Tag="{x:Bind}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAnnotate}" FontSize="16"/>
+                      </Button>
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowFolder"
+                              AutomationProperties.Name="Show in folder" ToolTipService.ToolTip="Show in folder" Click="OnShowInFolder"
+                              Tag="{x:Bind}" Visibility="{x:Bind FolderVisibility, Mode=OneWay}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphShowInFolder}" FontSize="16"/>
+                      </Button>
+                      <!-- Clicking arms the row's delete prompt (DeleteArmed) rather than deleting. -->
+                      <Button x:Name="DeleteBtn" Style="{StaticResource RowDelete}" Foreground="{x:Bind DeleteGlyph, Mode=OneWay}"
+                              AutomationProperties.AutomationId="Flyout_RowDelete" AutomationProperties.Name="{x:Bind DeleteTip, Mode=OneWay}"
+                              ToolTipService.ToolTip="{x:Bind DeleteTip, Mode=OneWay}" Click="OnDelete" Tag="{x:Bind}">
+                        <Button.Resources>
+                          <!-- Element-scoped delete palette (Theme/DeleteAction.xaml), so the neighbouring row actions
+                               keep the ordinary subtle palette. -->
+                          <ResourceDictionary>
+                            <ResourceDictionary.MergedDictionaries>
+                              <ResourceDictionary Source="ms-appx:///Theme/DeleteAction.xaml"/>
+                            </ResourceDictionary.MergedDictionaries>
+                          </ResourceDictionary>
+                        </Button.Resources>
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphDelete}" FontSize="16"/>
+                      </Button>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+                <!-- The delete prompt gets its own Auto column so the text beside it ellipsises instead of being
+                     covered. -->
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" Visibility="{x:Bind ConfirmVisibility, Mode=OneWay}" Grid.Column="2" Margin="8,0,0,0">
+                  <Border Background="{x:Bind ConfirmFill, Mode=OneWay}" CornerRadius="{StaticResource SmallCornerRadius}"
+                          AutomationProperties.AccessibilityView="Raw">
+                    <Button x:Name="ConfirmDeleteBtn" Style="{StaticResource ConfirmDelete}" Foreground="{x:Bind ConfirmForeground, Mode=OneWay}"
+                            Content="{x:Bind ConfirmLabel, Mode=OneWay}" Click="OnConfirmDelete" Tag="{x:Bind}"
+                            AutomationProperties.AutomationId="Flyout_RowConfirmDelete" AutomationProperties.Name="{x:Bind ConfirmLabel, Mode=OneWay}">
+                      <Button.Resources>
+                        <ResourceDictionary>
+                          <ResourceDictionary.MergedDictionaries>
+                            <ResourceDictionary Source="ms-appx:///Theme/DeleteAction.xaml"/>
+                          </ResourceDictionary.MergedDictionaries>
+                        </ResourceDictionary>
+                      </Button.Resources>
+                    </Button>
+                  </Border>
+                  <!-- Last, so it sits where the delete button was: a double click there cancels rather than deletes.
+                       -->
+                  <Button x:Name="CancelDeleteBtn" Style="{StaticResource ConfirmCancel}" Content="Cancel" Click="OnCancelDelete" Tag="{x:Bind}"
+                          AutomationProperties.AutomationId="Flyout_RowCancelDelete" AutomationProperties.Name="Cancel"/>
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListView.ItemTemplate>
+        </ListView>
+        <!-- Grid layout: two columns, actions over the image. Only one layout is bound at a time (Refresh).
+             IsItemClickEnabled and MaxHeight as for the row list. -->
+        <GridView x:Name="Cells" MaxHeight="520" Background="Transparent" BorderThickness="0" Padding="8,8,8,4" Visibility="Collapsed"
+                  AutomationProperties.AutomationId="Flyout_Grid" AutomationProperties.Name="Recent snips"
+                  SelectionMode="None" IsItemClickEnabled="True" ItemContainerStyle="{StaticResource HistoryCellContainer}"
+                  ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  KeyDown="OnListKey" GotFocus="OnListFocusChanged" LostFocus="OnListFocusChanged"
+                  PointerExited="OnHoverRegionPointerExited">
+          <GridView.ItemsPanel>
+            <ItemsPanelTemplate>
+              <ItemsWrapGrid Orientation="Horizontal" MaximumRowsOrColumns="2"/>
+            </ItemsPanelTemplate>
+          </GridView.ItemsPanel>
+          <GridView.ItemTemplate>
+            <DataTemplate x:DataType="tray:HistoryRow">
+              <Grid Background="Transparent" Tag="{x:Bind}" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}"
+                    Loaded="OnRowLoaded" DoubleTapped="OnRowDoubleTapped"
+                    PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Width="164" Height="96">
+                  <Border CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceLayer}"
+                          AutomationProperties.AccessibilityView="Raw">
+                    <Grid>
+                      <Image Source="{x:Bind ThumbSource, Mode=OneWay}" Stretch="Uniform" x:Phase="1"
+                             AutomationProperties.AccessibilityView="Raw"/>
+                      <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphThumbnail}" FontSize="24" Foreground="{ThemeResource TextDisabled}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                AutomationProperties.AccessibilityView="Raw"
+                                Visibility="{x:Bind PlaceholderVisibility, Mode=OneWay}"/>
+                    </Grid>
+                  </Border>
+                  <!-- Over a thumbnail the badges need a fill and a ControlEdge outline (3 : 1); a SurfaceBase fill
+                       alone disappears against screenshots of light UI. -->
+                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="6,6,6,6" HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource Accent}"
+                            BorderBrush="{ThemeResource ControlEdge}" BorderThickness="1"
+                            AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind HdrVisibility, Mode=OneWay}">
+                      <TextBlock Text="HDR" Style="{StaticResource Tag}" Foreground="{ThemeResource AccentText}"/>
+                    </Border>
+                    <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceBase}"
+                            BorderBrush="{ThemeResource ControlEdge}" BorderThickness="1"
+                            AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind SdrVisibility, Mode=OneWay}">
+                      <TextBlock Text="SDR" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
+                    </Border>
+                    <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceBase}"
+                            BorderBrush="{ThemeResource ControlEdge}" BorderThickness="1"
+                            AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind HdrFileVisibility, Mode=OneWay}">
+                      <TextBlock Text="{x:Bind HdrFileText, Mode=OneWay}" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
+                    </Border>
+                  </StackPanel>
+                  <!-- 30 px buttons with 2 px padding and gaps; deliberately off the 4 px grid. -->
+                  <Border x:Name="Actions" Height="34" Padding="2,2,2,2" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceBase}"
+                          HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0"
+                          Visibility="{x:Bind RestingVisibility, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowCopy"
+                              AutomationProperties.Name="Copy" ToolTipService.ToolTip="Copy" Click="OnCopy" Tag="{x:Bind}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopy}" FontSize="16"/>
+                      </Button>
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowOpen"
+                              AutomationProperties.Name="Open in viewer" ToolTipService.ToolTip="Open in viewer" Click="OnOpen" Tag="{x:Bind}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphOpenInViewer}" FontSize="16"/>
+                      </Button>
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowEdit"
+                              AutomationProperties.Name="Edit" ToolTipService.ToolTip="Edit" Click="OnEdit" Tag="{x:Bind}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAnnotate}" FontSize="16"/>
+                      </Button>
+                      <Button Style="{StaticResource RowAction}" AutomationProperties.AutomationId="Flyout_RowFolder"
+                              AutomationProperties.Name="Show in folder" ToolTipService.ToolTip="Show in folder" Click="OnShowInFolder"
+                              Tag="{x:Bind}" Visibility="{x:Bind FolderVisibility, Mode=OneWay}">
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphShowInFolder}" FontSize="16"/>
+                      </Button>
+                      <Button x:Name="DeleteBtn" Style="{StaticResource RowDelete}" Foreground="{x:Bind DeleteGlyph, Mode=OneWay}"
+                              AutomationProperties.AutomationId="Flyout_RowDelete" AutomationProperties.Name="{x:Bind DeleteTip, Mode=OneWay}"
+                              ToolTipService.ToolTip="{x:Bind DeleteTip, Mode=OneWay}" Click="OnDelete" Tag="{x:Bind}">
+                        <Button.Resources>
+                          <!-- Element-scoped delete palette (Theme/DeleteAction.xaml), so the neighbouring row actions
+                               keep the ordinary subtle palette. -->
+                          <ResourceDictionary>
+                            <ResourceDictionary.MergedDictionaries>
+                              <ResourceDictionary Source="ms-appx:///Theme/DeleteAction.xaml"/>
+                            </ResourceDictionary.MergedDictionaries>
+                          </ResourceDictionary>
+                        </Button.Resources>
+                        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphDelete}" FontSize="16"/>
+                      </Button>
+                    </StackPanel>
+                  </Border>
+                  <!-- The delete prompt, in the action strip's place. -->
+                  <Border Height="34" Padding="2,2,2,2" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceBase}"
+                          HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                          Visibility="{x:Bind ConfirmVisibility, Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                      <Border Background="{x:Bind ConfirmFill, Mode=OneWay}" CornerRadius="{StaticResource SmallCornerRadius}"
+                              AutomationProperties.AccessibilityView="Raw">
+                        <Button x:Name="ConfirmDeleteBtn" Style="{StaticResource ConfirmDelete}" Foreground="{x:Bind ConfirmForeground, Mode=OneWay}"
+                                Content="{x:Bind ConfirmLabel, Mode=OneWay}" Click="OnConfirmDelete" Tag="{x:Bind}"
+                                AutomationProperties.AutomationId="Flyout_RowConfirmDelete" AutomationProperties.Name="{x:Bind ConfirmLabel, Mode=OneWay}">
+                          <Button.Resources>
+                            <ResourceDictionary>
+                              <ResourceDictionary.MergedDictionaries>
+                                <ResourceDictionary Source="ms-appx:///Theme/DeleteAction.xaml"/>
+                              </ResourceDictionary.MergedDictionaries>
+                            </ResourceDictionary>
+                          </Button.Resources>
+                        </Button>
+                      </Border>
+                      <!-- Last, so it sits where the delete button was: a double click there cancels rather than
+                           deletes. -->
+                      <Button x:Name="CancelDeleteBtn" Style="{StaticResource ConfirmCancel}" Content="Cancel" Click="OnCancelDelete" Tag="{x:Bind}"
+                              AutomationProperties.AutomationId="Flyout_RowCancelDelete" AutomationProperties.Name="Cancel"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+                <!-- 6 rather than 8: the caption line box adds visual space above the text. -->
+                <StackPanel Grid.Row="1" Margin="0,6,0,0">
+                  <TextBlock Text="{x:Bind ShownTitle, Mode=OneWay}" Style="{StaticResource Caption}" Foreground="{ThemeResource TextPrimary}"
+                             TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Opacity="{x:Bind ShownTitleOpacity, Mode=OneWay}"/>
+                  <TextBlock Text="{x:Bind ShownSubtitle, Mode=OneWay}" Style="{StaticResource Caption}"
+                             TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </GridView.ItemTemplate>
+        </GridView>
+      </Grid>
+      <!-- Footer: folder totals on the left, the link to the folder on the right. -->
+      <Grid Padding="12,0,12,12">
+        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="Totals" Style="{StaticResource Caption}" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+        <!-- A stock HyperlinkButton; its look comes from the HyperlinkButton* keys in the theme files. -->
+        <HyperlinkButton x:Name="OpenFolderLink" Grid.Column="1" Style="{StaticResource FooterLink}"
+                         AutomationProperties.AutomationId="Flyout_OpenFolder" AutomationProperties.Name="Open folder"
+                         ToolTipService.ToolTip="Open Screenshots folder" Click="OnOpenFolder">
+          <StackPanel Orientation="Horizontal">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphFolder}" FontSize="16" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw"/>
+            <TextBlock Text="Open folder" VerticalAlignment="Center" Margin="6,0,0,0"/>
+          </StackPanel>
+        </HyperlinkButton>
+      </Grid>
+    </StackPanel>
+  </Border>
+</interop:PopupWindow>

@@ -1,0 +1,10 @@
+<UserControl x:Class="ToneSnip.App.Controls.DelayBand"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Border Style="{StaticResource Band}">
+    <!-- The chips are built in code from SnipSettings.Delays, so the band always matches the tray menu and settings.
+         Arrow key navigation works in the Recent flyout; the overlay toolbar never takes focus (see ModeGroup.xaml). -->
+    <StackPanel x:Name="Chips" Orientation="Horizontal" Spacing="4" XYFocusKeyboardNavigation="Enabled"
+                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+  </Border>
+</UserControl>

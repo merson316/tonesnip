@@ -1,0 +1,128 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <SolidColorBrush x:Key="TextPrimary" Color="#E4000000"/>
+  <SolidColorBrush x:Key="TextSecondary" Color="#9E000000"/>
+  <SolidColorBrush x:Key="TextDisabled" Color="#5C000000"/>
+  <SolidColorBrush x:Key="SurfaceBase" Color="#F3F3F3"/>
+  <SolidColorBrush x:Key="SurfaceLayer" Color="#B3FFFFFF"/>
+  <SolidColorBrush x:Key="SurfaceCard" Color="#FFFFFF"/>
+  <SolidColorBrush x:Key="Stroke" Color="#0F000000"/>
+  <!-- Theme/ThemeManager sets Accent and AccentText from the desktop accent at runtime; these are the fallback. -->
+  <SolidColorBrush x:Key="Accent" Color="#005FB8"/>
+  <SolidColorBrush x:Key="AccentText" Color="#FFFFFF"/>
+  <SolidColorBrush x:Key="Success" Color="#0F7B0F"/>
+  <SolidColorBrush x:Key="Error" Color="#C42B1C"/>
+
+  <!-- The edge of a control, as distinct from a divider. Stroke is far below the 3 : 1 non-text contrast bar
+       (about 1.35 : 1 in dark, 1.13 : 1 in light); the SDK's strong stroke is the readable one, and as an alias it
+       brings its own HighContrast value. Stroke remains for dividers, hairlines and window outlines. -->
+  <StaticResource x:Key="ControlEdge" ResourceKey="ControlStrongStrokeColorDefaultBrush"/>
+
+  <!-- One accent for the stock controls too. The SDK's AccentFillColorDefaultBrush is SystemAccentColorDark1 in
+       light, which would put two accents side by side. The Secondary and Tertiary shades are left to the SDK as the
+       hover and press feedback. -->
+  <StaticResource x:Key="AccentFillColorDefaultBrush" ResourceKey="Accent"/>
+  <StaticResource x:Key="TextOnAccentFillColorPrimaryBrush" ResourceKey="AccentText"/>
+  <!-- The resting-state keys also need aliasing: generic.xaml resolves these as StaticResources inside its own theme
+       dictionary, so they never see an app-scope AccentFillColorDefaultBrush. -->
+  <StaticResource x:Key="SliderTrackValueFill" ResourceKey="Accent"/>
+  <StaticResource x:Key="SliderThumbBackground" ResourceKey="Accent"/>
+  <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="Accent"/>
+  <StaticResource x:Key="NavigationViewSelectionIndicatorForeground" ResourceKey="Accent"/>
+
+  <!-- The Toolkit's SettingsCard on the app's tokens. The Description line reads the SDK's
+       TextFillColorSecondaryBrush, which already matches TextSecondary. The disabled pair is used by the HDR copy
+       expander while Save automatically is off. -->
+  <StaticResource x:Key="SettingsCardBackground" ResourceKey="SurfaceCard"/>
+  <StaticResource x:Key="SettingsCardBackgroundDisabled" ResourceKey="SurfaceCard"/>
+  <StaticResource x:Key="SettingsCardBackgroundPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="SettingsCardBackgroundPressed" ResourceKey="SurfaceBase"/>
+  <StaticResource x:Key="SettingsCardBorderBrush" ResourceKey="ControlEdge"/>
+  <StaticResource x:Key="SettingsCardBorderBrushDisabled" ResourceKey="ControlEdge"/>
+  <StaticResource x:Key="SettingsCardBorderBrushPointerOver" ResourceKey="ControlEdge"/>
+  <StaticResource x:Key="SettingsCardBorderBrushPressed" ResourceKey="ControlEdge"/>
+  <StaticResource x:Key="SettingsCardForeground" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="SettingsCardForegroundDisabled" ResourceKey="TextDisabled"/>
+  <StaticResource x:Key="SettingsCardForegroundPointerOver" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="SettingsCardForegroundPressed" ResourceKey="TextPrimary"/>
+
+  <!-- Expander lightweight styling for the settings rows: the header reads as a settings row and the content as the
+       page surface. The stock header has no per-state background. Sizes are in Theme/Controls.xaml. -->
+  <StaticResource x:Key="ExpanderHeaderBackground" ResourceKey="SurfaceCard"/>
+  <StaticResource x:Key="ExpanderHeaderBorderBrush" ResourceKey="Stroke"/>
+  <StaticResource x:Key="ExpanderHeaderBorderPointerOverBrush" ResourceKey="Stroke"/>
+  <StaticResource x:Key="ExpanderHeaderBorderPressedBrush" ResourceKey="Stroke"/>
+  <StaticResource x:Key="ExpanderHeaderDisabledBorderBrush" ResourceKey="Stroke"/>
+  <StaticResource x:Key="ExpanderHeaderForeground" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="ExpanderHeaderForegroundPointerOver" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="ExpanderHeaderForegroundPressed" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="ExpanderHeaderDisabledForeground" ResourceKey="TextDisabled"/>
+  <StaticResource x:Key="ExpanderContentBackground" ResourceKey="SurfaceBase"/>
+  <StaticResource x:Key="ExpanderContentBorderBrush" ResourceKey="Stroke"/>
+  <StaticResource x:Key="ExpanderChevronForeground" ResourceKey="TextPrimary"/>
+
+  <!-- The settings nav pane's selected item, with the same fill on hover and press so it does not jump. -->
+  <StaticResource x:Key="NavigationViewItemBackgroundSelected" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="NavigationViewItemBackgroundSelectedPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="NavigationViewItemBackgroundSelectedPressed" ResourceKey="SurfaceLayer"/>
+  <!-- The nav pane and page both sit directly on Mica, without the stock pane shade, border and corner. The matching
+       thickness and radius are in Theme/Controls.xaml. -->
+  <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent"/>
+  <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent"/>
+  <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent"/>
+  <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent"/>
+
+  <!-- No TextControl* or Button* aliases: settings inputs and the folder picker button stay stock, so they match the
+       stock ComboBoxes beside them. -->
+
+  <!-- The Recent flyout's item containers. The stock templates read these keys through ThemeResource, so app scope
+       reaches them; the SDK's defaults are a grey wash over the light card. Hover and press match SubtleButton. -->
+  <StaticResource x:Key="ListViewItemBackgroundPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="ListViewItemBackgroundPressed" ResourceKey="SurfaceCard"/>
+  <StaticResource x:Key="GridViewItemBackgroundPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="GridViewItemBackgroundPressed" ResourceKey="SurfaceCard"/>
+
+  <!-- The flyout footer's "Open folder" link: secondary text rising to primary on hover, rather than a second accent
+       on the card. Backgrounds follow SubtleButton. -->
+  <StaticResource x:Key="HyperlinkButtonForeground" ResourceKey="TextSecondary"/>
+  <StaticResource x:Key="HyperlinkButtonForegroundPointerOver" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="HyperlinkButtonForegroundPressed" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="HyperlinkButtonForegroundDisabled" ResourceKey="TextDisabled"/>
+  <StaticResource x:Key="HyperlinkButtonBackgroundPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="HyperlinkButtonBackgroundPressed" ResourceKey="SurfaceCard"/>
+
+  <!-- Button and toggle families: only keys the stock templates already read, so Theme/HighContrast.xaml can leave
+       them out and the SDK's contrast resources apply. Sizes live in Theme/Controls.xaml, colours here. -->
+
+  <!-- SubtleButton and the styles based on it: transparent at rest, SurfaceLayer on hover, SurfaceCard pressed.
+       No border keys, because nothing in this family sets a BorderThickness. -->
+  <SolidColorBrush x:Key="SubtleButtonBackground" Color="Transparent"/>
+  <StaticResource x:Key="SubtleButtonBackgroundPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="SubtleButtonBackgroundPressed" ResourceKey="SurfaceCard"/>
+  <SolidColorBrush x:Key="SubtleButtonBackgroundDisabled" Color="Transparent"/>
+  <StaticResource x:Key="SubtleButtonForeground" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="SubtleButtonForegroundPointerOver" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="SubtleButtonForegroundPressed" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="SubtleButtonForegroundDisabled" ResourceKey="TextDisabled"/>
+
+  <!-- The accent button (the annotate bar's Done). Aliased directly for the same StaticResource reason as the
+       Slider keys above; hover and press shades stay the SDK's. -->
+  <StaticResource x:Key="AccentButtonBackground" ResourceKey="Accent"/>
+  <StaticResource x:Key="AccentButtonForeground" ResourceKey="AccentText"/>
+
+  <!-- The tool toggle: transparent at rest, SurfaceLayer on hover and press, Accent under AccentText when checked.
+       CheckedPointerOver and CheckedPressed are left to the SDK's accent shades. -->
+  <!-- ToggleButtonBackground and the two disabled background keys are deliberately absent: at application scope they
+       also reach the Toolkit SettingsExpander header, a bare ToggleButton, and empty it. The tool toggles set a
+       transparent Background in their style instead, and the disabled pickers use Theme/PickerToggle.xaml. -->
+  <StaticResource x:Key="ToggleButtonBackgroundPointerOver" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="ToggleButtonBackgroundPressed" ResourceKey="SurfaceLayer"/>
+  <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="Accent"/>
+  <StaticResource x:Key="ToggleButtonForeground" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="ToggleButtonForegroundPointerOver" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="ToggleButtonForegroundPressed" ResourceKey="TextPrimary"/>
+  <StaticResource x:Key="ToggleButtonForegroundDisabled" ResourceKey="TextDisabled"/>
+  <StaticResource x:Key="ToggleButtonForegroundChecked" ResourceKey="AccentText"/>
+  <StaticResource x:Key="ToggleButtonForegroundCheckedPointerOver" ResourceKey="AccentText"/>
+  <StaticResource x:Key="ToggleButtonForegroundCheckedPressed" ResourceKey="AccentText"/>
+  <StaticResource x:Key="ToggleButtonForegroundCheckedDisabled" ResourceKey="TextDisabled"/>
+</ResourceDictionary>

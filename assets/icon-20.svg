@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+  <!-- ToneSnip icon, hand-fitted for 20 px: back square outlined only, front square filled with a keyline. -->
+  <rect x="7" y="2" width="11" height="11" rx="2.5" ry="2.5" fill="none" stroke="#0078D4" stroke-width="1.5"/>
+  <rect x="2" y="7" width="11" height="11" rx="2.5" ry="2.5" fill="#0078D4" stroke="#FFFFFF" stroke-width="1"/>
+</svg>

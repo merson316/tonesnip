@@ -1,0 +1,229 @@
+<Window x:Class="ToneSnip.App.Viewer.ViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:annotate="using:ToneSnip.App.Annotate"
+        xmlns:controls="using:ToneSnip.App.Controls"
+        xmlns:viewer="using:ToneSnip.App.Viewer"
+        Title="ToneSnip">
+  <!-- No background on the root, so the Mica backdrop shows; where Mica is unavailable, Theme/Backdrop applies the
+       SolidWindowRoot style instead. The picture area paints itself SurfaceBase. -->
+  <!-- KeyboardAcceleratorPlacementMode Hidden: otherwise the Grid's window-wide Ctrl+S raises a generated "Ctrl+S"
+       tooltip over the picture. The command buttons carry their chords in their own tooltips. -->
+  <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <Grid.KeyboardAccelerators>
+      <!-- Ctrl+S belongs to the window rather than the Save button: Save is collapsed until there is something to
+           save, an accelerator on a collapsed element is unreachable, and on a never-saved snip Ctrl+S falls through
+           to Save as. The button still advertises the chord through AutomationProperties.AcceleratorKey. -->
+      <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="OnSaveAccelerator"/>
+    </Grid.KeyboardAccelerators>
+
+    <!-- The system title bar, as in the settings window: content extended into the title bar leaked GDI handles on
+         every close. -->
+
+    <StackPanel Grid.Row="0">
+      <!-- A hand-built command bar rather than CommandBar: CommandBar.Content is always laid out left of the primary
+           commands, with no supported way to right-align the HDR group short of replacing template parts, and its
+           labelled button geometry does not match the design. -->
+      <Grid Height="48" Padding="8,0">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <!-- Spacing 4 plus ToolDivider's own 4 px margin gives 8 px around a divider. -->
+        <!-- The labels set no font of their own: LabelButton and LabelToggle set it on the control, so the text inherits
+             both the type ramp and the template's state foreground. The Body style would pin Foreground and lose
+             Annotate's checked AccentText. -->
+        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <!-- Each command has an explicit AutomationProperties.Name (otherwise UIA composes one from the children), a
+               KeyboardAccelerator, and AutomationProperties.AcceleratorKey so Narrator announces the chord. The glyphs
+               are AccessibilityView="Raw" decoration. -->
+          <Button AllowFocusOnInteraction="False" Style="{StaticResource LabelButton}" Click="OnCopy" ToolTipService.ToolTip="Copy (Ctrl+C)"
+                  AutomationProperties.AutomationId="Editor_CopyButton" AutomationProperties.Name="Copy"
+                  AutomationProperties.AcceleratorKey="Ctrl+C">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="C" Modifiers="Control"/>
+            </Button.KeyboardAccelerators>
+            <StackPanel Orientation="Horizontal">
+              <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopy}" FontSize="16" VerticalAlignment="Center"
+                        AutomationProperties.AccessibilityView="Raw"/>
+              <TextBlock Text="Copy" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+          </Button>
+          <!-- No KeyboardAccelerators: this is collapsed until there is something to save, so its chord is on RootGrid. -->
+          <Button AllowFocusOnInteraction="False" x:Name="SaveBtn" Style="{StaticResource LabelButton}" Click="OnSave" Visibility="Collapsed"
+                  ToolTipService.ToolTip="Save (Ctrl+S)"
+                  AutomationProperties.AutomationId="Editor_SaveButton" AutomationProperties.Name="Save"
+                  AutomationProperties.AcceleratorKey="Ctrl+S">
+            <StackPanel Orientation="Horizontal">
+              <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSave}" FontSize="16" VerticalAlignment="Center"
+                        AutomationProperties.AccessibilityView="Raw"/>
+              <TextBlock Text="Save" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+          </Button>
+          <Button AllowFocusOnInteraction="False" Style="{StaticResource LabelButton}" Click="OnSaveAs" ToolTipService.ToolTip="Save as… (Ctrl+Shift+S)"
+                  AutomationProperties.AutomationId="Editor_SaveAsButton" AutomationProperties.Name="Save as"
+                  AutomationProperties.AcceleratorKey="Ctrl+Shift+S">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="S" Modifiers="Control,Shift"/>
+            </Button.KeyboardAccelerators>
+            <StackPanel Orientation="Horizontal">
+              <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSaveAs}" FontSize="16" VerticalAlignment="Center"
+                        AutomationProperties.AccessibilityView="Raw"/>
+              <TextBlock Text="Save as" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+          </Button>
+          <Rectangle Style="{StaticResource ToolDivider}"/>
+          <!-- The accelerator needs an explicit Invoked handler: the default invokes the peer's Invoke pattern, which a
+               ToggleButton does not implement, so it would silently do nothing. -->
+          <ToggleButton AllowFocusOnInteraction="False" x:Name="AnnotateBtn" Style="{StaticResource LabelToggle}" Click="OnAnnotate" ToolTipService.ToolTip="Annotate (A)"
+                        AutomationProperties.AutomationId="Editor_AnnotateToggle" AutomationProperties.Name="Annotate"
+                        AutomationProperties.AcceleratorKey="A">
+            <ToggleButton.KeyboardAccelerators>
+              <KeyboardAccelerator Key="A" Invoked="OnAnnotateAccelerator"/>
+            </ToggleButton.KeyboardAccelerators>
+            <StackPanel Orientation="Horizontal">
+              <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAnnotate}" FontSize="16" VerticalAlignment="Center"
+                        AutomationProperties.AccessibilityView="Raw"/>
+              <TextBlock Text="Annotate" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+          </ToggleButton>
+          <Rectangle Style="{StaticResource ToolDivider}"/>
+          <Button AllowFocusOnInteraction="False" Style="{StaticResource ToolButton}" Width="36" Height="36" AutomationProperties.Name="Zoom out"
+                  AutomationProperties.AutomationId="Editor_ZoomOutButton" ToolTipService.ToolTip="Zoom out" Click="OnZoomOut">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZoomOut}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
+          </Button>
+          <!-- The zoom readout is the Fit button; it needs a Name, or UIA reports the command as "83 %". -->
+          <Button x:Name="FitButton" AllowFocusOnInteraction="False" Style="{StaticResource SubtleButton}" Height="36" MinWidth="56" Click="OnFit"
+                  ToolTipService.ToolTip="Fit to window (Ctrl+0)"
+                  AutomationProperties.AutomationId="Editor_FitButton" AutomationProperties.Name="Fit to window"
+                  AutomationProperties.AcceleratorKey="Ctrl+0">
+            <Button.KeyboardAccelerators>
+              <KeyboardAccelerator Key="Number0" Modifiers="Control"/>
+              <KeyboardAccelerator Key="NumberPad0" Modifiers="Control"/>
+            </Button.KeyboardAccelerators>
+            <TextBlock x:Name="ZoomText" Style="{StaticResource Caption}" TextAlignment="Center"/>
+          </Button>
+          <Button AllowFocusOnInteraction="False" Style="{StaticResource ToolButton}" Width="36" Height="36" AutomationProperties.Name="Zoom in"
+                  AutomationProperties.AutomationId="Editor_ZoomInButton" ToolTipService.ToolTip="Zoom in" Click="OnZoomIn">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZoomIn}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
+          </Button>
+          <!-- MenuButton is a plain Button with UIA's ExpandCollapse pattern, so the overflow announces itself as a menu
+               without the chevron a DropDownButton draws. -->
+          <controls:MenuButton AllowFocusOnInteraction="False" x:Name="MoreButton" Style="{StaticResource ToolButton}" Width="36" Height="36" AutomationProperties.Name="More"
+                  AutomationProperties.AutomationId="Editor_MoreButton" ToolTipService.ToolTip="More">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphMore}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuFlyoutItem x:Name="OpenFolder" Text="Open folder" Click="OnOpenFolder"
+                                AutomationProperties.AutomationId="Editor_OpenFolder">
+                  <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphFolder}"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+              </MenuFlyout>
+            </Button.Flyout>
+          </controls:MenuButton>
+        </StackPanel>
+
+        <!-- Exposure and zebra live here in the editor rather than in the tool row. The group is shown only for an HDR
+             snip, whose float data is fixed for the life of the window. -->
+        <StackPanel x:Name="HdrGroup" Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                    Visibility="Collapsed">
+          <!-- Decoration beside a named slider, so Raw. -->
+          <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphExposure}" FontSize="16" Foreground="{ThemeResource TextSecondary}"
+                    VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw"/>
+          <Slider x:Name="ExposureSlider" Width="160" Minimum="-3" Maximum="3" Value="0" StepFrequency="0.25"
+                  TickFrequency="0.25" SnapsTo="StepValues" IsThumbToolTipEnabled="False" ValueChanged="OnExposureValue"
+                  VerticalAlignment="Center"
+                  AutomationProperties.AutomationId="Editor_ExposureSlider" AutomationProperties.Name="Exposure"/>
+          <TextBlock x:Name="ExposureText" Style="{StaticResource Caption}" MinWidth="56" TextAlignment="Right" VerticalAlignment="Center"/>
+          <!-- Zebra toggles a view rather than a mode, so it uses the ViewToggle chrome, not Annotate's accent fill. -->
+          <ToggleButton AllowFocusOnInteraction="False" x:Name="ZebraBtn" Style="{StaticResource ViewToggle}" Height="36" Padding="10,0,12,0" Click="OnZebra"
+                        ToolTipService.ToolTip="Show clipping (zebra)"
+                        AutomationProperties.AutomationId="Editor_ZebraToggle" AutomationProperties.Name="Show clipping (zebra)">
+            <ToggleButton.Resources>
+              <!-- Checked reads as SurfaceLayer under a Stroke ring; see the picker note in AnnotateBar.xaml. -->
+              <ResourceDictionary>
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+                </ResourceDictionary.MergedDictionaries>
+              </ResourceDictionary>
+            </ToggleButton.Resources>
+            <StackPanel Orientation="Horizontal">
+              <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZebra}" FontSize="16" VerticalAlignment="Center"
+                        AutomationProperties.AccessibilityView="Raw"/>
+              <TextBlock Text="Zebra" VerticalAlignment="Center" Margin="8,0,0,0"/>
+            </StackPanel>
+          </ToggleButton>
+        </StackPanel>
+      </Grid>
+
+      <!-- The shared tool row, under a hairline; 4 px padding plus the row's own 4 lines the first tool up with Copy's
+           glyph. Its height animates when Annotate toggles, and the clip updated from SizeChanged keeps the bar inside
+           the row while it moves. -->
+      <Border x:Name="ToolRow" Visibility="Collapsed" Padding="4,0" BorderBrush="{ThemeResource Stroke}" BorderThickness="0,1,0,0"
+              SizeChanged="OnToolRowSize">
+        <annotate:AnnotateBar x:Name="Bar" HorizontalAlignment="Left"/>
+      </Border>
+    </StackPanel>
+
+    <!-- ZoomMode is Disabled: zoom is the surface's own render scale rather than a transform over rendered pixels,
+         which keeps a magnified view sharp. The wheel zooms, but the scrollbars still show the scrolled view. -->
+    <ScrollViewer x:Name="Scroll" Grid.Row="1" Background="{ThemeResource SurfaceBase}"
+                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollMode="Auto" VerticalScrollMode="Auto" ZoomMode="Disabled" SizeChanged="OnViewportSize">
+      <viewer:EditorSurface x:Name="Surface" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            AutomationProperties.AutomationId="Editor_Canvas" AutomationProperties.Name="Snip canvas"/>
+    </ScrollViewer>
+
+    <Grid Grid.Row="2" Height="28" Padding="12,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Grid VerticalAlignment="Center">
+        <!-- "● Modified · 1920 × 1080 · HDR · scRGB → SDR (Hable) · shot.png": the pipeline note only for an HDR snip,
+             and the file name rather than the whole path (the path is its tooltip). -->
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel x:Name="Modified" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
+          <Ellipse Width="8" Height="8" Fill="{ThemeResource Accent}" VerticalAlignment="Center"/>
+          <TextBlock Text="Modified" Style="{StaticResource Caption}" Foreground="{ThemeResource TextPrimary}"
+                     Margin="8,0,0,0" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+          <TextBlock Text="·" Style="{StaticResource Caption}" Foreground="{ThemeResource TextDisabled}"
+                     Margin="8,0,8,0" VerticalAlignment="Center"/>
+        </StackPanel>
+        <TextBlock x:Name="Dimensions" Grid.Column="1" Style="{StaticResource Caption}" VerticalAlignment="Center"
+                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="HdrSeparator" Grid.Column="2" Text="·" Style="{StaticResource Caption}" Foreground="{ThemeResource TextDisabled}"
+                   Margin="8,0,8,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+        <TextBlock x:Name="HdrPipeline" Grid.Column="3" Style="{StaticResource Caption}" VerticalAlignment="Center"
+                   TextWrapping="NoWrap" Visibility="Collapsed"/>
+        <TextBlock x:Name="PathSeparator" Grid.Column="4" Text="·" Style="{StaticResource Caption}" Foreground="{ThemeResource TextDisabled}"
+                   Margin="8,0,8,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+        <TextBlock x:Name="PathText" Grid.Column="5" Style="{StaticResource Caption}" VerticalAlignment="Center"
+                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+      </Grid>
+      <!-- The HDR notes are live regions so their appearance is announced. "HDR copy failed" is Assertive because it is
+           a failure the user must hear (closing is refused once on it); the others are Polite progress. -->
+      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+        <TextBlock x:Name="HdrNote" Text="HDR copy not updated" Style="{StaticResource Caption}" Foreground="{ThemeResource Error}"
+                   VerticalAlignment="Center" Visibility="Collapsed" TextWrapping="NoWrap"
+                   AutomationProperties.LiveSetting="Polite"
+                   AutomationProperties.HelpText="The HDR data of this snip is no longer in memory (it is kept only in the save-then-edit flow); the .jxr/.hdr.png/.hdr.jpg next to the file still shows the previous version."
+                   ToolTipService.ToolTip="The HDR data of this snip is no longer in memory (it is kept only in the save-then-edit flow); the .jxr/.hdr.png/.hdr.jpg next to the file still shows the previous version."/>
+        <TextBlock x:Name="HdrBusy" Text="Writing HDR copy…" Style="{StaticResource Caption}"
+                   VerticalAlignment="Center" Visibility="Collapsed" TextWrapping="NoWrap"
+                   AutomationProperties.LiveSetting="Polite"/>
+        <TextBlock x:Name="HdrDone" Text="HDR copy written" Style="{StaticResource Caption}" Foreground="{ThemeResource Success}"
+                   VerticalAlignment="Center" Visibility="Collapsed" TextWrapping="NoWrap"
+                   AutomationProperties.LiveSetting="Polite"/>
+        <TextBlock x:Name="HdrError" Text="HDR copy failed" Style="{StaticResource Caption}" Foreground="{ThemeResource Error}"
+                   VerticalAlignment="Center" Visibility="Collapsed" TextWrapping="NoWrap"
+                   AutomationProperties.LiveSetting="Assertive"
+                   AutomationProperties.HelpText="The HDR sidecar could not be written; the log has the reason. The SDR file, if there was one, was saved."
+                   ToolTipService.ToolTip="The HDR sidecar could not be written; the log has the reason. The SDR file, if there was one, was saved."/>
+      </StackPanel>
+    </Grid>
+  </Grid>
+</Window>

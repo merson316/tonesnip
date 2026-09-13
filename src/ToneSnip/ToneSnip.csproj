@@ -1,0 +1,147 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <!-- tonesnip-debug.exe is the app with the harness compiled in (see Directory.Build.props); a distinct name lets
+         both be installed side by side. -->
+    <AssemblyName Condition="'$(ToneSnipHarness)' == 'true'">tonesnip-debug</AssemblyName>
+    <AssemblyName Condition="'$(ToneSnipHarness)' != 'true'">tonesnip</AssemblyName>
+    <RootNamespace>ToneSnip.App</RootNamespace>
+    <StartupObject>ToneSnip.App.Program</StartupObject>
+    <!-- The XAML compiler otherwise emits its own ToneSnip.App.Program.Main; ours parses the command line first. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/icon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <!-- Text input asks for the current input language; invariant globalization (set repo-wide) makes that throw. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- Stated explicitly although these are the defaults: a mostly idle tray app wants workstation GC, and RetainVM
+         off lets the large frame buffers from a snip be returned to the OS afterwards. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- resources.pri rather than <AssemblyName>.pri: an unpackaged app looks for resources.pri or <exe name>.pri, so
+         with the default a renamed exe (such as "tonesnip (1).exe") finds neither and every XAML window throws
+         XamlParseException from LoadComponent. -->
+    <ProjectPriFileName>resources.pri</ProjectPriFileName>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <!-- The harness is removed from production builds by directory: everything under Harness/ is compiled out, so the
+       shipping assembly contains none of it. The hooks it calls elsewhere carry `#if TONESNIP_HARNESS`, so an
+       unguarded call site is a production build error. -->
+  <ItemGroup Condition="'$(ToneSnipHarness)' != 'true'">
+    <Compile Remove="Harness/**/*.cs" />
+  </ItemGroup>
+
+  <!-- A wildcard that matches nothing fails silently, so a production build checks that Harness/ still holds .cs
+       files and that nothing left in @(Compile) has "Harness" in its path (which also catches harness code placed
+       outside the folder). -->
+  <Target Name="AssertHarnessRemoved" BeforeTargets="CoreCompile" Condition="'$(ToneSnipHarness)' != 'true'">
+    <ItemGroup>
+      <HarnessOnDisk Include="$(MSBuildProjectDirectory)/Harness/**/*.cs" />
+      <HarnessStillCompiled Include="@(Compile)"
+                            Condition="$([System.String]::Copy('%(Compile.Identity)').Contains('Harness'))" />
+    </ItemGroup>
+    <Error Condition="'@(HarnessOnDisk)' == ''"
+           Text="Harness/ holds no .cs files, so the &lt;Compile Remove&gt; above removed nothing. The harness has been moved or deleted; put it back under src/ToneSnip/Harness/ or this project no longer proves anything about what production contains." />
+    <Error Condition="'@(HarnessStillCompiled)' != ''"
+           Text="Harness code is in the production compilation: @(HarnessStillCompiled->'%(Identity)', ', '). Harness sources belong under src/ToneSnip/Harness/, which is removed when ToneSnipHarness is off; nothing else in this project may have 'Harness' in its path." />
+  </Target>
+  <!-- PublishSingleFile=true with a framework-dependent Windows App SDK publishes without error, then every window
+       throws XamlParseException from LoadComponent. The SDK's SingleFile.targets also warns that single-file is
+       supported only for SDK-self-contained apps; the root cause is not established. Enforced here rather than in
+       tools/publish.sh so a direct `dotnet publish` (as in CI) is covered too. The MSIX build sets
+       PublishSingleFile=false below. -->
+  <Target Name="AssertSingleFileIsWindowsAppSdkSelfContained" BeforeTargets="PrepareForBuild"
+          Condition="'$(PublishSingleFile)' == 'true' and '$(WindowsAppSDKSelfContained)' != 'true'">
+    <Error Text="PublishSingleFile=true needs WindowsAppSDKSelfContained=true: without it the app publishes but every window throws XamlParseException when it loads. Add -p:WindowsAppSDKSelfContained=true, or drop -p:PublishSingleFile=true and publish a folder." />
+  </Target>
+
+  <!-- Microsoft.WindowsAppRuntime.Insights.Resource.dll is left out of the Windows App SDK's self-contained output but
+       still loaded by AppNotificationManager.Register (2.4.0). Without it Register throws ERROR_MOD_NOT_FOUND before
+       registering the COM activator, so toast clicks and buttons never reach the app.
+       Upstream: microsoft/WindowsAppSDK#6071, fixed by #6725 but in no stable release as of 2.4.0. Once the package
+       reference carries that fix, delete this target and ToastService.PreloadInsightsResource.
+       The DLL ships only inside the framework MSIX, so it is unzipped from there; ToastService loads it by full path
+       because the SDK's bare-name load does not find it. A missing MSIX is an error, since a build without the DLL
+       would otherwise publish cleanly. -->
+  <Target Name="IncludeInsightsResourceDll" BeforeTargets="AssignTargetPaths" Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
+    <PropertyGroup>
+      <InsightsMsixArch>$(RuntimeIdentifier.Replace('win-', ''))</InsightsMsixArch>
+      <InsightsMsix>$(MicrosoftWindowsAppSDKPackageDir)tools/MSIX/win10-$(InsightsMsixArch)/Microsoft.WindowsAppRuntime.2.msix</InsightsMsix>
+      <InsightsDir>$(IntermediateOutputPath)insights/</InsightsDir>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(InsightsMsix)')"
+           Text="Cannot find $(InsightsMsix), the only source of Microsoft.WindowsAppRuntime.Insights.Resource.dll. Without it AppNotificationManager.Register throws and Windows-style toasts lose their buttons and clicks. See the comment on this target." />
+    <Unzip SourceFiles="$(InsightsMsix)" DestinationFolder="$(InsightsDir)" Include="Microsoft.WindowsAppRuntime.Insights.Resource.dll" SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(InsightsDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll')"
+           Text="$(InsightsMsix) no longer contains Microsoft.WindowsAppRuntime.Insights.Resource.dll. Check whether this Windows App SDK already carries the fix for microsoft/WindowsAppSDK#6071 before removing this target." />
+    <ItemGroup>
+      <None Include="$(InsightsDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll" Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll"
+            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <EmbeddedResource Include="../../assets/icon.ico" LogicalName="tonesnip.icon.ico" />
+    <!-- The in-app icon (title bars, About) is rasterised from the SVG at the display scale: Controls/AppIcon. -->
+    <EmbeddedResource Include="../../assets/icon.svg" LogicalName="tonesnip.icon.svg" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+    <!-- SettingsCard / SettingsExpander for the settings window. The version is the one the WinUI 3 Gallery pins
+         against Windows App SDK 2.4.0, so the pair is known to restore together. -->
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
+    <ProjectReference Include="../ToneSnip.Core/ToneSnip.Core.csproj" />
+    <ProjectReference Include="../ToneSnip.Windows/ToneSnip.Windows.csproj" />
+  </ItemGroup>
+
+  <!-- MSIX, off unless the publish asks for it: `dotnet publish -p:WindowsPackageType=MSIX
+       -p:GenerateAppxPackageOnBuild=true` (tools/publish.sh msix). The default build stays unpackaged. -->
+  <PropertyGroup>
+    <GenerateAppxPackageOnBuild Condition="'$(GenerateAppxPackageOnBuild)' == ''">false</GenerateAppxPackageOnBuild>
+    <!-- The stamped copy of packaging/Package.appxmanifest; see StampAppxManifestVersion. -->
+    <StampedAppxManifest>$(BaseIntermediateOutputPath)Package.appxmanifest</StampedAppxManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <!-- One .msix, no bundle; the package carries its own Windows App SDK and .NET, so a fresh machine needs
+         nothing installed. Signing is off unless the caller passes a PFX. -->
+    <AppxBundle>Never</AppxBundle>
+    <AppxBundlePlatforms>x64</AppxBundlePlatforms>
+    <AppxPackageSigningEnabled Condition="'$(AppxPackageSigningEnabled)' == ''">false</AppxPackageSigningEnabled>
+    <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>
+    <GenerateTestArtifacts>false</GenerateTestArtifacts>
+    <SelfContained>true</SelfContained>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <AppxManifest Include="$(StampedAppxManifest)">
+      <SubType>Designer</SubType>
+    </AppxManifest>
+    <!-- Tiles ship in the packaged build only; tonesnip.exe carries the embedded icon.ico instead. The
+         scale-NNN / targetsize-NNN variants are resolved by name convention through resources.pri, so the
+         manifest names the unqualified file (assets\tiles\Square150x150Logo.png). -->
+    <Content Include="../../assets/tiles/*.png" Link="assets\tiles\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- <Version> above is the only version number: this copies packaging/Package.appxmanifest into obj/ and sets
+       Identity/@Version to $(Version).0, so $(Version) must stay three-part. -->
+  <Target Name="StampAppxManifestVersion" BeforeTargets="PrepareForBuild" Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../../packaging/Package.appxmanifest" DestinationFiles="$(StampedAppxManifest)" />
+    <XmlPoke XmlInputPath="$(StampedAppxManifest)" Query="/d:Package/d:Identity/@Version" Value="$(Version).0"
+             Namespaces="&lt;Namespace Prefix='d' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10' /&gt;" />
+  </Target>
+</Project>
