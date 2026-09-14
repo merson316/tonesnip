@@ -62,6 +62,11 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// does not.
     /// </summary>
     public uint Accent { get; } = Theme.ThemeManager.AccentArgb;
+    /// <summary>The selection brackets' colour. Chrome, not content, but read once like <see cref="Accent"/>: the
+    /// windows build their brush when they are created.</summary>
+    public uint FrameAccent { get; } = Theme.ThemeManager.OverlayAccentArgb;
+    /// <summary>The selection frame from Settings, as the snip started.</summary>
+    public FrameStyle FrameStyle { get; } = FrameStyles.Parse(settings.SelectionFrame);
     public bool AnyHdr => _outputs.Any(o => o.Half != null);
     /// <summary>True in the "annotate" flow once a selection exists: the bar shows Done and Enter saves.</summary>
     public bool ShowDone => _annotating && !_pendingSelection.IsEmpty;
@@ -295,7 +300,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
             (settings.SdrWhiteNits ?? o.Info.SdrWhiteNits) / 80f, settings.Exposure * edit.Doc.Exposure, painted);
     }
 
-    /// <summary>The cursor pill: the selection's size, and the luminance readout on an HDR monitor.</summary>
+    /// <summary>The cursor readout: the selection's size and the nits (Normal), the nits alone (Viewfinder, whose size is
+    /// on its chip), or the cursor's coordinates and the nits under the loupe (Guides).</summary>
     /// <param name="monitor">The window asking; the pill belongs to whichever monitor the cursor is on.</param>
     public string? PillText(IntRect monitor)
     {
@@ -307,17 +313,37 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         return _pillText = BuildPillText();
     }
 
+    private string? BuildPillText()
+    {
+        string? nits = NitsText();
+        switch (FrameStyle)
+        {
+            case FrameStyle.Viewfinder: return nits;
+            case FrameStyle.Guides: return nits == null ? $"{Cursor.X}, {Cursor.Y}" : $"{Cursor.X}, {Cursor.Y}  ·  {nits}";
+            default:
+                IntRect sel = Selection.IsEmpty ? Hover : Selection;
+                string? size = sel.IsEmpty ? null : $"{sel.Width} × {sel.Height}";
+                return nits == null ? size : size == null ? nits : size + "   " + nits;
+        }
+    }
+
     private (int, int, IntRect, IntRect, bool)? _pillKey;
     private string? _pillText;
 
-    private string? BuildPillText()
+    /// <summary>The frame's size chip. Asked on every paint, so the string is kept until the rectangle changes.</summary>
+    public string? SelectionLabel
     {
-        IntRect sel = Selection.IsEmpty ? Hover : Selection;
-        string? text = sel.IsEmpty ? null : $"{sel.Width} × {sel.Height}";
-        string? nits = NitsText();
-        if (nits != null) text = text == null ? nits : text + "   " + nits;
-        return text;
+        get
+        {
+            IntRect sel = Selection.IsEmpty ? Hover : Selection;
+            if (sel.IsEmpty || FrameStyle == FrameStyle.Normal) return null;
+            if (sel != _labelFor) { _labelFor = sel; _label = $"{sel.Width} × {sel.Height}"; }
+            return _label;
+        }
     }
+
+    private IntRect _labelFor = IntRect.Empty;
+    private string? _label;
 
     /// <summary>
     /// An overlay window took the foreground. It becomes the window <see cref="RefocusOverlay"/> returns focus to, and

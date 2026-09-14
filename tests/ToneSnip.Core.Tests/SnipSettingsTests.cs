@@ -85,6 +85,27 @@ public class SnipSettingsTests
     }
 
     [Fact]
+    public void SelectionFrame_defaults_to_normal_and_is_sanitised()
+    {
+        Assert.Equal("normal", new SnipSettings().SelectionFrame);
+        Assert.Equal(new[] { "normal", "viewfinder", "guides" }, SnipSettings.SelectionFrames);
+        SnipSettings s = new SnipSettings { SelectionFrame = "Viewfinder" }.Sanitized(out _);
+        Assert.Equal("viewfinder", s.SelectionFrame);
+        SnipSettings bad = new SnipSettings { SelectionFrame = "marching-ants" }.Sanitized(out List<string> fixes);
+        Assert.Equal("normal", bad.SelectionFrame);
+        Assert.Contains(fixes, f => f.Contains("selectionFrame"));
+    }
+
+    [Theory]
+    [InlineData("normal", ToneSnip.Core.Capture.FrameStyle.Normal)]
+    [InlineData("viewfinder", ToneSnip.Core.Capture.FrameStyle.Viewfinder)]
+    [InlineData("GUIDES", ToneSnip.Core.Capture.FrameStyle.Guides)]
+    [InlineData("nonsense", ToneSnip.Core.Capture.FrameStyle.Normal)]
+    [InlineData(null, ToneSnip.Core.Capture.FrameStyle.Normal)]
+    public void The_stored_frame_names_map_to_their_styles(string? name, ToneSnip.Core.Capture.FrameStyle style)
+        => Assert.Equal(style, ToneSnip.Core.Capture.FrameStyles.Parse(name));
+
+    [Fact]
     public void Notification_style_defaults_to_the_ToneSnip_card_and_is_sanitised()
     {
         // The card needs no registration; "windows" uses AppNotificationManager and lands in the notification centre.
@@ -317,7 +338,8 @@ public class SnipSettingsNullFieldTests
     // System.Text.Json writes a null from a hand-edited file straight into a non-nullable property; loading must not throw.
     [Theory]
     [InlineData("hotkeys"), InlineData("tonemap"), InlineData("format"), InlineData("notification"), InlineData("afterSelect"),
-     InlineData("annotate"), InlineData("theme"), InlineData("recentFlyoutLayout"), InlineData("trayIcon"), InlineData("hdr")]
+     InlineData("annotate"), InlineData("theme"), InlineData("recentFlyoutLayout"), InlineData("trayIcon"), InlineData("hdr"),
+     InlineData("selectionFrame")]
     public void A_null_field_loads_as_its_default_and_says_so(string field)
     {
         string p = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N") + ".json");
@@ -334,6 +356,7 @@ public class SnipSettingsNullFieldTests
             Assert.Equal(defaults.Annotate, s.Annotate);
             Assert.Equal(defaults.Theme, s.Theme);
             Assert.Equal(defaults.RecentFlyoutLayout, s.RecentFlyoutLayout);
+            Assert.Equal(defaults.SelectionFrame, s.SelectionFrame);
             Assert.Equal(defaults.TrayIcon, s.TrayIcon);
             Assert.Equal(defaults.Hdr, s.Hdr);
             Assert.NotNull(err);

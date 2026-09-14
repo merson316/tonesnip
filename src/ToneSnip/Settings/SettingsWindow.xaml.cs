@@ -176,7 +176,14 @@ public partial class SettingsWindow : Window
         // Matched by each radio's Tag rather than by position in FlyoutLayouts.
         bool grid = LayoutValue(LayoutGrid).Equals(s.RecentFlyoutLayout, StringComparison.OrdinalIgnoreCase);
         LayoutGrid.IsChecked = grid; LayoutRow.IsChecked = !grid;
+        // Also by Tag; the sanitised setting always names one of them, and Normal stands in if it somehow does not.
+        RadioButton[] frames = FrameRadios();
+        RadioButton frame = frames.FirstOrDefault(r => string.Equals(r.Tag as string, s.SelectionFrame, StringComparison.OrdinalIgnoreCase)) ?? FrameNormal;
+        foreach (RadioButton r in frames) r.IsChecked = r == frame;
     }
+
+    /// <summary>The selection frame radios, in the order Settings shows them.</summary>
+    private RadioButton[] FrameRadios() => new[] { FrameNormal, FrameViewfinder, FrameGuides };
 
     private void LoadHotkeys(SnipSettings s)
     {
@@ -245,6 +252,7 @@ public partial class SettingsWindow : Window
                 Annotate = s.Annotate with { PrivacyMode = PrivacyMode.IsOn, ClipToLasso = ClipToLasso.IsOn },
                 DeleteToRecycleBin = DeleteToRecycleBin.IsOn,
                 RecentFlyoutLayout = LayoutValue(LayoutGrid.IsChecked == true ? LayoutGrid : LayoutRow),
+                SelectionFrame = FrameRadios().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? s.SelectionFrame,
             };
         if (_realised[HotkeysPage])
             s = s with
@@ -285,14 +293,15 @@ public partial class SettingsWindow : Window
     private static string TagOf(ComboBox box, string fallback)
         => (box.SelectedItem as ComboBoxItem)?.Tag as string ?? fallback;
 
-    /// <summary>The setting value a layout radio stands for; its Content carries the label.</summary>
+    /// <summary>The setting value a Recent flyout layout radio stands for; its Content carries the label.</summary>
     private static string LayoutValue(RadioButton radio) => radio.Tag as string ?? SnipSettings.FlyoutLayouts[0];
 
     private void OnComboChanged(object sender, SelectionChangedEventArgs e) => OnChanged();
     private void OnToggleChanged(object sender, RoutedEventArgs e) => OnChanged();
     private void OnSliderChanged(object sender, RangeBaseValueChangedEventArgs e) => OnChanged();
     private void OnNumberChanged(NumberBox sender, NumberBoxValueChangedEventArgs e) => OnChanged();
-    private void OnLayoutChecked(object sender, RoutedEventArgs e) => OnChanged();
+    /// <summary>A card in either picker (Recent flyout layout, selection frame) was chosen.</summary>
+    private void OnPickerChecked(object sender, RoutedEventArgs e) => OnChanged();
 
     private void OnChanged()
     {

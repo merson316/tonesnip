@@ -1,3 +1,4 @@
+using ToneSnip.Core.Capture;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
 
@@ -27,8 +28,16 @@ public interface IOverlayHost
     /// <summary>True once an annotation document exists, so the annotated back buffer replaces the frozen frame.</summary>
     bool HasDocument { get; }
 
-    /// <summary>The cursor pill's text for one monitor (size, nits), or null for no pill.</summary>
+    /// <summary>The cursor readout for one monitor, or null for none: in the pill (Normal: size and nits; Viewfinder:
+    /// nits) or under the loupe (Guides: coordinates and nits).</summary>
     string? PillText(IntRect monitor);
+    /// <summary>The size chip's text for the current selection (or hover), or null for no chip (nothing selected, or
+    /// the Normal frame, whose size is in the pill).</summary>
+    string? SelectionLabel { get; }
+    /// <summary>The selection frame to paint; read once, when a window is created.</summary>
+    FrameStyle FrameStyle { get; }
+    /// <summary>The selection brackets' colour, 0xAARRGGBB; read once, when a window is created.</summary>
+    uint FrameAccent { get; }
 
     void OnMouseMove(int x, int y);
     void OnMouseDown(int x, int y);

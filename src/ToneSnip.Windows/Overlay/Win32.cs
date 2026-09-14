@@ -71,6 +71,9 @@ public static class Win32
     [DllImport("user32.dll")] internal static extern IntPtr SetCursor(IntPtr cursor);
     [DllImport("user32.dll")] internal static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(IntPtr hwnd);
+    /// <summary>Copies the window's update region into <paramref name="rgn"/>; returns its type (3 = COMPLEXREGION).</summary>
+    [DllImport("user32.dll")] internal static extern int GetUpdateRgn(IntPtr hwnd, IntPtr rgn, bool erase);
     [DllImport("user32.dll")] private static extern short GetKeyState(int vk);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);

@@ -33,6 +33,11 @@ public static class ThemeManager
     /// <summary>The unshaded system accent (<c>UIColorType.Accent</c>), for the tray glyph: the taskbar is not an app
     /// surface, so it does not take the dark-theme shade of <see cref="AccentArgb"/>.</summary>
     public static uint SystemAccentArgb { get; private set; } = 0xFF0078D4;
+
+    /// <summary>The dark-theme shade of the accent (<c>UIColorType.AccentLight2</c>) whatever the app theme, for the
+    /// snip overlay's selection brackets: they always sit on a dimmed desktop, where the light-theme shade is too dark.
+    /// In a contrast theme, the theme's highlight colour instead.</summary>
+    public static uint OverlayAccentArgb { get; private set; } = 0xFF60CDFF;
     /// <summary>Windows "Show animations"; true when unreadable. The app's own transitions are skipped when false.
     /// UISettings raises no event for it, so it is re-read only on ColorValuesChanged.</summary>
     public static bool AnimationsEnabled { get; internal set; } = true;
@@ -119,6 +124,9 @@ public static class ThemeManager
         IsDark = mode == "dark" || (mode == "auto" && SystemPrefersDark());
         AccentArgb = SystemAccent(IsDark);
         SystemAccentArgb = SystemAccent(dark: false);
+        OverlayAccentArgb = IsHighContrast
+            ? global::ToneSnip.Windows.SystemTheme.SysColorArgb(global::ToneSnip.Windows.SystemTheme.ColorHighlight)
+            : SystemAccent(dark: true);
         // ColorValuesChanged arrives off the UI thread and a brush belongs to the thread that made it.
         if (Application.Current is App app) app.RunOnUi(ApplyAccentTokens);
         Changed?.Invoke();

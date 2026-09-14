@@ -43,9 +43,13 @@ internal static class Gdi
     [DllImport("gdi32.dll")] internal static extern uint SetTextColor(IntPtr dc, uint color);
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] internal static extern bool GetTextExtentPoint32W(IntPtr dc, string text, int length, out Size size);
     [DllImport("gdi32.dll")] internal static extern bool SelectClipRgn(IntPtr dc, IntPtr region);
+    [DllImport("gdi32.dll")] internal static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+    /// <summary>The region as an RGNDATA header plus RECTs; 0 when <paramref name="size"/> bytes are too few.</summary>
+    [DllImport("gdi32.dll")] internal static extern unsafe uint GetRegionData(IntPtr region, uint size, byte* data);
     [DllImport("gdi32.dll")] internal static extern int IntersectClipRect(IntPtr dc, int left, int top, int right, int bottom);
     /// <summary>Completes GDI's batched drawing before the DIB section's bytes are touched directly (and after).</summary>
     [DllImport("gdi32.dll")] internal static extern bool GdiFlush();
+    [DllImport("user32.dll")] internal static extern int FillRect(IntPtr dc, ref Win32.Rect rect, IntPtr brush);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int DrawTextW(IntPtr dc, string text, int length, ref Win32.Rect rect, uint format);
 
     [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; }
@@ -53,6 +57,7 @@ internal static class Gdi
     internal const uint SrcCopy = 0x00CC0020;
     internal const int PsSolid = 0, NullBrush = 5, NullPen = 8, TransparentBk = 1, DefaultCharSet = 1, ClearTypeQuality = 5;
     internal const uint DtLeft = 0x0000, DtTop = 0x0000, DtSingleLine = 0x0020, DtNoPrefix = 0x0800;
+    internal const int FwNormal = 400, FwSemibold = 600;
 
     /// <summary>A top-down 32-bpp BI_RGB DIB section and the pointer to its pixels; the stride is always width * 4.</summary>
     internal static IntPtr CreateDib(IntPtr referenceDc, int width, int height, out IntPtr bits)
@@ -84,7 +89,11 @@ internal static class Gdi
     /// <summary>
     /// Darkens <paramref name="area"/> in place by 40 % (a 0x66-alpha black fill), without touching alpha.
     /// </summary>
-    internal static unsafe void Darken(byte* bits, int widthPixels, IntRect area)
+    internal static unsafe void Darken(byte* bits, int widthPixels, IntRect area) => Shade(bits, widthPixels, area, keep: 153);
+
+    /// <summary>Scales <paramref name="area"/>'s colour channels in place to <paramref name="keep"/>/255 (0 is black),
+    /// without touching alpha.</summary>
+    internal static unsafe void Shade(byte* bits, int widthPixels, IntRect area, int keep)
     {
         if (area.IsEmpty) return;
         for (int y = area.Top; y < area.Bottom; y++)
@@ -92,10 +101,58 @@ internal static class Gdi
             byte* p = bits + ((long)y * widthPixels + area.Left) * 4;
             for (int x = 0; x < area.Width; x++, p += 4)
             {
-                p[0] = (byte)((p[0] * 153 + 127) / 255);
-                p[1] = (byte)((p[1] * 153 + 127) / 255);
-                p[2] = (byte)((p[2] * 153 + 127) / 255);
+                p[0] = (byte)((p[0] * keep + 127) / 255);
+                p[1] = (byte)((p[1] * keep + 127) / 255);
+                p[2] = (byte)((p[2] * keep + 127) / 255);
             }
+        }
+    }
+
+    /// <summary>Lifts <paramref name="area"/> in place towards white by <paramref name="amount"/>/255 (255 is white), as
+    /// a white fill of that alpha would, without touching alpha.</summary>
+    internal static unsafe void Tint(byte* bits, int widthPixels, IntRect area, int amount)
+    {
+        if (area.IsEmpty) return;
+        for (int y = area.Top; y < area.Bottom; y++)
+        {
+            byte* p = bits + ((long)y * widthPixels + area.Left) * 4;
+            for (int x = 0; x < area.Width; x++, p += 4)
+            {
+                p[0] = (byte)(p[0] + ((255 - p[0]) * amount + 127) / 255);
+                p[1] = (byte)(p[1] + ((255 - p[1]) * amount + 127) / 255);
+                p[2] = (byte)(p[2] + ((255 - p[2]) * amount + 127) / 255);
+            }
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Tint"/> in dashes of <paramref name="dash"/> pixels on and off along a guide line. The pattern is
+    /// counted from the buffer's own origin, so a moving line's dashes do not crawl.
+    /// </summary>
+    internal static unsafe void TintDashed(byte* bits, int widthPixels, IntRect area, int dash, bool horizontal, int amount)
+    {
+        if (area.IsEmpty || dash <= 0) return;
+        for (int y = area.Top; y < area.Bottom; y++)
+        {
+            byte* p = bits + ((long)y * widthPixels + area.Left) * 4;
+            for (int x = area.Left; x < area.Right; x++, p += 4)
+            {
+                if (((horizontal ? x : y) / dash & 1) != 0) continue;
+                p[0] = (byte)(p[0] + ((255 - p[0]) * amount + 127) / 255);
+                p[1] = (byte)(p[1] + ((255 - p[1]) * amount + 127) / 255);
+                p[2] = (byte)(p[2] + ((255 - p[2]) * amount + 127) / 255);
+            }
+        }
+    }
+
+    /// <summary>Fills <paramref name="area"/> with one BGRA pixel (a magnified loupe cell).</summary>
+    internal static unsafe void Fill(byte* bits, int widthPixels, IntRect area, uint bgra)
+    {
+        if (area.IsEmpty) return;
+        for (int y = area.Top; y < area.Bottom; y++)
+        {
+            uint* p = (uint*)(bits + ((long)y * widthPixels + area.Left) * 4);
+            for (int x = 0; x < area.Width; x++) p[x] = bgra;
         }
     }
 }

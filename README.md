@@ -13,6 +13,9 @@ highlights are compressed. What you paste looks like what you saw.
 - **Snips:** rectangle, window, full-screen and freeform, over a frozen preview of every monitor. A toolbar switches
   mode mid-snip and sets a 3, 5 or 10 second delay. A selection can span monitors, mixing HDR and SDR displays.
 - **Nits readout** on HDR monitors: luminance under the cursor, plus peak and mean inside the selection.
+- **Selection frame**, picked in Settings: Normal (an outline, with the size and nits beside the cursor), Viewfinder
+  (accent corner brackets and a size label), or Guides (the selection's edges carried across the monitor, and a pixel
+  loupe by the cursor showing its coordinates and nits).
 - **Tonemapping:** three curves (a hue-preserving desktop clip with an optional BT.2390 knee, Hable, ACES), exposure,
   per-monitor SDR white detection and optional auto exposure per snip. On HDR snips, exposure stays live in the
   overlay and in the save-then-edit flow, with a zebra overlay showing what clips.

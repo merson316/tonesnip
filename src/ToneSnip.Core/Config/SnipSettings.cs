@@ -55,6 +55,8 @@ public sealed record SnipSettings
     public static readonly int[] Delays = { 0, 3, 5, 10 };
     public static readonly string[] HdrFiles = { "none", "jxr", "png", "jpeg" };
     public static readonly string[] FlyoutLayouts = { "row", "grid" };
+    /// <summary>The overlay's selection frame, in the order Settings shows them; see <see cref="Capture.FrameStyle"/>.</summary>
+    public static readonly string[] SelectionFrames = { "normal", "viewfinder", "guides" };
     /// <summary>How the notification-area icon is drawn: the full-colour app icon, a monochrome glyph that follows the
     /// taskbar's own light/dark setting, or the glyph in the Windows accent colour.</summary>
     public static readonly string[] TrayIcons = { "colour", "mono", "accent" };
@@ -87,6 +89,8 @@ public sealed record SnipSettings
     public string Theme { get; init; } = "auto";
     /// <summary>How the recent-snips flyout lists its snips: row | grid. A change applies the next time it opens.</summary>
     public string RecentFlyoutLayout { get; init; } = "row";
+    /// <summary>normal | viewfinder | guides. Normal is the default: the outline 1.0.1 had. A change applies to the next snip.</summary>
+    public string SelectionFrame { get; init; } = "normal";
     /// <summary>colour | mono | accent. Monochrome is the default: the Windows 11 convention for a tray glyph.</summary>
     public string TrayIcon { get; init; } = "mono";
     public bool ShowNitsReadout { get; init; } = true;
@@ -160,6 +164,7 @@ public sealed record SnipSettings
             Annotate = Or(s.Annotate, d.Annotate, "annotate"),
             Theme = Or(s.Theme, d.Theme, "theme"),
             RecentFlyoutLayout = Or(s.RecentFlyoutLayout, d.RecentFlyoutLayout, "recentFlyoutLayout"),
+            SelectionFrame = Or(s.SelectionFrame, d.SelectionFrame, "selectionFrame"),
             TrayIcon = Or(s.TrayIcon, d.TrayIcon, "trayIcon"),
             Hdr = Or(s.Hdr, d.Hdr, "hdr"),
         };
@@ -201,6 +206,8 @@ public sealed record SnipSettings
         else s = s with { Theme = s.Theme.ToLowerInvariant() };
         if (!FlyoutLayouts.Contains(s.RecentFlyoutLayout.ToLowerInvariant())) { fixes.Add($"recentFlyoutLayout '{s.RecentFlyoutLayout}' -> row"); s = s with { RecentFlyoutLayout = "row" }; }
         else s = s with { RecentFlyoutLayout = s.RecentFlyoutLayout.ToLowerInvariant() };
+        if (!SelectionFrames.Contains(s.SelectionFrame.ToLowerInvariant())) { fixes.Add($"selectionFrame '{s.SelectionFrame}' -> normal"); s = s with { SelectionFrame = "normal" }; }
+        else s = s with { SelectionFrame = s.SelectionFrame.ToLowerInvariant() };
         if (!TrayIcons.Contains(s.TrayIcon.ToLowerInvariant())) { fixes.Add($"trayIcon '{s.TrayIcon}' -> mono"); s = s with { TrayIcon = "mono" }; }
         else s = s with { TrayIcon = s.TrayIcon.ToLowerInvariant() };
         if (!Notifications.Contains(s.Notification.ToLowerInvariant())) { fixes.Add($"notification '{s.Notification}' -> tonesnip"); s = s with { Notification = "tonesnip" }; }

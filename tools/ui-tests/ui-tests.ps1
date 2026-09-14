@@ -493,6 +493,18 @@ if (Should-Run 'settings') {
             Write-Host "        after tab, get-focused says: $(($f -replace '\s+',' ').Trim())" -ForegroundColor DarkGray
             if ($f -match 'Settings_LayoutGrid') { throw "Tab moved inside the picker (landed on Settings_LayoutGrid): it is two tab stops, not one" }
         }
+
+        # --- the selection frame picker: each frame reads back as selected, ending on Normal (the default)
+        Test-UI "settings: FrameViewfinder / FrameGuides / FrameNormal round-trip" {
+            foreach ($frame in 'Settings_FrameViewfinder', 'Settings_FrameGuides', 'Settings_FrameNormal') {
+                winapp ui invoke $frame -a $id
+                if ($LASTEXITCODE -ne 0) { throw "could not select $frame" }
+                Start-Sleep -Milliseconds 400
+                winapp ui wait-for $frame -a $id -p IsSelected --value 'True' -t 3000
+                if ($LASTEXITCODE -ne 0) { winapp ui wait-for $frame -a $id -p ToggleState --value 'On' -t 3000 }
+                if ($LASTEXITCODE -ne 0) { throw "$frame did not read back as selected" }
+            }
+        }
         Note-DeadId $id 'Settings_LayoutPicker' 'settings'
 
         # --- hover a card, then get the pointer out of the window

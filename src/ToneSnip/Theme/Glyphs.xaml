@@ -61,6 +61,7 @@
   <x:String x:Key="GlyphStartWithWindows">&#xE7E8;</x:String>
   <x:String x:Key="GlyphNitsReadout">&#xE793;</x:String>
   <x:String x:Key="GlyphAfterSelect">&#xE8FF;</x:String>
+  <x:String x:Key="GlyphSelectionFrame">&#xF407;</x:String>
   <x:String x:Key="GlyphPrivacyMode">&#xEA18;</x:String>
   <x:String x:Key="GlyphAllMonitors">&#xE7F4;</x:String>
   <x:String x:Key="GlyphActiveWindow">&#xE7C4;</x:String>

@@ -79,7 +79,7 @@
 
                   <RadioButton x:Name="LayoutRow" Style="{StaticResource LayoutOption}" Tag="row" Content="Row"
                                AutomationProperties.Name="Row" AutomationProperties.AutomationId="Settings_LayoutRow"
-                               Checked="OnLayoutChecked">
+                               Checked="OnPickerChecked">
                    <RadioButton.ContentTemplate><DataTemplate>
                     <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
                             BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
@@ -111,7 +111,7 @@
                   </RadioButton>
                   <RadioButton x:Name="LayoutGrid" Style="{StaticResource LayoutOption}" Tag="grid" Content="Grid"
                                AutomationProperties.Name="Grid" AutomationProperties.AutomationId="Settings_LayoutGrid"
-                               Checked="OnLayoutChecked">
+                               Checked="OnPickerChecked">
                    <RadioButton.ContentTemplate><DataTemplate>
                     <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
                             BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
@@ -132,6 +132,94 @@
                           <Rectangle Grid.Row="1" Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
                         </Grid>
                       </StackPanel>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+                </RadioButtons>
+              </toolkit:SettingsCard>
+
+              <!-- The three selection frames, drawn as schematics of a selection with its frame, the same way as the
+                   Recent flyout layouts above. Order is Normal, Viewfinder, Guides. A label must fit under its 112 px
+                   schematic, like "Row" and "Grid": RadioButtons sizes every column to its widest item, so one long
+                   label widens all three tiles and they stop matching the Recent flyout row. -->
+              <toolkit:SettingsCard Header="Selection frame" Description="How a snip marks what you are selecting.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSelectionFrame}"/></toolkit:SettingsCard.HeaderIcon>
+                <RadioButtons x:Name="FramePicker" MaxColumns="3" AutomationProperties.Name="Selection frame"
+                              AutomationProperties.AutomationId="Settings_FramePicker">
+                  <!-- Tag is the stored setting value. Each schematic is a 110 x 62 canvas: the selection at (26, 16),
+                       58 x 32, with the cursor at its bottom-right corner. -->
+
+                  <RadioButton x:Name="FrameNormal" Style="{StaticResource LayoutOption}" Tag="normal" Content="Normal"
+                               AutomationProperties.Name="Normal" AutomationProperties.AutomationId="Settings_FrameNormal"
+                               Checked="OnPickerChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <Canvas Width="110" Height="62">
+                        <!-- A plain outline, and the size and nits in a pill beside the cursor. -->
+                        <Rectangle Canvas.Left="25" Canvas.Top="15" Width="60" Height="34" Stroke="{ThemeResource TextDisabled}" StrokeThickness="1"/>
+                        <Rectangle Canvas.Left="26" Canvas.Top="16" Width="58" Height="32" Fill="{ThemeResource SurfaceLayer}"
+                                   Stroke="{ThemeResource TextPrimary}" StrokeThickness="1"/>
+                        <Rectangle Canvas.Left="81" Canvas.Top="47" Width="7" Height="1" Fill="{ThemeResource TextPrimary}"/>
+                        <Rectangle Canvas.Left="84" Canvas.Top="44" Width="1" Height="7" Fill="{ThemeResource TextPrimary}"/>
+                        <Rectangle Canvas.Left="87" Canvas.Top="52" Width="21" Height="7" RadiusX="3.5" RadiusY="3.5" Fill="{ThemeResource TextSecondary}"/>
+                      </Canvas>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+
+                  <RadioButton x:Name="FrameViewfinder" Style="{StaticResource LayoutOption}" Tag="viewfinder" Content="Viewfinder"
+                               AutomationProperties.Name="Viewfinder" AutomationProperties.AutomationId="Settings_FrameViewfinder"
+                               Checked="OnPickerChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <Canvas Width="110" Height="62">
+                        <!-- A hairline edge, accent brackets just outside the corners, and the size above the top left. -->
+                        <Rectangle Canvas.Left="26" Canvas.Top="16" Width="58" Height="32" Fill="{ThemeResource SurfaceLayer}"
+                                   Stroke="{ThemeResource TextDisabled}" StrokeThickness="1"/>
+                        <Rectangle Canvas.Left="24" Canvas.Top="14" Width="9" Height="2" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="24" Canvas.Top="14" Width="2" Height="9" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="77" Canvas.Top="14" Width="9" Height="2" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="84" Canvas.Top="14" Width="2" Height="9" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="24" Canvas.Top="48" Width="9" Height="2" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="24" Canvas.Top="41" Width="2" Height="9" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="77" Canvas.Top="48" Width="9" Height="2" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="84" Canvas.Top="41" Width="2" Height="9" Fill="{ThemeResource Accent}"/>
+                        <Rectangle Canvas.Left="24" Canvas.Top="5" Width="24" Height="6" RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource TextSecondary}"/>
+                      </Canvas>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+
+                  <RadioButton x:Name="FrameGuides" Style="{StaticResource LayoutOption}" Tag="guides" Content="Guides"
+                               AutomationProperties.Name="Guides" AutomationProperties.AutomationId="Settings_FrameGuides"
+                               Checked="OnPickerChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <Canvas Width="110" Height="62">
+                        <!-- Dashed guides carrying the edges across, a white edge, a pixel loupe with its readout, and
+                             the size below the bottom right. -->
+                        <Line X1="0" Y1="16.5" X2="110" Y2="16.5" Stroke="{ThemeResource TextDisabled}" StrokeThickness="1" StrokeDashArray="2,2"/>
+                        <Line X1="0" Y1="47.5" X2="110" Y2="47.5" Stroke="{ThemeResource TextDisabled}" StrokeThickness="1" StrokeDashArray="2,2"/>
+                        <Line X1="26.5" Y1="0" X2="26.5" Y2="62" Stroke="{ThemeResource TextDisabled}" StrokeThickness="1" StrokeDashArray="2,2"/>
+                        <Line X1="83.5" Y1="0" X2="83.5" Y2="62" Stroke="{ThemeResource TextDisabled}" StrokeThickness="1" StrokeDashArray="2,2"/>
+                        <Rectangle Canvas.Left="26" Canvas.Top="16" Width="58" Height="32" Fill="{ThemeResource SurfaceLayer}"
+                                   Stroke="{ThemeResource TextPrimary}" StrokeThickness="1"/>
+                        <Border Canvas.Left="89" Canvas.Top="21" Width="17" Height="17" Background="{ThemeResource SurfaceBase}"
+                                BorderBrush="{ThemeResource TextPrimary}" BorderThickness="1">
+                          <Canvas Width="15" Height="15">
+                            <Rectangle Width="5" Height="5" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Canvas.Left="10" Width="5" Height="5" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Canvas.Top="10" Width="5" Height="5" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Canvas.Left="10" Canvas.Top="10" Width="5" Height="5" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Canvas.Left="5" Canvas.Top="5" Width="5" Height="5" Stroke="{ThemeResource Accent}" StrokeThickness="1"/>
+                          </Canvas>
+                        </Border>
+                        <Rectangle Canvas.Left="87" Canvas.Top="41" Width="21" Height="5" RadiusX="2.5" RadiusY="2.5" Fill="{ThemeResource TextSecondary}"/>
+                        <Rectangle Canvas.Left="62" Canvas.Top="52" Width="22" Height="6" RadiusX="1.5" RadiusY="1.5" Fill="{ThemeResource TextSecondary}"/>
+                      </Canvas>
                     </Border>
                    </DataTemplate></RadioButton.ContentTemplate>
                   </RadioButton>
