@@ -1,6 +1,7 @@
 using ToneSnip.Core.Capture;
 using ToneSnip.Core.Config;
 using ToneSnip.Core.Diagnostics;
+using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Core.Tonemap;
 using ToneSnip.Windows.Capture;
@@ -36,12 +37,22 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     /// <summary>Bytes held by the pooled frame buffers.</summary>
     public long PooledBytes => _pool.Bytes;
 
+    /// <summary>How long the idle release waits for a grab in progress before leaving the device for the next
+    /// release. A grab that has not let go by then is stuck, and waiting on it would park the thread for good.</summary>
+    private const int ReleaseWaitMs = 2000;
+    /// <summary>How long <see cref="Dispose"/> waits for a grab in progress. The process is exiting, which frees the
+    /// device anyway, so Quit and the end of the Windows session must not hang behind a stuck grab.</summary>
+    private const int DisposeWaitMs = 250;
+
     /// <summary>Releases the pooled buffers and the capture device. The next grab allocates both again; a session
-    /// still holding old buffers keeps them alive until it lets go.</summary>
+    /// still holding old buffers keeps them alive until it lets go. The device is kept, with a warning, while a grab
+    /// holds it past <see cref="ReleaseWaitMs"/>.</summary>
     public void ReleaseBuffers()
     {
         _pool.Clear();
-        lock (_grabGate) _capture.ReleaseDevice();
+        if (!Monitor.TryEnter(_grabGate, ReleaseWaitMs)) { log.Warn("capture: the graphics device was not released, a grab is still running"); return; }
+        try { _capture.ReleaseDevice(); }
+        finally { Monitor.Exit(_grabGate); }
     }
 
     /// <summary>The overlay window's annotated copy of one output's frame, pooled like the frame itself.</summary>
@@ -67,8 +78,7 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
 
     private static List<OutputInfo> Describe(IReadOnlyList<OutputHandle> handles)
     {
-        return handles.Select((h, i) => new OutputInfo(i, h.DeviceName, h.Left, h.Top, h.Width, h.Height, FrameFormats.QuarterTurns(h.Rotation),
-            h.Hdr, h.SdrWhiteNits, h.MaxLuminance, h.FriendlyName)).ToList();
+        return handles.Select((h, i) => new OutputInfo(i, h.DeviceName, h.Left, h.Top, h.Width, h.Height, h.Hdr, h.SdrWhiteNits, h.MaxLuminance, h.FriendlyName)).ToList();
     }
 
     /// <summary>One frame of every monitor, as the snip's overlay and result need them.</summary>
@@ -83,7 +93,9 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
             if (outputs.Count == 0) throw new InvalidOperationException("no monitors found");
             _pool.BeginGrab();
             var captured = new CapturedOutput?[outputs.Count];
-            string?[] reasons = _capture.Capture(handles, (i, data, pitch, w, h, format) => captured[i] = Convert(data, pitch, w, h, format, outputs[i]), FrameTimeoutMs);
+            var copies = new CopyState[outputs.Count];
+            for (int i = 0; i < copies.Length; i++) copies[i] = new CopyState();
+            string?[] reasons = _capture.Capture(handles, (i, data, pitch, w, h, format) => Convert(data, pitch, w, h, format, outputs[i], copies[i], c => captured[i] = c), FrameTimeoutMs);
             var result = new List<CapturedOutput>(outputs.Count);
             var fallbacks = new List<string>();
             for (int i = 0; i < outputs.Count; i++)
@@ -93,8 +105,18 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
                 if (c == null)
                 {
                     log.Warn($"{o.DeviceName}: using GDI ({reasons[i] ?? "the frame did not match the monitor"})");
+                    bool stillCopying = reasons[i] == ScreenCapture.StillCopyingReason;
+                    if (stillCopying)
+                    {
+                        // The copy, or its tonemap, may still be running and may write into the buffers it was
+                        // given. They leave the pool, so the next grab does not get them, and the copy may not ask
+                        // for more (an idle release could have emptied the pool by the time it does).
+                        lock (copies[i]) copies[i].Abandoned = true;
+                        _pool.DropBgra(o.Index, FramePool.Frame);
+                    }
+                    _pool.DropHalf(o.Index, FramePool.Frame);   // an HDR copy that began and failed asked for one
                     // An unfinished copy may still be writing this output's pooled buffer, so GDI gets its own.
-                    BgraImage sdr = reasons[i] == ScreenCapture.StillCopyingReason
+                    BgraImage sdr = stillCopying
                         ? BgraImage.Blank(o.Width, o.Height)
                         : _pool.Bgra(o.Index, FramePool.Frame, o.Width, o.Height);
                     GdiCapture.CaptureBgra8Into(o.Bounds, sdr.Data);
@@ -113,33 +135,61 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     }
 
     /// <summary>
-    /// Copies one monitor's mapped frame (desktop orientation) into pooled buffers: fp16 becomes a half image plus its
-    /// tonemapped SDR copy, BGRA8 is copied as is. Null when the frame size does not match the monitor (a mode change
-    /// mid-grab), so the grab falls back to GDI.
+    /// Copies one monitor's mapped frame (desktop orientation) into pooled buffers and hands the result to
+    /// <paramref name="done"/>: fp16 becomes a half image plus its tonemapped SDR copy, BGRA8 is copied as is. Nothing
+    /// is handed over when the frame size does not match the monitor (a mode change mid-grab), so the grab falls back
+    /// to GDI.
+    /// <para>Runs with the capture device locked and the frame mapped, so for fp16 only the copy happens here; the
+    /// tonemap, which reads just the half copy, is returned for <see cref="ScreenCapture"/> to run once the device is
+    /// free, so a second monitor's copy does not wait behind it.</para>
+    /// <para>A copy that runs past the grab's wait (<see cref="ScreenCapture.StillCopyingReason"/>) is abandoned by
+    /// <see cref="GrabAll"/> through <paramref name="copy"/>. Both buffers are taken from the pool here, under that
+    /// state's lock, so a late copy never adds a buffer to the pool after the grab has ended; the tonemap writes only
+    /// into the buffer it was given, which the abandoning grab has taken out of the pool, and is skipped once
+    /// abandoned.</para>
     /// </summary>
-    private CapturedOutput? Convert(IntPtr data, int rowPitch, int width, int height, Format format, OutputInfo o)
+    private Action? Convert(IntPtr data, int rowPitch, int width, int height, Format format, OutputInfo o, CopyState copy, Action<CapturedOutput> done)
     {
         if (width != o.Width || height != o.Height)
         {
             log.Warn($"{o.DeviceName}: frame {width}x{height} is not the monitor's {o.Width}x{o.Height}");
             return null;
         }
-        if (format == Format.R16G16B16A16_Float)
+        bool hdr = format == Format.R16G16B16A16_Float;
+        HalfImage? half;
+        BgraImage target;
+        lock (copy)
         {
-            HalfImage half = _pool.Half(o.Index, FramePool.Frame, width, height);
-            FrameConverter.ToHalfInto(data, rowPitch, width, height, format, half);
-            BgraImage target = _pool.Bgra(o.Index, FramePool.Frame, width, height);
-            TonemapInto(half, o, target);
-            return new CapturedOutput(o, half, target);
+            if (copy.Abandoned) return null;
+            half = hdr ? _pool.Half(o.Index, FramePool.Frame, width, height) : null;
+            target = _pool.Bgra(o.Index, FramePool.Frame, width, height);
         }
-        BgraImage sdr = _pool.Bgra(o.Index, FramePool.Frame, width, height);
-        FrameConverter.ToBgra8Into(data, rowPitch, width, height, sdr);
-        return new CapturedOutput(o with { Hdr = false }, null, sdr);
+        if (half != null)
+        {
+            FrameConverter.ToHalfInto(data, rowPitch, width, height, half);
+            return () =>
+            {
+                lock (copy) { if (copy.Abandoned) return; }
+                TonemapInto(half, o, target);
+                done(new CapturedOutput(o, half, target));
+            };
+        }
+        FrameConverter.ToBgra8Into(data, rowPitch, width, height, target);
+        done(new CapturedOutput(o with { Hdr = false }, null, target));
+        return null;
+    }
+
+    /// <summary>One output's copy in one grab: set abandoned, under its own lock, when the grab stops waiting for it.</summary>
+    private sealed class CopyState
+    {
+        public bool Abandoned;
     }
 
     public void Dispose()
     {
-        lock (_grabGate) _capture.Dispose();
+        if (!Monitor.TryEnter(_grabGate, DisposeWaitMs)) { log.Warn("capture: a grab is still running at exit; its device is left to the process exit"); return; }
+        try { _capture.Dispose(); }
+        finally { Monitor.Exit(_grabGate); }
     }
 
     /// <summary>Tonemaps an HDR frame into a new image with the current settings; <paramref name="exposureOverride"/>
@@ -157,13 +207,28 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     /// <summary>Tonemaps into an existing target buffer in place (no allocation); used by live exposure in the overlay.</summary>
     public void TonemapInto(HalfImage img, OutputInfo o, float exposure, BgraImage target) => TonemapCore(img, o, exposure, target.Data);
 
+    /// <summary>Tonemaps the part of <paramref name="img"/> inside <paramref name="source"/> at the given exposure
+    /// straight into <paramref name="target"/> at (<paramref name="x"/>, <paramref name="y"/>); used to build a snip's
+    /// composite without an intermediate crop.</summary>
+    public void TonemapInto(HalfImage img, IntRect source, OutputInfo o, float exposure, BgraImage target, int x, int y)
+    {
+        (ITonemapper? tm, AcesLut? lut) = TonemapperFor(o, exposure);
+        PixelConvert.ToBgra8Into(img, source, tm, lut, target, x, y);
+    }
+
     private void TonemapCore(HalfImage img, OutputInfo o, float exposureOverride, byte[] dst)
+    {
+        (ITonemapper? tm, AcesLut? lut) = TonemapperFor(o, exposureOverride);
+        PixelConvert.ToBgra8Into(img, tm, lut, dst);
+    }
+
+    /// <summary>The configured curve for this monitor: the cached LUT for ACES, a tonemapper otherwise.</summary>
+    private (ITonemapper?, AcesLut?) TonemapperFor(OutputInfo o, float exposureOverride)
     {
         SnipSettings s = settings();
         TonemapParams p = s.ToTonemapParams(o.SdrWhiteNits, o.PeakNits);
         if (exposureOverride > 0f) p = p with { Exposure = exposureOverride };
-        if (s.Tonemap == "aces") PixelConvert.ToBgra8Into(img, null, LutFor(p), dst);
-        else PixelConvert.ToBgra8Into(img, TonemapperFactory.Create(s.Tonemap, p), null, dst);
+        return s.Tonemap == "aces" ? (null, LutFor(p)) : (TonemapperFactory.Create(s.Tonemap, p), null);
     }
 
 #if TONESNIP_HARNESS

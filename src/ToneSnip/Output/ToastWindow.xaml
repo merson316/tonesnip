@@ -62,8 +62,16 @@
         <Border.Clip>
           <RectangleGeometry Rect="0,0,96,60"/>
         </Border.Clip>
-        <!-- Raw: the text lines already describe the snip, so screen readers skip the picture. -->
-        <Image x:Name="Thumb" Stretch="Uniform" AutomationProperties.AccessibilityView="Raw"/>
+        <Grid>
+          <!-- Raw: the text lines already describe the snip, so screen readers skip the picture. -->
+          <Image x:Name="Thumb" Stretch="Uniform" AutomationProperties.AccessibilityView="Raw"/>
+          <!-- Shown when there is no thumbnail or it cannot be read, as in the Recent flyout's rows, so the slot does not
+               look like it is still loading. Scaled up from the rows' 16 for the larger slot. -->
+          <FontIcon x:Name="ThumbPlaceholder" Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphThumbnail}"
+                    FontSize="20" Foreground="{ThemeResource TextDisabled}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"
+                    AutomationProperties.AccessibilityView="Raw"/>
+        </Grid>
       </Border>
 
       <Grid Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">

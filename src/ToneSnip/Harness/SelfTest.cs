@@ -4,7 +4,6 @@ using ToneSnip.Core.Capture;
 using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
-using ToneSnip.Core.Tonemap;
 using ToneSnip.Windows.Imaging;
 
 namespace ToneSnip.App;
@@ -80,7 +79,7 @@ public static class SelfTest
                 }
 
                 // End-to-end through the real snip path (half frames, tonemap, composite, PNG encode), all in memory, and a check
-                // that the half path matches the float path on live frames.
+                // that each HDR output's SDR copy is the tonemap of its half frame.
                 sw.Restart();
                 grabbed = grabber.GrabAll();
                 long tGrabAll = sw.ElapsedMilliseconds;
@@ -94,11 +93,10 @@ public static class SelfTest
 
                 foreach (Capture.CapturedOutput o in grabbed.Where(o => o.Half != null))
                 {
-                    var p = new TonemapParams { SdrWhiteNits = o.Info.SdrWhiteNits, PeakNits = o.Info.PeakNits };
-                    BgraImage viaFloat = PixelConvert.ToBgra8(o.Half!.ToFloat(), TonemapperFactory.Create("desktop", p));
+                    BgraImage again = grabber.Tonemap(o.Half!, o.Info);
                     int worst = 0;
-                    for (int i = 0; i < viaFloat.Data.Length; i++) worst = Math.Max(worst, Math.Abs(viaFloat.Data[i] - o.Sdr.Data[i]));
-                    Console.WriteLine($"{o.Info.DeviceName}: half path vs float path worst difference {worst} code values");
+                    for (int i = 0; i < again.Data.Length; i++) worst = Math.Max(worst, Math.Abs(again.Data[i] - o.Sdr.Data[i]));
+                    Console.WriteLine($"{o.Info.DeviceName}: grabbed SDR copy vs a fresh tonemap worst difference {worst} code values");
                     if (worst > 1) ok = 0;
                 }
             }
@@ -134,12 +132,14 @@ public static class SelfTest
             }
 
             // The pooled grab's fill-in-place decode (in ToneSnip.Windows, so out of reach of the Core tests), checked
-            // against the allocating decode over a frame built in unmanaged memory. The row pitch is wider than the
-            // row and the target is pre-filled, so a skipped byte or misread pitch shows up as a mismatch.
+            // against the pixels written into a frame built in unmanaged memory. The row pitch is wider than the row and
+            // the target is pre-filled, so a skipped byte or misread pitch shows up as a mismatch.
             {
                 const int fw = 37, fh = 23;                 // odd and prime-ish: a stride bug cannot hide behind a round number
                 int halfPitch = fw * 8 + 48, bgraPitch = fw * 4 + 48;
                 IntPtr halfBuf = Marshal.AllocHGlobal(halfPitch * fh), bgraBuf = Marshal.AllocHGlobal(bgraPitch * fh);
+                var halfWant = new HalfImage(fw, fh);
+                BgraImage bgraWant = BgraImage.Blank(fw, fh);
                 bool intoOk = true;
                 try
                 {
@@ -151,24 +151,24 @@ public static class SelfTest
                             byte* brow = (byte*)bgraBuf + y * bgraPitch;
                             for (int x = 0; x < fw; x++)
                             {
-                                hrow[x * 4] = BitConverter.HalfToUInt16Bits((Half)((x + y) / 8f));
-                                hrow[x * 4 + 1] = BitConverter.HalfToUInt16Bits((Half)(x / 16f));
-                                hrow[x * 4 + 2] = BitConverter.HalfToUInt16Bits((Half)(y / 16f));
-                                hrow[x * 4 + 3] = 0x3C00;
-                                brow[x * 4] = (byte)(x * 7); brow[x * 4 + 1] = (byte)(y * 11); brow[x * 4 + 2] = (byte)(x + y); brow[x * 4 + 3] = 0;
+                                int i = (y * fw + x) * 4;
+                                hrow[x * 4] = halfWant.Data[i] = BitConverter.HalfToUInt16Bits((Half)((x + y) / 8f));
+                                hrow[x * 4 + 1] = halfWant.Data[i + 1] = BitConverter.HalfToUInt16Bits((Half)(x / 16f));
+                                hrow[x * 4 + 2] = halfWant.Data[i + 2] = BitConverter.HalfToUInt16Bits((Half)(y / 16f));
+                                hrow[x * 4 + 3] = halfWant.Data[i + 3] = 0x3C00;
+                                brow[x * 4] = bgraWant.Data[i] = (byte)(x * 7); brow[x * 4 + 1] = bgraWant.Data[i + 1] = (byte)(y * 11); brow[x * 4 + 2] = bgraWant.Data[i + 2] = (byte)(x + y); brow[x * 4 + 3] = 0;
+                                bgraWant.Data[i + 3] = 255;   // the copy makes alpha opaque
                             }
                         }
                     }
-                    var fp16 = Vortice.DXGI.Format.R16G16B16A16_Float;
-                    // ToHalfInto / ToBgra8Into against the allocating decode, unrotated.
                     var halfInto = new HalfImage(fw, fh);
                     Array.Fill(halfInto.Data, (ushort)0xDEAD);
-                    ToneSnip.Windows.Display.FrameConverter.ToHalfInto(halfBuf, halfPitch, fw, fh, fp16, halfInto);
-                    intoOk &= halfInto.Data.AsSpan().SequenceEqual(ToneSnip.Windows.Display.FrameConverter.ToHalf(halfBuf, halfPitch, fw, fh, fp16, Vortice.DXGI.ModeRotation.Identity).Data);
+                    ToneSnip.Windows.Display.FrameConverter.ToHalfInto(halfBuf, halfPitch, fw, fh, halfInto);
+                    intoOk &= halfInto.Data.AsSpan().SequenceEqual(halfWant.Data);
                     BgraImage bgraInto = BgraImage.Blank(fw, fh);
                     Array.Fill(bgraInto.Data, (byte)0xAB);
                     ToneSnip.Windows.Display.FrameConverter.ToBgra8Into(bgraBuf, bgraPitch, fw, fh, bgraInto);
-                    intoOk &= bgraInto.Data.AsSpan().SequenceEqual(ToneSnip.Windows.Display.FrameConverter.ToBgra8(bgraBuf, bgraPitch, fw, fh, Vortice.DXGI.ModeRotation.Identity).Data);
+                    intoOk &= bgraInto.Data.AsSpan().SequenceEqual(bgraWant.Data);
                 }
                 finally { Marshal.FreeHGlobal(halfBuf); Marshal.FreeHGlobal(bgraBuf); }
 
@@ -188,7 +188,7 @@ public static class SelfTest
                 }
                 catch (Exception e) { Console.WriteLine("frames: GDI fill FAILED " + e.Message); gdiOk = false; }
 
-                Console.WriteLine($"frames: decode into a pooled buffer matches the allocating decode={intoOk}, gdi fill-in-place={gdiOk}");
+                Console.WriteLine($"frames: decode into a pooled buffer matches the source pixels={intoOk}, gdi fill-in-place={gdiOk}");
                 if (!intoOk || !gdiOk) ok = 0;
             }
 

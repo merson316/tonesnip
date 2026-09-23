@@ -38,11 +38,11 @@ public partial class App : Application
     /// <summary>The mode the last snip was started with, from any source; set only by <see cref="StartSnip"/>. The
     /// tray flyout preselects it.</summary>
     public SnipMode LastMode { get; private set; } = SnipMode.Rectangle;
-    /// <summary>Reduced copy of the last frozen HDR frame, for the settings preview. Full frames are not retained.</summary>
+    /// <summary>Reduced copy of the last frozen HDR frame, for the settings preview, packed while idle
+    /// (<see cref="PackPreviewFrame"/>). Full frames are not retained.</summary>
     /// <remarks>A class rather than a tuple: written on a pool thread and read on the UI thread, a reference swaps
     /// atomically where a two-field struct could be read torn.</remarks>
-    public PreviewSnapshot? PreviewFrame { get; private set; }
-    public sealed record PreviewSnapshot(Core.Imaging.HalfImage Image, OutputInfo Output);
+    public Settings.PreviewSnapshot? PreviewFrame { get; private set; }
     public List<OutputInfo> KnownOutputs { get; private set; } = new();
     public IntRect PrimaryMonitor { get; set; } = new(0, 0, 1920, 1080);
 
@@ -101,7 +101,7 @@ public partial class App : Application
         Directory.CreateDirectory(AppPaths.Dir);
         (Settings, string? err) = SnipSettingsFile.Load(AppPaths.SettingsPath);
         if (err != null) Log.Warn("settings: " + err);
-        Log.Info($"ToneSnip {typeof(App).Assembly.GetName().Version} started");
+        Log.Info($"ToneSnip {typeof(App).Assembly.GetName().Version} started, pid {Environment.ProcessId}");
         // Logged so a report from Remote Desktop, a VM or with transparency off explains its look.
         if (!Theme.Backdrop.UseMica) Log.Debug("backdrop: Mica unavailable; the settings and editor windows paint a solid root");
         Theme.ThemeManager.Apply(Settings.Theme);
@@ -148,7 +148,7 @@ public partial class App : Application
             {
                 // The Settings preview is 860 DIP wide, so aim for about 1290 physical pixels (150 % scale).
                 int step = Math.Max(1, (int)Math.Round(hdr.Half.Width / 1290.0));
-                PreviewFrame = new PreviewSnapshot(hdr.Half.Downsample(step), hdr.Info);
+                PreviewFrame = new Settings.PreviewSnapshot(hdr.Half.Downsample(step), hdr.Info);
             }
         };
 #if TONESNIP_HARNESS
@@ -162,7 +162,7 @@ public partial class App : Application
         }
 #endif
         Output = new OutputPipeline(() => Settings, Log);
-        Output.KeepAlive = _ => Settings.AfterSelect == "edit";
+        Output.KeepAlive = s => s.AfterSelect == "edit";
         Output.Accent = () => Theme.ThemeManager.AccentArgb;
         CaptureResult.Encode = Bitmaps.EncodePng;
         CaptureResult.ClipToLassoSetting = () => Settings.Annotate.ClipToLasso;
@@ -176,13 +176,15 @@ public partial class App : Application
         Output.Completed += r =>
         {
             LastResult = r;
-            string thumb = History.Add(r);   // one thumbnail per snip, shared by the toast and the history flyout
+            // One thumbnail per snip, shared by the toast and the history flyout. It is encoded on the thread pool, so
+            // the toast waits for the file rather than the UI thread waiting for the encode.
+            Task<string> thumb = History.Add(r);
             if (Settings.AfterSelect == "edit") OpenViewer(r, annotate: true);
-            else if (Settings.ShowToast) Toasts.Show(r, thumb);
+            else if (Settings.ShowToast) _ = ShowToastWhenThumbnailed(r, thumb);
         };
         Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip };
         // On Idle rather than Output.Completed, so a cancelled snip also releases its frames.
-        Session.Idle += () => { LogMemory("memory after snip"); ReleaseFramesWhenIdle(); };
+        Session.Idle += () => { ReclaimMemory("memory after snip"); ReleaseFramesWhenIdle(); };
         // Escape (cancelCountdown) is a hotkey only while a countdown runs.
         Hook = new KeyboardHook(Log) { Swallow = true, IsActive = b => b.Action != "cancelCountdown" || Session.CountingDown };
         Hook.Pressed += b => DispatchHotkey(b.Action);
@@ -196,10 +198,23 @@ public partial class App : Application
         // low-level hook across sleep or the secure desktop.
         _messages.PowerChanged += awake => { Log.Info(awake ? "system resumed from sleep" : "system going to sleep"); if (awake) Hook?.Rearm(); };
         _messages.SessionLockChanged += locked => { Log.Info(locked ? "session locked" : "session unlocked"); if (!locked) Hook?.Rearm(); };
+        // Idle display-off leaves the machine awake, so neither of the above fires for it. On the way back the hook is
+        // re-armed and the next grab enumerates the displays afresh, since a monitor can come back reconfigured.
+        _messages.DisplayPowerChanged += on =>
+        {
+            Log.Info(on ? "displays on" : "displays off");
+            if (on) { Hook?.Rearm(); Grabber.DisplaysChanged(); }
+        };
+        _messages.SessionEnding += OnSessionEnding;
+        // Only an installer's close keeps the restart registration (see RegisterRestart); a shutdown that is called
+        // off puts it back.
+        _messages.SessionEndQueried += closeApp => { if (!closeApp) UnregisterRestart(); };
+        _messages.SessionEndCancelled += RegisterRestart;
         BuildTray();
         Toasts.Fallback = (t, x) => _tray?.Balloon(t, x);
         Session.Failed += m => { Log.Warn("snip failed: " + m); _tray?.Balloon("Snip failed", m); };
         _hostPipe = HostPipe.Serve(c => RunOnUi(() => RunCommand(c)), Log);
+        RegisterRestart();
         Autostart.Log = Log;
         // Autostart.Apply itself does nothing in the debug build.
         Autostart.Apply(Settings.StartWithWindows, AppPaths.ExePath);
@@ -447,8 +462,11 @@ public partial class App : Application
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetGuiResources(IntPtr hProcess, uint flags);
-    /// <summary>GDI (0) or USER (1) handle count of this process, for spotting leaked bitmaps or DCs.</summary>
-    private static uint GuiResources(uint flags) => GetGuiResources(Process.GetCurrentProcess().Handle, flags);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
+    /// <summary>GDI (0) or USER (1) handle count of this process, for spotting leaked bitmaps or DCs. Asked with the
+    /// pseudo-handle, which needs no closing; Process.GetCurrentProcess().Handle opened a real one per call that was only
+    /// closed by a finalizer.</summary>
+    private static uint GuiResources(uint flags) => GetGuiResources(GetCurrentProcess(), flags);
 
     /// <summary>Logs one timed operation (hotkey to overlay, window open, save) at Debug level. Not for per-frame
     /// use.</summary>
@@ -480,6 +498,9 @@ public partial class App : Application
             {
                 await Task.Delay(FrameIdleRelease);
                 if (Volatile.Read(ref _idleTicket) != ticket || Session?.Busy == true) return;   // a newer idle period owns the release
+                // An open Settings window is showing the preview and would only decode the frame again at its next
+                // render; its close packs it instead.
+                if (Volatile.Read(ref _settingsWindow) == null) PackPreviewFrame();
                 long held = Grabber.PooledBytes;
                 if (held == 0) return;
                 Grabber.ReleaseBuffers();
@@ -496,13 +517,33 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Reclaims memory on a background thread a second after a snip ends, then logs where memory landed under
-    /// <paramref name="label"/>.
+    /// Swaps the Settings preview's frame for its compressed copy, with the idle frame release and when Settings
+    /// closes; Settings decodes it again when it next renders the preview. Pool thread: the first pack encodes.
+    /// </summary>
+    public void PackPreviewFrame()
+    {
+        if (PreviewFrame is not { } preview) return;
+        try
+        {
+            long packed = preview.Pack();
+            Log.Debug($"settings preview frame packed: {preview.Width}x{preview.Height}, {packed / 1024} KB");
+        }
+        catch (Exception e) { Log.Warn("settings preview frame not packed: " + e.Message); }
+    }
+
+    /// <summary>
+    /// Reclaims memory on a background thread a second after a snip ends or an editor closes, then logs where memory
+    /// landed under <paramref name="label"/>. The snip's intermediates (the composite, the encoded PNG) are garbage by
+    /// then, and an idle tray app may not allocate again for hours, so without this they would sit in the private
+    /// working set until the frame release a minute later.
+    /// <para>One compacting collection, not the separate collect and finalizer wait that used to precede it: each
+    /// blocking pause also stalls the keyboard hook's callback. Finalizers queued by this collection still run straight
+    /// after it and free their native memory; only their small managed shells wait for a later collection.</para>
     /// <para>The collection is blocking because the LOH is compacted only by a blocking gen 2 once
     /// <c>CompactOnce</c> is set. Busy is checked after the sleep, since a new snip may have started meanwhile; if so
     /// this gives up, and that snip's own <c>Idle</c> re-arms it.</para>
     /// </summary>
-    public void LogMemory(string label)
+    public void ReclaimMemory(string label)
     {
         if (Interlocked.Exchange(ref _reclaiming, 1) == 1) return;
         _ = Task.Run(() =>
@@ -511,7 +552,6 @@ public partial class App : Application
             {
                 Thread.Sleep(1000);
                 if (Session?.Busy == true) return;   // a snip started meanwhile; its Idle re-arms this
-                GC.Collect(); GC.WaitForPendingFinalizers();
                 TimeSpan pause = CompactingCollect();
                 using var me = Process.GetCurrentProcess();
                 GCMemoryInfo gc = GC.GetGCMemoryInfo();
@@ -555,6 +595,28 @@ public partial class App : Application
         try { Directory.CreateDirectory(f); }
         catch (Exception ex) { Log.Warn($"open folder '{f}': {ex.Message}"); return; }
         Shell.OpenFolder(f, Log);
+    }
+
+    /// <summary>The last toast waiting for its thumbnail, so toasts show in snip order even if a later snip's
+    /// thumbnail is written first.</summary>
+    private Task _toastInLine = Task.CompletedTask;
+
+    /// <summary>Shows the snip's toast once its thumbnail file is written. The write logs its own failures and still
+    /// completes, so the toast always shows, without the picture if there is none.</summary>
+    private Task ShowToastWhenThumbnailed(CaptureResult r, Task<string> thumb)
+    {
+        Task before = _toastInLine;
+        return _toastInLine = ShowAfter();
+
+        async Task ShowAfter()
+        {
+            try
+            {
+                await before;
+                Toasts.Show(r, await thumb);
+            }
+            catch (Exception e) { Log.Warn("toast: " + e.Message); }
+        }
     }
 
     /// <summary>Opens an editor on one snip. Several may be open; each reference is dropped when its window
@@ -628,8 +690,8 @@ public partial class App : Application
     private static readonly TimeSpan HotkeyPickupBudget = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Hands a hotkey from the hook thread to the UI thread, logging a refused enqueue or a pick-up slower than
-    /// <see cref="HotkeyPickupBudget"/>, so a swallowed hotkey that never acts leaves a trace.
+    /// Hands a hotkey from the hook thread to the UI thread and logs its pick-up (a Warn when it was refused or slower
+    /// than <see cref="HotkeyPickupBudget"/>), so a swallowed hotkey that never acts leaves a trace.
     /// </summary>
     private void DispatchHotkey(string action)
     {
@@ -639,7 +701,10 @@ public partial class App : Application
         {
             Volatile.Write(ref picked, 1);
             TimeSpan waited = Stopwatch.GetElapsedTime(pressed);
+            // Info for every accepted hotkey, logged here rather than on the hook thread, whose callback must not wait
+            // on the disk: the first line of a snip's trail in the production log.
             if (waited > HotkeyPickupBudget) Log.Warn($"hotkey {action}: the UI thread picked it up {waited.TotalMilliseconds:F0} ms after the press");
+            else Log.Info($"hotkey {action}, picked up in {waited.TotalMilliseconds:F0} ms");
             OnHotkey(action);
         });
         if (!queued) { Log.Warn($"hotkey {action}: the UI thread's queue refused it"); return; }
@@ -686,7 +751,7 @@ public partial class App : Application
     private DispatcherQueueTimer? _settingsSave;
 
     /// <summary>Writes settings.json once <see cref="SettingsSaveDelay"/> has passed without another change.
-    /// <see cref="FlushSettings"/> writes a pending save at once (Settings closing, Quit).</summary>
+    /// <see cref="FlushSettings"/> starts a pending save at once (Settings closing), or finishes it (Quit).</summary>
     private void QueueSettingsSave()
     {
         if (!Ui.HasThreadAccess) { RunOnUi(QueueSettingsSave); return; }
@@ -701,37 +766,121 @@ public partial class App : Application
         _settingsSave.Start();
     }
 
-    /// <summary>Writes a queued settings save now, if one is waiting.</summary>
-    public void FlushSettings()
+    /// <summary>
+    /// Starts a queued settings save now, if one is waiting. With <paramref name="wait"/> it also blocks until every
+    /// save has reached the disk, or <see cref="SettingsFlushBudget"/> has passed: for Quit and the end of the Windows
+    /// session, after which the process may be gone. UI thread only.
+    /// </summary>
+    public void FlushSettings(bool wait = false)
     {
-        if (_settingsSave is not { IsRunning: true } timer) return;
-        timer.Stop();
-        SaveSettings();
+        if (_settingsSave is { IsRunning: true } timer)
+        {
+            timer.Stop();
+            SaveSettings();
+        }
+        if (!wait) return;
+        // A blocking wait on the UI thread, on purpose: the process may end as soon as this returns. It cannot deadlock,
+        // as the writes run on the pool and never need this thread, and it is capped at SettingsFlushBudget.
+        Task writes;
+        lock (_settingsWriteGate) writes = _settingsWrites;
+        if (!writes.Wait(SettingsFlushBudget)) Log.Warn($"settings save: still writing after {SettingsFlushBudget.TotalSeconds:F0} s; the last change may be lost");
     }
 
-    /// <summary>Writes settings.json, except in a harness side mode.</summary>
+    /// <summary>How long a waiting <see cref="FlushSettings"/> gives the writes in flight.</summary>
+    private static readonly TimeSpan SettingsFlushBudget = TimeSpan.FromSeconds(2);
+    /// <summary>The settings writes in flight, chained so they reach the disk in the order they were made.</summary>
+    private Task _settingsWrites = Task.CompletedTask;
+    private readonly object _settingsWriteGate = new();
+
+    /// <summary>
+    /// Writes settings.json on a pool thread, except in a harness side mode. The write flushes to disk, which can take
+    /// tens of milliseconds, too long to hold the UI thread (an overlay closing, a hotkey waiting behind it). The
+    /// settings are an immutable record, so the pool thread serializes exactly the state it was handed.
+    /// </summary>
     private void SaveSettings()
     {
 #if TONESNIP_HARNESS
         if (SideMode) return;
 #endif
-        try { SnipSettingsFile.Save(AppPaths.SettingsPath, Settings); } catch (Exception ex) { Log.Warn("settings save: " + ex.Message); }
+        SnipSettings snapshot = Settings;
+        lock (_settingsWriteGate)
+        {
+            _settingsWrites = _settingsWrites.ContinueWith(_ =>
+            {
+                try { SnipSettingsFile.Save(AppPaths.SettingsPath, snapshot); } catch (Exception ex) { Log.Warn("settings save: " + ex.Message); }
+            }, TaskScheduler.Default);
+        }
     }
 
-
     /// <summary>Persists a change no listener needs (such as the last-used annotation style), without raising
-    /// SettingsChanged.</summary>
+    /// SettingsChanged. Saved through the same debounce as every other change.</summary>
     public void UpdateSettingsQuiet(Func<SnipSettings, SnipSettings> change)
     {
         Settings = change(Settings).Sanitized(out _);
-        SaveSettings();
+        QueueSettingsSave();
+    }
+
+    /// <summary>
+    /// Keeps the annotation colour, width and text size last used for the next snip, quietly, unless they are what
+    /// <paramref name="shown"/> already gives. The overlay and the editor call this once, when they close, rather than
+    /// on every palette click. Privacy mode is not part of the style and is left as it is.
+    /// </summary>
+    public void RememberAnnotateStyle(Core.Annotate.Style? style, AnnotateSettings shown, uint accent)
+    {
+        if (style is not Core.Annotate.Style s || s == shown.ToStyle(accent)) return;
+        UpdateSettingsQuiet(cur => cur with { Annotate = AnnotateSettings.FromStyle(s, accent) with { PrivacyMode = cur.Annotate.PrivacyMode } });
+    }
+
+    private const int RestartNoCrash = 1, RestartNoHang = 2, RestartNoReboot = 8;
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int RegisterApplicationRestart(string commandLine, int flags);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern int UnregisterApplicationRestart();
+
+    /// <summary>
+    /// Asks Windows to start the app again when an installer's Restart Manager closes it for an update, with
+    /// <see cref="Autostart.BackgroundSwitch"/> so the restart comes back to the tray instead of opening Settings. Not
+    /// after a crash or a hang, and not after a reboot, where "Start with Windows" alone decides.
+    /// </summary>
+    private void RegisterRestart()
+    {
+        int hr = RegisterApplicationRestart(Autostart.BackgroundSwitch, RestartNoCrash | RestartNoHang | RestartNoReboot);
+        if (hr != 0) Log.Warn($"restart after update not registered: 0x{hr:X8}");
+    }
+
+    /// <summary>
+    /// Withdraws <see cref="RegisterRestart"/> when the whole session is ending. RESTART_NO_REBOOT covers an update
+    /// reboot, but not necessarily Windows' "restart apps after signing in", which relaunches registered apps at the
+    /// next sign-in and would start the app even with "Start with Windows" off.
+    /// </summary>
+    private void UnregisterRestart()
+    {
+        int hr = UnregisterApplicationRestart();
+        if (hr != 0) Log.Warn($"restart after update not withdrawn: 0x{hr:X8}");
+    }
+
+    /// <summary>
+    /// Windows is signing out, shutting down or closing the app for an update (<paramref name="closeApp"/>). Pending
+    /// settings are written and the hook and tray icon are released before the handler returns, since the process can
+    /// be terminated straight after. The rest of <see cref="Quit"/> is posted rather than run here, because it destroys
+    /// the message window whose window procedure this is; a Restart Manager close expects the app to exit on its own.
+    /// Only that close keeps the restart registration.
+    /// </summary>
+    private void OnSessionEnding(bool closeApp)
+    {
+        Log.Info(closeApp ? "the app is being closed for an update" : "the Windows session is ending");
+        if (!closeApp) UnregisterRestart();
+        FlushSettings(wait: true);
+        _hostPipe?.Dispose(); _tray?.Dispose(); Hook?.Dispose();
+        _hostPipe = null; _tray = null;
+        RunOnUi(Quit);
     }
 
     /// <summary>Tears everything down and ends the message loop. WinUI has no OnExit, so the tray's Quit calls this.</summary>
     public void Quit()
     {
         Log.Debug("exit");
-        FlushSettings();
+        FlushSettings(wait: true);
         _hostPipe?.Dispose(); _tray?.Dispose(); _messages?.Dispose();
         Hook?.Dispose(); Grabber?.Dispose(); Toasts?.Dispose();
         Exit();

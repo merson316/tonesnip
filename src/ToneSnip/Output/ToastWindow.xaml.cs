@@ -9,8 +9,6 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Storage;
-using Windows.Storage.Streams;
 
 namespace ToneSnip.App.Output;
 
@@ -102,11 +100,23 @@ public sealed partial class ToastWindow : PopupWindow
 
         // Open and Edit work on the in-memory result; "Show in folder" needs a file.
         FolderLink.Visibility = saved ? Visibility.Visible : Visibility.Collapsed;
-        Thumb.Source = LoadThumb(thumbPath);
+        Controls.ThumbnailLoader.Load(thumbPath, ThumbDecodeWidth, ShowThumb, (bmp, ex) =>
+        {
+            if (ex != null) _log.Warn("toast thumbnail: " + ex.Message);
+            // The placeholder instead of an empty slot, unless a later snip has re-bound the card meanwhile.
+            if (!IsClosed && ReferenceEquals(Thumb.Source, bmp)) ShowThumb(null);
+        });
 
         _dismissing = false;
         if (_placed) Place();
         RestartDwell();
+    }
+
+    /// <summary>Puts a bitmap in the thumbnail slot, or with none the placeholder glyph.</summary>
+    private void ShowThumb(BitmapImage? bmp)
+    {
+        Thumb.Source = bmp;
+        ThumbPlaceholder.Visibility = bmp == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
 #if TONESNIP_HARNESS
@@ -221,29 +231,4 @@ public sealed partial class ToastWindow : PopupWindow
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Dismiss();
-
-    /// <summary>The history thumbnail at <see cref="ThumbDecodeWidth"/>. Returned empty and filled asynchronously from
-    /// a stream; a missing or unreadable file leaves it empty.</summary>
-    private BitmapImage? LoadThumb(string path)
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
-            var bmp = new BitmapImage { DecodePixelType = DecodePixelType.Physical, DecodePixelWidth = ThumbDecodeWidth };
-            _ = FillAsync(bmp, path);
-            return bmp;
-        }
-        catch { return null; }
-    }
-
-    private async Task FillAsync(BitmapImage bmp, string path)
-    {
-        try
-        {
-            StorageFile file = await StorageFile.GetFileFromPathAsync(path);
-            using IRandomAccessStreamWithContentType stream = await file.OpenReadAsync();
-            await bmp.SetSourceAsync(stream);
-        }
-        catch (Exception ex) { _log.Warn("toast thumbnail: " + ex.Message); }
-    }
 }

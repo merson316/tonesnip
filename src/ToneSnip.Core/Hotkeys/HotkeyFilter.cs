@@ -38,8 +38,6 @@ public sealed class HotkeyFilter(Func<long> nowMs)
     public bool Paused { get; set; }
     /// <summary>When true, a matching key-down is swallowed so no other app sees it.</summary>
     public bool Swallow { get; set; }
-    /// <summary>Per-binding override of <see cref="Swallow"/>; null means use the flag.</summary>
-    public Func<HotkeyBinding, bool>? ShouldSwallow { get; set; }
     /// <summary>Whether a binding applies right now; one that does not is not matched at all — no fire, no swallow, no
     /// debounce. Escape's cancelCountdown applies only while a countdown is running. Null means every binding does.</summary>
     public Func<HotkeyBinding, bool>? IsActive { get; set; }
@@ -87,9 +85,8 @@ public sealed class HotkeyFilter(Func<long> nowMs)
             if (IsActive != null && !IsActive(b)) continue;
             HotkeyBinding? fired = null;
             if (!_lastFire.TryGetValue(b, out long last) || now - last > DebounceMs) { _lastFire[b] = now; fired = b; }
-            bool swallow = ShouldSwallow?.Invoke(b) ?? Swallow;
-            if (swallow) _swallowed.Add(vk);
-            return new KeyDecision(swallow, fired, swallow && (mods.Alt || mods.Win));
+            if (Swallow) _swallowed.Add(vk);
+            return new KeyDecision(Swallow, fired, Swallow && (mods.Alt || mods.Win));
         }
         return default;
     }

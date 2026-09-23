@@ -6,6 +6,7 @@ using ToneSnip.Core.Config;
 using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
+using ToneSnip.Core.Tonemap;
 using ToneSnip.Windows.Interop;
 using ToneSnip.Windows.Overlay;
 
@@ -153,6 +154,14 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 if (o.Info.Bounds.Contains(cx, cy)) focus = w;
             }
             _focus = focus ?? _windows[0];
+            // The annotate state decides the dim, so it is set before the first paint rather than repainting after it.
+            // The toolbar does not exist yet; it reads the state when it is first placed.
+            if (settings.AfterSelect == "annotateFirst") Annotating = true;
+            // ShowWindow only queues WM_PAINT, which would wait behind the toolbar's XAML build and the window
+            // enumeration below: paint the frozen frames now, so they are on screen before any of that starts (and the
+            // log's "overlay shown" is the time to pixels, not to the end of Show).
+            foreach (OverlayWindow w in _windows) w.PaintNow();
+            if (_finishing) return _done.Task;   // a paint that failed has already ended the session
             _focus.Activate();
             IntRect monitor = _outputs.FirstOrDefault(o => o.Info.Bounds.Contains(cx, cy))?.Info.Bounds ?? _outputs[0].Info.Bounds;
             var toolbar = new ToolbarWindow(this, monitor);
@@ -166,7 +175,6 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 Own(countdown);             // and keep it above the frames, like the toolbar
             }
             ToolbarChanged = toolbar.Refresh;
-            if (settings.AfterSelect == "annotateFirst") Annotating = true;
             // Enumerated once, after every own window is registered, so window mode does not enumerate per mouse move.
             if (mode == SnipMode.Window) _windowList = WindowFinder.TopLevel(_ownHwnds);
             log.Debug($"overlay: {_windows.Count} windows, mode {mode}, annotating {_annotating}");
@@ -179,6 +187,10 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
             throw;
         }
     }
+
+    /// <summary>Paints every frozen-frame window's pending update at once; the paint watchdog's last check before it
+    /// gives up on an overlay that has not painted.</summary>
+    public void PaintNow() { foreach (OverlayWindow w in _windows) w.PaintNow(); }
 
     public void RenderAll() { foreach (OverlayWindow w in _windows) { w.SetCursor(WantedCursor); w.Render(); } }
     public void RenderAllFull() { foreach (OverlayWindow w in _windows) { w.SetCursor(WantedCursor); w.RenderFull(); } }
@@ -199,38 +211,22 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>Routing left the drawing tools mid-stroke: drop it, or the next move and release would commit a phantom shape.</summary>
     private void CancelEditDrag() { if (_edit is { } e && (e.Busy || e.InProgress != null)) e.CancelDrag(); }
 
-    private float _pendingExposure = -1;
     private bool _exposurePreviewed;
-    private bool _exposureBusy;
-    private Task? _exposureTask;
+    private ExposurePreview? _exposure;
 
     /// <summary>Exposure preview while annotating: re-tonemaps every HDR output's frozen frame in place, throttled to one pass per ~16 ms while the slider moves.</summary>
     public void SetExposure(float multiplier)
-    {
-        _pendingExposure = multiplier;
-        if (_exposureBusy) return;
-        _exposureTask = ApplyExposureLoop();
-    }
+        => (_exposure ??= new ExposurePreview(ExposurePass, e => log.Error("exposure: " + e))).Set(multiplier);
 
-    private async Task ApplyExposureLoop()
+    private async Task<bool> ExposurePass(float e)
     {
-        _exposureBusy = true;
-        try
-        {
-            while (_pendingExposure > 0)
-            {
-                float e = _pendingExposure; _pendingExposure = -1;
-                _exposurePreviewed = true;
-                List<CapturedOutput> frames = _outputs;   // snapshot: Finish may drop the field while this pass runs
-                await Task.Run(() => { foreach (CapturedOutput o in frames) if (o.Half != null) grabber.TonemapInto(o.Half, o.Info, settings.Exposure * e, o.Sdr); });
-                if (_finishing) break;
-                if (_edit != null) Annotate.ShapeRenderer.InvalidateRedactions(_edit.Doc);   // the base frames changed under the cached tiles
-                foreach (OverlayWindow w in _windows) { w.InvalidateBack(); w.RenderDirty(IntRect.Empty); }
-                await Task.Delay(16);
-            }
-        }
-        catch (Exception e) { log.Error("exposure: " + e); }
-        finally { _exposureBusy = false; }
+        _exposurePreviewed = true;
+        List<CapturedOutput> frames = _outputs;   // snapshot: Finish may drop the field while this pass runs
+        await Task.Run(() => { foreach (CapturedOutput o in frames) if (o.Half != null) grabber.TonemapInto(o.Half, o.Info, settings.Exposure * e, o.Sdr); });
+        if (_finishing) return false;
+        if (_edit != null) Annotate.ShapeRenderer.InvalidateRedactions(_edit.Doc);   // the base frames changed under the cached tiles
+        foreach (OverlayWindow w in _windows) { w.InvalidateBack(); w.RenderDirty(IntRect.Empty); }
+        return true;
     }
 
     /// <summary>Rebuilds every window's annotated back buffer from the current Sdr frames (e.g. after Zebra toggles), without re-tonemapping.</summary>
@@ -516,6 +512,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     {
         if (_finishing || _done.Task.IsCompleted) return;
         _finishing = true;
+        _statsCatchUp?.Stop();
         // Before the frames go: an owned window is destroyed with its owner, and the toolbar and text box are WinUI
         // windows that must be closed through Close().
         Disown();
@@ -546,15 +543,15 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         _edit = null;
         // An exposure preview pass may still be tonemapping into o.Sdr on a worker thread, and CaptureResult.Build reads
         // those frames as soon as _done completes, so wait for the pass to finish first.
-        _pendingExposure = -1;
+        _exposure?.Cancel();
         outcome = outcome with { ExposurePreviewed = _exposurePreviewed };
-        if (_exposureTask is { IsCompleted: false }) _ = CompleteAfterExposure(outcome);
+        if (_exposure is { Idle.IsCompleted: false }) _ = CompleteAfterExposure(outcome);
         else _done.TrySetResult(outcome);
     }
 
     private async Task CompleteAfterExposure(OverlayOutcome outcome)
     {
-        try { await _exposureTask!; }
+        try { await _exposure!.Idle; }
         catch (Exception e) { log.Warn("exposure: " + e.Message); }
         _done.TrySetResult(outcome);
     }
@@ -590,15 +587,20 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>Colour, width and text size stick for the next snip; the file is written once, when the overlay closes.</summary>
     public void PersistStyle(Style s) => _styleToSave = s;
 
-    private void SaveStyle()
-    {
-        if (_styleToSave is not Style s || s == settings.Annotate.ToStyle(Accent)) return;
-        App.Current.UpdateSettingsQuiet(cur => cur with { Annotate = AnnotateSettings.FromStyle(s, Accent) with { PrivacyMode = cur.Annotate.PrivacyMode } });
-    }
+    private void SaveStyle() => App.Current.RememberAnnotateStyle(_styleToSave, settings.Annotate, Accent);
 
     /// <summary>The rectangle and frame the cached peak/mean were sampled from, and the text.</summary>
     private (IntRect, HalfImage)? _statsFor;
     private string _stats = "";
+    /// <summary>When the peak and mean were last sampled, for the throttle while a drag resizes the selection.</summary>
+    private long _statsAt;
+    /// <summary>A drag changes the rectangle on every mouse move; the peak and mean are sampled at most this often
+    /// meanwhile, while the nits under the cursor stay live.</summary>
+    private static readonly TimeSpan StatsInterval = TimeSpan.FromMilliseconds(100);
+    /// <summary>Fires once after a throttled sample was skipped, so figures held back mid-drag catch up with the
+    /// rectangle even when the mouse then stops (no move, no repaint). A field: an unreferenced DispatcherQueueTimer can
+    /// be collected before it ticks.</summary>
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _statsCatchUp;
 
     /// <summary>Luminance readout for HDR outputs: nits under the cursor, and peak/mean inside the selection.</summary>
     public string? NitsText()
@@ -614,9 +616,13 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         IntRect hit = sel.Intersect(o.Info.Bounds);
         if (!hit.IsEmpty)
         {
-            // Up to 20,000 samples, so only recomputed when the rectangle or frame changes.
-            if (_statsFor != (hit, f))
+            // Up to 20,000 samples, so only recomputed when the rectangle or frame changes, and during a drag at most
+            // every StatsInterval: the figures lag the rectangle by that much until the button is let go.
+            bool throttled = _dragStart != null && _statsFor != null && System.Diagnostics.Stopwatch.GetElapsedTime(_statsAt) < StatsInterval;
+            if (_statsFor != (hit, f) && throttled) CatchUpStats();
+            else if (_statsFor != (hit, f))
             {
+                _statsAt = System.Diagnostics.Stopwatch.GetTimestamp();
                 float peak = 0, sum = 0; int n = 0, step = Math.Max(1, (int)Math.Sqrt(hit.Width * (long)hit.Height / 20000.0));
                 for (int y = hit.Top; y < hit.Bottom; y += step) for (int x = hit.Left; x < hit.Right; x += step) { float v = Nits(x, y); peak = Math.Max(peak, v); sum += v; n++; }
                 _statsFor = (hit, f);
@@ -625,5 +631,31 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
             text += _stats;
         }
         return text;
+    }
+
+    /// <summary>
+    /// Re-asks for the readout once the throttle interval has passed since the last sample. The pill's text is cached
+    /// per cursor and rectangle, which have not changed, so that cache is dropped first; the repaint then samples the
+    /// rectangle as it is now.
+    /// </summary>
+    private void CatchUpStats()
+    {
+        if (_statsCatchUp is { IsRunning: true }) return;
+        if (_statsCatchUp == null)
+        {
+            // The harnesses can build a session on a thread with no dispatcher; they do not drag.
+            if (Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread() is not { } ui) return;
+            _statsCatchUp = ui.CreateTimer();
+            _statsCatchUp.IsRepeating = false;
+            _statsCatchUp.Tick += (_, _) =>
+            {
+                if (_finishing) return;
+                _pillKey = null;
+                RenderAll();
+            };
+        }
+        TimeSpan left = StatsInterval - System.Diagnostics.Stopwatch.GetElapsedTime(_statsAt);
+        _statsCatchUp.Interval = left > TimeSpan.Zero ? left : TimeSpan.FromMilliseconds(1);
+        _statsCatchUp.Start();
     }
 }

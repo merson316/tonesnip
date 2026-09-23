@@ -5,6 +5,7 @@ using ToneSnip.App.Capture;
 using ToneSnip.Core.Annotate;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
+using ToneSnip.Core.Tonemap;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Brushes;
 using Microsoft.Graphics.Canvas.UI;
@@ -65,9 +66,7 @@ public sealed class EditorSurface : UserControl
     private bool _chrome;                // chrome was drawn last paint, so the next dirty rect needs a handle-sized margin
     private bool _marquee;               // a crop marquee dimmed the whole view last paint, so the whole view must go across
     private double _zoom = 1;
-    private float _pendingExposure = -1;   // newest slider value waiting for the loop; -1 = nothing pending
-    private bool _exposureBusy;
-    private Task? _exposureTask;           // the running loop, so a save or a close can join it
+    private readonly ExposurePreview _exposure;
     private bool _closing;
     private bool _released;
 
@@ -79,6 +78,9 @@ public sealed class EditorSurface : UserControl
 
     public EditorSurface()
     {
+        _exposure = new ExposurePreview(ExposurePass, e => App.Current.Log.Warn("viewer exposure: " + e.Message),
+            // Wait out any HDR sidecar write reading _original off the UI thread.
+            () => BeforeExposure?.Invoke());
         // A Panel parent, so RemoveFromVisualTree can detach the control from a container and drop the Win2D device
         // when the window closes.
         _host.Children.Add(_canvas);
@@ -107,7 +109,7 @@ public sealed class EditorSurface : UserControl
     }
     private bool _editing;
     /// <summary>The loaded snip's HDR crops in the view's frame, for the zebra pass; null until zebra first paints.</summary>
-    private (IntRect Bounds, HalfImage Half, float White, float BaseExposure)[]? _zebraCrops;
+    private ((IntRect Bounds, HalfImage Half)[] Crop, float White, float BaseExposure)[]? _zebraCrops;
     /// <summary>The last pointer position over the picture, in source pixels: what <see cref="ApplyCursor"/> hit-tests
     /// when the cursor has to change without a move.</summary>
     private (int X, int Y) _pointer;
@@ -229,20 +231,21 @@ public sealed class EditorSurface : UserControl
         if (chrome || _chrome) local = PadToView(local);
         _chrome = chrome;
         IntRect painted = ShapeRenderer.Render(Session.Doc, _baseView, View, _target, local, _accent, ShapeRenderer.DragGhostId(Session));
-        ApplyLasso(_target);
         if (painted.IsEmpty) painted = local;
+        // Only what this paint re-rendered: the rest of the target was cut by the paint that rendered it.
+        ApplyLasso(_target, painted.Union(local));
         if (_zebra && _result != null && _result.Crops.Count > 0)
         {
             // Built once per loaded snip. Each crop uses its own monitor's SDR white and the exposure it was actually
             // tonemapped with, auto exposure included, so mixed multi-monitor snips mark the right areas.
+            // Each crop is kept as the one-element list Zebra takes, so a paint allocates none.
             _zebraCrops ??= _result.Crops.Select(c =>
             {
                 float white = App.Current.Settings.SdrWhiteNits ?? c.Output.SdrWhiteNits;
-                float baseExposure = App.Current.Settings.AutoExposure ? Core.Tonemap.AutoExposure.Compute(c.Image, white, App.Current.Settings.Exposure) : App.Current.Settings.Exposure;
-                return (c.Bounds.Offset(-_result.Region.Left, -_result.Region.Top), c.Image, white / 80f, baseExposure);
+                return (new[] { (c.Bounds.Offset(-_result.Region.Left, -_result.Region.Top), c.Image) }, white / 80f, c.BaseExposure);
             }).ToArray();
-            foreach ((IntRect bounds, HalfImage half, float white, float baseExposure) in _zebraCrops)
-                ShapeRenderer.Zebra(_target, View, new[] { (bounds, half) }, white, baseExposure * Session.Doc.Exposure, painted);
+            foreach (((IntRect Bounds, HalfImage Half)[] crop, float white, float baseExposure) in _zebraCrops)
+                ShapeRenderer.Zebra(_target, View, crop, white, baseExposure * Session.Doc.Exposure, painted);
         }
         ShapeRenderer.Chrome(Session, View, _target, _accent);   // whole view: chrome is cheap and handles move
         // Chrome stays inside the padded dirty rect, except a crop marquee's dimming, which covers the whole view; that
@@ -384,17 +387,15 @@ public sealed class EditorSurface : UserControl
     public void SetExposure(float multiplier)
     {
         if (_closing) return;
-        _pendingExposure = multiplier;
-        if (_exposureBusy) return;
-        _exposureTask = ApplyExposureLoop();
+        _exposure.Set(multiplier);
     }
 
     /// <summary>Completes when no exposure pass is in flight. A save must not read the image mid-tonemap, and the
     /// window must not compact the result out from under a worker thread.</summary>
-    public Task ExposureIdle => _exposureTask ?? Task.CompletedTask;
+    public Task ExposureIdle => _exposure.Idle;
 
     /// <summary>Stops the exposure loop for good; await <see cref="ExposureIdle"/> afterwards to join the last pass.</summary>
-    public void Shutdown() { _closing = true; _pendingExposure = -1; }
+    public void Shutdown() { _closing = true; _exposure.Cancel(); }
 
     /// <summary>After <see cref="Shutdown"/> and once <see cref="ExposureIdle"/> completed: drops the bitmap and buffers,
     /// unhooks the session from the document, and takes the canvas out of the tree so Win2D's device goes with the
@@ -415,33 +416,21 @@ public sealed class EditorSurface : UserControl
         _checkerBrush?.Dispose(); _checkerBrush = null;
         _checker?.Dispose(); _checker = null;
         _upload = null;
-        _target = null; _baseView = null; _original = null; _tmp = null; _lasso = null; _result = null; _zebraCrops = null;
+        _target = null; _baseView = null; _original = null; _tmp = null; _lasso = null; _lassoSpans = null; _result = null; _zebraCrops = null;
         _canvas.RemoveFromVisualTree();
         _host.Children.Clear();
         Content = null;
     }
 
-    private async Task ApplyExposureLoop()
+    /// <summary>One preview pass for <see cref="_exposure"/>: false stops the loop.</summary>
+    private async Task<bool> ExposurePass(float m)
     {
-        _exposureBusy = true;
-        try
-        {
-            while (_pendingExposure > 0 && !_closing)
-            {
-                // Wait out any HDR sidecar write reading _original off the UI thread. Looped, with no await between the
-                // last check and the pass, because a save can start another write while one is awaited.
-                while (BeforeExposure?.Invoke() is { IsCompleted: false } pending) await pending;
-                if (_closing) break;
-                float m = _pendingExposure; _pendingExposure = -1;
-                if (_result == null || _original == null || _result.Crops.Count == 0) break;
-                await Task.Run(() => Tonemap(m));
-                if (_closing) break;   // the window is going away: no repaint, and the result may already be compacting
-                Apply(m);
-                await Task.Delay(16);
-            }
-        }
-        catch (Exception e) { App.Current.Log.Warn("viewer exposure: " + e.Message); }
-        finally { _exposureBusy = false; }
+        if (_closing || _result == null || _original == null || _result.Crops.Count == 0) return false;
+        _result.ImageChanged();   // the pass rewrites the result's image in place, so a PNG held for it goes stale
+        await Task.Run(() => Tonemap(m));
+        if (_closing) return false;   // the window is going away: no repaint, and the result may already be compacting
+        Apply(m);
+        return true;
     }
 
     /// <summary>Re-tonemaps every HDR crop into the original image at the given multiplier. False when there is nothing to do.</summary>
@@ -451,8 +440,8 @@ public sealed class EditorSurface : UserControl
         foreach (HalfCrop c in _result.Crops)
         {
             if (_tmp == null || _tmp.Width != c.Image.Width || _tmp.Height != c.Image.Height) _tmp = BgraImage.Blank(c.Image.Width, c.Image.Height);
-            float baseExposure = App.Current.Settings.AutoExposure ? Core.Tonemap.AutoExposure.Compute(c.Image, App.Current.Settings.SdrWhiteNits ?? c.Output.SdrWhiteNits, App.Current.Settings.Exposure) : App.Current.Settings.Exposure;
-            App.Current.Grabber.TonemapInto(c.Image, c.Output, baseExposure * multiplier, _tmp);
+            // The base the snip was built with, not measured again: a slider tick used to re-run the percentile.
+            App.Current.Grabber.TonemapInto(c.Image, c.Output, c.BaseExposure * multiplier, _tmp);
             IntRect dst = c.Bounds.Offset(-_result.Region.Left, -_result.Region.Top);
             for (int y = 0; y < dst.Height; y++) Buffer.BlockCopy(_tmp.Data, y * _tmp.Width * 4, _original.Data, ((dst.Top + y) * _original.Width + dst.Left) * 4, dst.Width * 4);
         }
@@ -479,18 +468,28 @@ public sealed class EditorSurface : UserControl
     {
         var outImg = BgraImage.Blank(View.Width, View.Height);
         ShapeRenderer.Render(Session.Doc, _baseView!, View, outImg, null, _accent);
-        ApplyLasso(outImg);
+        ApplyLasso(outImg, new IntRect(0, 0, outImg.Width, outImg.Height));
         return outImg;
     }
 
-    /// <summary>Freeform snips keep their lasso: whatever is drawn outside it is cut, as the pixels were.</summary>
-    private void ApplyLasso(BgraImage target)
+    /// <summary>Freeform snips keep their lasso: whatever is drawn outside it is cut, as the pixels were. Only
+    /// <paramref name="area"/> (view pixels) is cut.</summary>
+    private void ApplyLasso(BgraImage target, IntRect area)
     {
         if (!LassoFits || !App.Current.Settings.Annotate.ClipToLasso) return;
         _lasso ??= _result!.Freeform!.Select(p => (p.X - _result.Region.Left, p.Y - _result.Region.Top)).ToArray();
-        Core.Imaging.FreeformMask.Apply(target, View, _lasso);
+        // Rasterised once per view and reused by every paint, rather than scanned against the whole polygon each time.
+        if (_lassoSpans == null || _lassoSpansFor != View)
+        {
+            _lassoSpans = Core.Imaging.FreeformSpans.Build(View.Width, View.Height, View, _lasso);
+            _lassoSpansFor = View;
+        }
+        _lassoSpans.ClearOutside(target, area);
     }
     private (int X, int Y)[]? _lasso;
+    /// <summary>The lasso's inside spans for <see cref="_lassoSpansFor"/>, the view (crop) they were built for.</summary>
+    private Core.Imaging.FreeformSpans? _lassoSpans;
+    private IntRect _lassoSpansFor;
 
     /// <summary>The result has a lasso and the image is still in the lasso's frame (a snip saved cropped is not).</summary>
     private bool LassoFits => _result?.Freeform != null && _original != null

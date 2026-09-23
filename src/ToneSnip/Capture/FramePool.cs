@@ -6,8 +6,8 @@ namespace ToneSnip.App.Capture;
 /// One set of full-monitor frame buffers per output, reused by every snip. Frame-sized arrays land on the Large Object
 /// Heap, which is rarely collected, so reusing them avoids a large garbage build-up.
 /// <para><b>Ownership.</b> Every buffer belongs to the grabber and is overwritten in place by the next grab, so nothing
-/// that outlives the overlay may hold one. <see cref="CaptureResult.Build"/> copies (crop, composite, allocating
-/// tonemap), the settings preview keeps a downsample, and the overlay releases its pins before the result is built. A
+/// that outlives the overlay may hold one. <see cref="CaptureResult.Build"/> copies (composite, and the crops when
+/// something will read them), the settings preview keeps a downsample, and the overlay releases its pins before the result is built. A
 /// new consumer that wants to keep a <see cref="CapturedOutput"/> must copy it first.</para>
 /// <para><b>Size.</b> <see cref="EndGrab"/> drops buffers the grab did not use, leaving about 4 bytes a pixel per SDR
 /// output and 12 per HDR output (half frame plus tonemapped copy), plus 4 for an annotated overlay back buffer.
@@ -51,6 +51,25 @@ internal sealed class FramePool
             _bgra[(output, role)] = img;
             return img;
         }
+    }
+
+    /// <summary>
+    /// Lets go of one half buffer this grab requested but will not use: an output that fell back to GDI after its
+    /// WGC copy had begun. Without this, <see cref="EndGrab"/> would count it as used and keep 8 bytes a pixel for
+    /// an output whose snip is SDR. A copy still writing to it keeps it alive only until the copy ends.
+    /// </summary>
+    public void DropHalf(int output, string role)
+    {
+        lock (_gate) { _half.Remove((output, role)); _touched.Remove((output, role)); }
+    }
+
+    /// <summary>
+    /// Lets go of one BGRA buffer a copy that is still running was given, so the next grab allocates its own rather than
+    /// sharing it with that copy. The copy keeps the old one alive only until it ends.
+    /// </summary>
+    public void DropBgra(int output, string role)
+    {
+        lock (_gate) { _bgra.Remove((output, role)); _touched.Remove((output, role)); }
     }
 
     /// <summary>Starts the record of what a grab asked for.</summary>

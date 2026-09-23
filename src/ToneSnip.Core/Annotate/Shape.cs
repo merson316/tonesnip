@@ -33,7 +33,21 @@ public abstract record Shape(int Id)
 
 public sealed record PenShape(int Id, IReadOnlyList<(int X, int Y)> Points, int Width, uint Color, bool Highlighter) : Shape(Id)
 {
-    public override IntRect Bounds => BoundsOf(Points, Width / 2 + 1);
+    /// <summary>The points' extent, remembered: the renderer, hit-testing and invalidation ask for the bounds many times
+    /// a paint, and a stroke can have thousands of points.</summary>
+    private readonly Extent _extent = new();
+
+    /// <summary>A copy made by <c>with</c> gets its own memo rather than sharing the original's, which would thrash
+    /// between the two while a stroke is dragged. It copies every property by hand, so a new one must be added
+    /// here.</summary>
+    private PenShape(PenShape original) : base(original)
+    {
+        Points = original.Points; Width = original.Width; Color = original.Color; Highlighter = original.Highlighter;
+        _extent = new();   // field initialisers do not run in a record's copy constructor
+    }
+
+    public override IntRect Bounds => _extent.Of(Points) is var (l, t, r, b) ? IntRect.FromLtrb(l - Pad, t - Pad, r + Pad + 1, b + Pad + 1) : IntRect.Empty;
+    private int Pad => Width / 2 + 1;
     public override bool HitTest(int x, int y)
     {
         double tol = Width / 2.0 + 3;
@@ -42,6 +56,42 @@ public sealed record PenShape(int Id, IReadOnlyList<(int X, int Y)> Points, int 
         return false;
     }
     public override Shape Moved(int dx, int dy) => this with { Points = Points.Select(p => (p.X + dx, p.Y + dy)).ToArray() };
+
+    /// <summary>
+    /// The inclusive extent of a point list, computed once per list. The in-progress stroke's list only ever grows, so
+    /// more points on the same list extend the extent by the new ones. Swapped as one immutable snapshot, since output
+    /// renders read shapes off the UI thread. Every memo equals every other, so it never affects the record's equality.
+    /// </summary>
+    private sealed class Extent
+    {
+        private sealed record Snapshot(IReadOnlyList<(int X, int Y)> Points, int Count, int L, int T, int R, int B);
+        private volatile Snapshot? _last;
+
+        public (int L, int T, int R, int B)? Of(IReadOnlyList<(int X, int Y)> points)
+        {
+            if (points.Count == 0) return null;
+            Snapshot? s = _last;
+            if (s == null || !ReferenceEquals(s.Points, points) || s.Count > points.Count)
+                s = new Snapshot(points, 0, int.MaxValue, int.MaxValue, int.MinValue, int.MinValue);
+            if (s.Count < points.Count)
+            {
+                int l = s.L, t = s.T, r = s.R, b = s.B;
+                for (int i = s.Count; i < points.Count; i++)
+                {
+                    (int x, int y) = points[i];
+                    if (x < l) l = x;
+                    if (y < t) t = y;
+                    if (x > r) r = x;
+                    if (y > b) b = y;
+                }
+                _last = s = new Snapshot(points, points.Count, l, t, r, b);
+            }
+            return (s.L, s.T, s.R, s.B);
+        }
+
+        public override bool Equals(object? obj) => obj is Extent;
+        public override int GetHashCode() => 0;
+    }
 }
 
 public sealed record LineShape(int Id, int X1, int Y1, int X2, int Y2, int Width, uint Color, bool Arrow) : Shape(Id)

@@ -162,7 +162,7 @@ internal static class LeakTest
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task Toolbar(List<WeakReference<object>> tracked)
     {
-        var info = new OutputInfo(0, @"\\.\DISPLAY1", _monitor.Left, _monitor.Top, _monitor.Width, _monitor.Height, 0, false, 80f, 400f, "Primary");
+        var info = new OutputInfo(0, @"\\.\DISPLAY1", _monitor.Left, _monitor.Top, _monitor.Width, _monitor.Height, false, 80f, 400f, "Primary");
         var outputs = new List<CapturedOutput> { new(info, null, BgraImage.Blank(8, 8)) };
         var session = new Overlay.OverlaySession(outputs, null!, _monitor, SnipMode.Rectangle, App.Current.Settings, App.Current.Log);
         var toolbar = new Overlay.ToolbarWindow(session, _monitor);

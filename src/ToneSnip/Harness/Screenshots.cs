@@ -414,7 +414,7 @@ internal static class Screenshots
     private static async Task HoldToolbar(string what, int seconds)
     {
         App app = App.Current;
-        var info = new OutputInfo(0, @"\\.\DISPLAY1", _primary.Left, _primary.Top, _primary.Width, _primary.Height, 0, true, 80f, 400f, "Primary");
+        var info = new OutputInfo(0, @"\\.\DISPLAY1", _primary.Left, _primary.Top, _primary.Width, _primary.Height, true, 80f, 400f, "Primary");
         var outputs = new List<CapturedOutput> { new(info, SyntheticHalf(8, 8), BgraImage.Blank(8, 8)) };
         var session = new Overlay.OverlaySession(outputs, null!, _primary, SnipMode.Rectangle, app.Settings, app.Log);
         var toolbar = new Overlay.ToolbarWindow(session, _primary);
@@ -744,7 +744,7 @@ internal static class Screenshots
     {
         // No capture: the overlay windows are never created. An 8x8 half-float frame makes the session report HDR so
         // the exposure and zebra controls appear; the null grabber is only reached by moving the exposure slider.
-        var info = new OutputInfo(0, @"\\.\DISPLAY1", _primary.Left, _primary.Top, _primary.Width, _primary.Height, 0, true, 80f, 400f, "Primary");
+        var info = new OutputInfo(0, @"\\.\DISPLAY1", _primary.Left, _primary.Top, _primary.Width, _primary.Height, true, 80f, 400f, "Primary");
         var outputs = new List<CapturedOutput> { new(info, SyntheticHalf(8, 8), BgraImage.Blank(8, 8)) };
         var session = new Overlay.OverlaySession(outputs, null!, _primary, SnipMode.Rectangle, App.Current.Settings, App.Current.Log);
         var toolbar = new Overlay.ToolbarWindow(session, _primary);
@@ -1070,8 +1070,9 @@ internal static class Screenshots
         var crops = new List<HalfCrop>();
         if (hdr)
         {
-            var info = new OutputInfo(0, @"\\.\DISPLAY1", 0, 0, region.Width, region.Height, 0, true, 203f, 1000f, "Synthetic HDR");
-            crops.Add(new HalfCrop(region, SyntheticHalf(region.Width, region.Height), info));
+            var info = new OutputInfo(0, @"\\.\DISPLAY1", 0, 0, region.Width, region.Height, true, 203f, 1000f, "Synthetic HDR");
+            HalfImage half = SyntheticHalf(region.Width, region.Height);
+            crops.Add(new HalfCrop(region, half, info, CaptureResult.BaseExposure(half, region, info, App.Current.Settings)));
         }
         return new CaptureResult { Image = image, Region = region, AnyHdr = hdr, Crops = crops };
     }

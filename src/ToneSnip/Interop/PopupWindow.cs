@@ -143,7 +143,7 @@ public class PopupWindow : Window
         Surface.Loaded += (_, _) => placed();
         // Deferred: SizeChanged arrives inside the layout pass, and placing resizes.
         Surface.SizeChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (!_closed) placed(); });
-        if (_activate) { Activate(); Win32.ForceForeground(Hwnd); }
+        if (_activate) { Activate(); Win32.ForceForeground(Hwnd, App.Current.Log); }
         else AppWindow.Show(activateWindow: false);
         // The presenter's first size pass can land after the Loaded placement, so one more low-priority pass re-asserts
         // the rectangle. It does not measure again: a second unbounded measure of a realized tree can answer

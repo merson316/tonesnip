@@ -104,4 +104,35 @@ public class ShapeTests
         Assert.Equal(8, Style.BlurRadius(4)); Assert.Equal(16, Style.BlurRadius(8));
         Assert.Equal(6, Style.PixelBlock(2)); Assert.Equal(24, Style.PixelBlock(8));
     }
+
+    [Fact]
+    public void Pen_bounds_follow_a_move_a_restyle_and_a_growing_stroke()
+    {
+        var pen = new PenShape(1, new[] { (10, 10), (50, 10), (50, 40) }, 4, 0xFFFF0000, Highlighter: false);
+        Assert.Equal(new IntRect(7, 7, 47, 37), pen.Bounds);
+        Assert.Equal(new IntRect(12, 2, 47, 37), pen.Moved(5, -5).Bounds);
+        Assert.Equal(new IntRect(5, 5, 51, 41), (pen with { Width = 8 }).Bounds);   // pad 8/2+1 = 5
+        Assert.Equal(new IntRect(7, 7, 47, 37), pen.Bounds);                         // the original is untouched
+
+        // The in-progress stroke is one list that grows under the same shape.
+        var live = new List<(int X, int Y)> { (20, 20) };
+        var stroke = new PenShape(0, live, 2, 0xFFFF0000, Highlighter: false);
+        Assert.Equal(IntRect.FromLtrb(18, 18, 23, 23), stroke.Bounds);
+        live.Add((30, 5));
+        Assert.Equal(IntRect.FromLtrb(18, 3, 33, 23), stroke.Bounds);
+        Assert.Equal(IntRect.Empty, new PenShape(2, Array.Empty<(int, int)>(), 2, 0, false).Bounds);
+    }
+
+    [Fact]
+    public void Reading_pen_bounds_does_not_change_equality()
+    {
+        (int, int)[] pts = { (1, 2), (3, 4) };
+        var a = new PenShape(1, pts, 4, 0xFFFF0000, false);
+        var b = new PenShape(1, pts, 4, 0xFFFF0000, false);
+        _ = a.Bounds;
+        Assert.Equal(a, b);
+        Assert.Equal(a.GetHashCode(), b.GetHashCode());
+        Assert.Equal(a, a with { });
+        Assert.NotEqual(a, a with { Width = 5 });
+    }
 }

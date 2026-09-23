@@ -9,7 +9,8 @@ public static class Bitmaps
 {
     public static byte[] EncodePng(BgraImage img) => WicEncode.Run(Wic.ContainerPng, Wic.Pf32bppBgra, img.Width, img.Height, img.Width * 4, img.Data, null);
 
-    /// <summary>JPEG has no alpha: transparent pixels are flattened on white.</summary>
+    /// <summary>JPEG has no alpha: transparent pixels are flattened on white, as <see cref="Flatten.OnWhite"/> does, while
+    /// packing to 24-bit BGR, so no flattened copy of the image is made. An opaque image is encoded as is.</summary>
     public static byte[] EncodeJpeg(BgraImage img, int quality)
     {
         var bgr = new byte[img.Width * img.Height * 3];
@@ -21,6 +22,13 @@ public static class Bitmaps
             bgr[o + 2] = (byte)((img.Data[i + 2] * a + 255 * (255 - a)) / 255);
         }
         return WicEncode.Run(Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, bgr, bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f));
+    }
+
+    /// <summary>An 8-bit grayscale JPEG, for the UltraHDR gain map.</summary>
+    public static byte[] EncodeGrayJpeg(byte[] gray, int width, int height, int quality)
+    {
+        if (gray.Length != width * height) throw new ArgumentException("gray must be width*height bytes");
+        return WicEncode.Run(Wic.ContainerJpeg, Wic.Pf8bppGray, width, height, width, gray, bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f));
     }
 
     /// <summary>The largest image <see cref="Decode"/> will allocate for: 268 megapixels (1 GB of BGRA), more than three

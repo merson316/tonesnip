@@ -1,4 +1,4 @@
-using ToneSnip.Core.Capture;
+using ToneSnip.Core.Ipc;
 
 namespace ToneSnip.App;
 

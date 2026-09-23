@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <RootNamespace>ToneSnip.Core.Tests</RootNamespace>
     <!-- The repo-wide Directory.Build.props sets InvariantGlobalization (the app ships English-only, codereview 6.1),

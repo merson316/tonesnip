@@ -4,6 +4,10 @@ using ToneSnip.Core.Imaging;
 
 namespace ToneSnip.Windows.Imaging;
 
+/// <summary>
+/// Decodes a JPEG XR back to half floats: the Settings preview's packed frame, and in `--selftest` the HDR sidecar,
+/// checked bit-exact. It stays beside <see cref="Wic"/>, which is internal to this assembly.
+/// </summary>
 public static class JxrDecoder
 {
     public static HalfImage DecodeHalf(byte[] jxr)

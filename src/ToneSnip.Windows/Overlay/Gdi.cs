@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Geometry;
+using ToneSnip.Core.Imaging;
 
 namespace ToneSnip.Windows.Overlay;
 
@@ -92,20 +93,13 @@ internal static class Gdi
     internal static unsafe void Darken(byte* bits, int widthPixels, IntRect area) => Shade(bits, widthPixels, area, keep: 153);
 
     /// <summary>Scales <paramref name="area"/>'s colour channels in place to <paramref name="keep"/>/255 (0 is black),
-    /// without touching alpha.</summary>
+    /// without touching alpha. Vectorised (<see cref="PixelShade"/>): the dim covers the whole monitor on the first
+    /// paint.</summary>
     internal static unsafe void Shade(byte* bits, int widthPixels, IntRect area, int keep)
     {
         if (area.IsEmpty) return;
         for (int y = area.Top; y < area.Bottom; y++)
-        {
-            byte* p = bits + ((long)y * widthPixels + area.Left) * 4;
-            for (int x = 0; x < area.Width; x++, p += 4)
-            {
-                p[0] = (byte)((p[0] * keep + 127) / 255);
-                p[1] = (byte)((p[1] * keep + 127) / 255);
-                p[2] = (byte)((p[2] * keep + 127) / 255);
-            }
-        }
+            PixelShade.Shade(new Span<byte>(bits + ((long)y * widthPixels + area.Left) * 4, area.Width * 4), keep);
     }
 
     /// <summary>Lifts <paramref name="area"/> in place towards white by <paramref name="amount"/>/255 (255 is white), as

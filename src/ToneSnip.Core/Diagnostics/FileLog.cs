@@ -3,7 +3,10 @@ using System.Globalization;
 
 namespace ToneSnip.Core.Diagnostics;
 
-/// <summary>Append-only text log, truncated when it passes 1 MB. Never throws.</summary>
+/// <summary>
+/// Append-only text log. Past <see cref="MaxBytes"/> the file is rolled to <c>name.1.ext</c>, replacing the previous
+/// one, so the lines just before a failure survive the roll. Never throws.
+/// </summary>
 public sealed class FileLog : ILog
 {
     /// <summary>
@@ -12,15 +15,27 @@ public sealed class FileLog : ILog
     /// </summary>
     public static LogLevel Minimum { get; set; } = LogLevel.Info;
 
+    /// <summary>
+    /// Written as the first line of every new file, so a rolled log still says which build and process wrote it. Set
+    /// once at startup (the app version and PID); null writes no header.
+    /// </summary>
+    public static string? Header { get; set; }
+
     /// <summary>One lock per file, shared by every instance writing it, so concurrent appends do not fail with a
     /// sharing violation.</summary>
     private static readonly ConcurrentDictionary<string, object> Locks = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock;
     public string Path { get; }
+    /// <summary>The size past which the next write rolls the file.</summary>
+    public long MaxBytes { get; }
+    /// <summary>Where the previous file goes: <c>tonesnip.log</c> becomes <c>tonesnip.1.log</c>.</summary>
+    public string PreviousPath { get; }
 
-    public FileLog(string path)
+    public FileLog(string path, long maxBytes = 1_000_000)
     {
         Path = path;
+        MaxBytes = maxBytes;
+        PreviousPath = System.IO.Path.ChangeExtension(path, ".1" + System.IO.Path.GetExtension(path));
         string key;
         try { key = System.IO.Path.GetFullPath(path); } catch { key = path; }
         _lock = Locks.GetOrAdd(key, _ => new object());
@@ -39,11 +54,28 @@ public sealed class FileLog : ILog
         {
             try
             {
-                if (File.Exists(Path) && new FileInfo(Path).Length > 1_000_000) File.WriteAllText(Path, "");
-                // Invariant culture keeps the timestamp format fixed regardless of the user's time separator.
-                File.AppendAllText(Path, $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)} {tag}: {message}{Environment.NewLine}");
+                var file = new FileInfo(Path);
+                bool fresh = !file.Exists;
+                if (file.Exists && file.Length > MaxBytes) fresh = Roll();
+                string line = Line(tag, message);
+                File.AppendAllText(Path, fresh && Header != null ? Line("info", Header) + line : line);
             }
             catch { }
         }
     }
+
+    /// <summary>
+    /// Moves the full file aside. If that fails (another process has the old file open), the log is emptied instead,
+    /// as it always was, so it cannot grow without bound. Returns whether a new file starts.
+    /// </summary>
+    private bool Roll()
+    {
+        try { File.Move(Path, PreviousPath, overwrite: true); }
+        catch { try { File.WriteAllText(Path, ""); } catch { return false; } }
+        return true;
+    }
+
+    // Invariant culture keeps the timestamp format fixed regardless of the user's time separator.
+    private static string Line(string tag, string message)
+        => $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)} {tag}: {message}{Environment.NewLine}";
 }

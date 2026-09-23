@@ -49,13 +49,4 @@ public static class Transfer
     public static float HalfToFloat(ushort bits) => (float)BitConverter.UInt16BitsToHalf(bits);
 
     public static ushort FloatToHalf(float value) => BitConverter.HalfToUInt16Bits((Half)value);
-
-    /// <summary>Linear BT.2020 RGB to linear BT.709 RGB (same white point).</summary>
-    public static void Bt2020To709(ref float r, ref float g, ref float b)
-    {
-        float r2 = 1.6605f * r - 0.5876f * g - 0.0728f * b;
-        float g2 = -0.1246f * r + 1.1329f * g - 0.0083f * b;
-        float b2 = -0.0182f * r - 0.1006f * g + 1.1187f * b;
-        r = r2; g = g2; b = b2;
-    }
 }

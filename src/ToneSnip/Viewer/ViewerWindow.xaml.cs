@@ -314,11 +314,7 @@ public sealed partial class ViewerWindow : Window
     private static string Ev(double ev) => ev == 0 ? "0 EV" : $"{ev:+0.00;-0.00} EV";
 
     /// <summary>Colour, width and text size stick for the next snip; the file is written once, when the window closes.</summary>
-    private void SaveStyle()
-    {
-        if (_styleToSave is not Core.Annotate.Style s || s == App.Current.Settings.Annotate.ToStyle(_accent)) return;
-        App.Current.UpdateSettingsQuiet(cur => cur with { Annotate = AnnotateSettings.FromStyle(s, _accent) with { PrivacyMode = cur.Annotate.PrivacyMode } });
-    }
+    private void SaveStyle() => App.Current.RememberAnnotateStyle(_styleToSave, App.Current.Settings.Annotate, _accent);
 
     /// <summary>
     /// Escape, the annotate bar's tool letters, and space (which arms the pan). The other shortcuts are
@@ -817,15 +813,18 @@ public sealed partial class ViewerWindow : Window
             bool clip = App.Current.Settings.CopyToClipboard;
             int quality = App.Current.Settings.JpegQuality;
             // The encode runs off the UI thread; everything after this await is the UI-thread tail.
+            byte[]? png = null;
             await RunEncode(() =>
             {
-                byte[]? p = !jpeg || clip ? Bitmaps.EncodePng(img) : null;   // a JPEG save with no clipboard needs no PNG at all
-                File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(img, quality) : p!);
-                if (clip) ClipboardWriter.Set(img, p!, App.Current.Log);
+                png = !jpeg || clip ? Bitmaps.EncodePng(img) : null;   // a JPEG save with no clipboard needs no PNG at all
+                File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(img, quality) : png!);
+                if (clip) ClipboardWriter.Set(img, png!, App.Current.Log);
             });
             // The file is written, so the Save has succeeded even if the window has since closed; only the lines that
             // touch elements are guarded.
             _result.Output = img;   // "Open last snip" and Compact both read this
+            // Closing the editor compacts the result to this PNG; kept, so the close does not encode the image again.
+            if (png != null) _result.CachePng(img, png);
             bool hdrData = _result.Crops.Count > 0;
             // A sidecar belonging to another file (the original name, after a Save as) is forgotten, not overwritten.
             if (_result.HdrPath != null && !HdrOutput.OwnsSidecar(path, _result.HdrPath)) _result.HdrPath = null;
@@ -857,11 +856,8 @@ public sealed partial class ViewerWindow : Window
 
     /// <summary>
     /// Shows or hides one of the status strip's notes, announcing it when it appears.
-    /// <para>
     /// <c>AutomationProperties.LiveSetting</c> alone announces nothing: the framework raises no event when Visibility
-    /// changes, so the note raises <c>LiveRegionChanged</c> itself. <c>FromElement</c> returns a peer only when a UIA
-    /// client is listening, so otherwise this costs a null check. Hiding is not announced.
-    /// </para>
+    /// changes, so the note is announced through <see cref="Controls.LiveRegion"/>. Hiding is not announced.
     /// </summary>
     private void ShowNote(TextBlock note, bool on)
     {
@@ -869,9 +865,7 @@ public sealed partial class ViewerWindow : Window
         Visibility want = on ? Visibility.Visible : Visibility.Collapsed;
         if (note.Visibility == want) return;
         note.Visibility = want;
-        if (!on) return;
-        Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.FromElement(note)
-            ?.RaiseAutomationEvent(Microsoft.UI.Xaml.Automation.Peers.AutomationEvents.LiveRegionChanged);
+        if (on) Controls.LiveRegion.Announce(note);
     }
 
 #if TONESNIP_HARNESS
@@ -995,12 +989,18 @@ public sealed partial class ViewerWindow : Window
             bool jpeg = ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase);
             int quality = App.Current.Settings.JpegQuality;
             // Off the UI thread, as in Save; the tail below runs on the UI thread.
-            await RunEncode(() => File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(img, quality) : Bitmaps.EncodePng(img)));
+            byte[]? png = null;
+            await RunEncode(() =>
+            {
+                png = jpeg ? null : Bitmaps.EncodePng(img);
+                File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(img, quality) : png!);
+            });
             // The file is written, so the Save as has succeeded and its history row must be recorded even if the window
             // has closed; only the lines that touch elements are guarded.
             _result.SavedPath = path;
             if (!HdrOutput.OwnsSidecar(path, _result.HdrPath)) _result.HdrPath = null;   // the old name's sidecar is not this file's
             _result.Output = img;   // as in Save: the retained result must carry the pixels that were written
+            if (png != null) _result.CachePng(img, png);   // as in Save: the close keeps this PNG rather than encoding again
             App.Current.History.AddSavedCopy(_result, path, img);
             SetHdrNote(!hdrData && _result.HdrPath != null);
             _savedExposure = rendered.Exposure;
@@ -1123,9 +1123,10 @@ public sealed partial class ViewerWindow : Window
             try { await WritesPending(); } catch (Exception ex) { App.Current.Log.Warn("viewer hdr shutdown: " + ex.Message); }
             try { Bar.Detach(); } catch (Exception ex) { App.Current.Log.Warn("viewer bar detach: " + ex.Message); }
             try { Surface.ReleaseBuffers(); } catch (Exception ex) { App.Current.Log.Warn("viewer release: " + ex.Message); }
-            try { _result.Compact(); } catch (Exception ex) { App.Current.Log.Warn("viewer compact: " + ex.Message); }
+            // Off the UI thread when it has to encode; not at all when nothing was edited or a save made the PNG.
+            try { await _result.CompactAsync(); } catch (Exception ex) { App.Current.Log.Warn("viewer compact: " + ex.Message); }
             try { SaveStyle(); } catch (Exception ex) { App.Current.Log.Warn("viewer style save: " + ex.Message); }
-            App.Current.LogMemory("memory after edit");
+            App.Current.ReclaimMemory("memory after edit");
         }
         // Anything thrown outside the per-step catches above.
         catch (Exception ex) { App.Current.Log.Warn("viewer closed: " + ex.Message); }

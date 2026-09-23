@@ -71,10 +71,19 @@ internal static class Wic
         IntPtr readPtr = Marshal.AllocHGlobal(sizeof(int));
         try
         {
+            // A byte array is pinned for the call rather than copied, so the whole stream is read straight into the
+            // result: a memory stream returns it all at once. Only a short read needs a bounce buffer, since Read has no
+            // offset, and that one stays under the Large Object Heap's threshold.
             int total = 0;
-            var chunk = new byte[Math.Min(1 << 20, buf.Length)];   // one chunk for the whole read, not one per pass
+            if (buf.Length > 0)
+            {
+                s.Read(buf, buf.Length, readPtr);
+                total = Math.Max(0, Marshal.ReadInt32(readPtr));
+            }
+            byte[]? chunk = null;
             while (total < buf.Length)
             {
+                chunk ??= new byte[Math.Min(64 * 1024, buf.Length - total)];
                 s.Read(chunk, Math.Min(chunk.Length, buf.Length - total), readPtr);
                 int n = Marshal.ReadInt32(readPtr);
                 if (n <= 0) break;

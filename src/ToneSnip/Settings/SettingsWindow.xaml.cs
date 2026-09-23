@@ -76,6 +76,7 @@ public partial class SettingsWindow : Window
             // Unloaded is unreliable on Close(); an armed recorder left behind would swallow every key system-wide.
             HotkeyBox.DisarmAll();
             _previewBitmap = null;
+            _ = Task.Run(App.Current.PackPreviewFrame);   // the preview's frame is not needed again until Settings reopens
         });
 
         Theme.ThemeManager.Attach(this);
@@ -412,14 +413,17 @@ public partial class SettingsWindow : Window
     /// <summary>
     /// The user can disable autostart in Windows Settings, so the switch shows what Windows reports rather than the
     /// stored setting. Queried on the thread pool (StartupTask is async) and reconciled on the UI thread if they differ.
+    /// <para>The stored value goes with the question: beside an installed package there is nothing this copy can read,
+    /// and it answers with what it was given rather than letting this write settings.json back to off.</para>
     /// </summary>
     private void ReconcileAutostart()
     {
         // Captured on the UI thread: Window is thread-affine.
         DispatcherQueue ui = DispatcherQueue;
+        bool stored = StartWithWindows.IsOn;
         _ = Task.Run(() =>
         {
-            bool actual = Autostart.IsEnabled();
+            bool actual = Autostart.IsEnabled(stored);
             ui.TryEnqueue(() =>
             {
                 if (_closed || !_realised[GeneralPage] || StartWithWindows.IsOn == actual) return;
@@ -541,13 +545,13 @@ public partial class SettingsWindow : Window
     private void RenderPreview()
     {
         if (!_realised[TonemapPage]) return;   // the preview card does not exist until the page has been opened
-        if (App.Current.PreviewFrame is not var (small, info))
+        if (App.Current.PreviewFrame is not { } preview)
         {
             PreviewBox.Visibility = Visibility.Collapsed;
             PreviewHint.Text = "Take a snip on an HDR monitor to see a preview here.";
             return;
         }
-        PreviewBox.Height = small.Width > 0 ? Math.Min(PreviewMaxHeight, PreviewWidth * small.Height / (double)small.Width) : PreviewMaxHeight;
+        PreviewBox.Height = preview.Width > 0 ? Math.Min(PreviewMaxHeight, PreviewWidth * preview.Height / (double)preview.Width) : PreviewMaxHeight;
         PreviewBox.Visibility = Visibility.Visible;
         PreviewHint.Text = "Live preview of the last frozen HDR frame. Take a snip on an HDR monitor to update it.";
         if (_previewRunning) { _previewAgain = true; return; }
@@ -557,7 +561,8 @@ public partial class SettingsWindow : Window
         _ = Task.Run(() =>
         {
             BgraImage? rgba = null;
-            try { rgba = App.Current.Grabber.Tonemap(small, info); }
+            // Image() decodes the packed frame on the first render after Settings opens, here off the UI thread.
+            try { rgba = App.Current.Grabber.Tonemap(preview.Image(), preview.Output); }
             catch (Exception ex) { App.Current.Log.Warn("settings preview: " + ex.Message); }
             ui.TryEnqueue(() =>
             {

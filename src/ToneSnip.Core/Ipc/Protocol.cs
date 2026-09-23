@@ -1,4 +1,4 @@
-namespace ToneSnip.Core.Capture;
+namespace ToneSnip.Core.Ipc;
 
 /// <summary>The names two ToneSnip processes use to find each other: the second-launch pipe a later launch forwards its
 /// command line through.</summary>

@@ -90,14 +90,14 @@ public static class HdrCanvas
             if (mask[i] == 0) { d[i * 4] = 0; d[i * 4 + 1] = 0; d[i * 4 + 2] = 0; d[i * 4 + 3] = 0; }
     }
 
-    /// <summary>A copy of the canvas on an opaque white at <paramref name="referenceWhiteNits"/> — the HDR side of
+    /// <summary>Puts the canvas on an opaque white at <paramref name="referenceWhiteNits"/>, in place — the HDR side of
     /// <see cref="Flatten.OnWhite"/> — for the UltraHDR JPEG, which has no alpha: its SDR base and its gain map then
-    /// agree that a transparent area is white, with no gain.</summary>
-    public static HalfImage FlattenOnWhite(HalfImage canvas, float referenceWhiteNits)
+    /// agree that a transparent area is white, with no gain. In place because the canvas is built for the one file
+    /// and a copy would be 8 bytes a pixel; opaque pixels are left untouched.</summary>
+    public static void FlattenOnWhite(HalfImage canvas, float referenceWhiteNits)
     {
-        var o = new HalfImage(canvas.Width, canvas.Height, (ushort[])canvas.Data.Clone());
         float white = ReferenceScale(referenceWhiteNits);
-        ushort[] d = o.Data;
+        ushort[] d = canvas.Data;
         ushort opaque = Transfer.FloatToHalf(1f);
         for (int i = 0; i < d.Length; i += 4)
         {
@@ -106,7 +106,6 @@ public static class HdrCanvas
             for (int c = 0; c < 3; c++) d[i + c] = Transfer.FloatToHalf(Finite(Transfer.HalfToFloat(d[i + c]) * a + white * (1f - a)));
             d[i + 3] = opaque;
         }
-        return o;
     }
 
     /// <summary>Alpha-blends a straight-alpha sRGB layer (what the SDR rasterizer drew) over the straight-alpha canvas in

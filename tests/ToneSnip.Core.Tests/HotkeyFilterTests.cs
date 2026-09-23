@@ -84,11 +84,11 @@ public class HotkeyFilterTests
     }
 
     [Fact]
-    public void A_binding_that_says_not_to_swallow_fires_and_passes_both_edges()
+    public void A_filter_that_does_not_swallow_fires_and_passes_both_edges()
     {
         var cancel = new HotkeyBinding(new Chord(Escape, false, false, false, false), "cancelCountdown");
         HotkeyFilter f = Filter(cancel);
-        f.ShouldSwallow = _ => false;
+        f.Swallow = false;
         KeyDecision down = f.OnKey(Escape, true, false, KeyMods.None);
         Assert.Equal("cancelCountdown", down.Fired?.Action);
         Assert.False(down.Swallow);

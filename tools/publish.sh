@@ -128,7 +128,7 @@ winpath() { echo "$WINDRIVE:$(echo "$REPO_ROOT" | sed 's|/|\\|g')\\$(echo "$1" |
 # The Linux SDK (Core tests above) and the Windows SDK corrupt each other's obj/, so every Windows build starts clean.
 clean_obj() { rm -rf src/ToneSnip.Core/obj src/ToneSnip.Core/bin src/ToneSnip.Windows/obj src/ToneSnip.Windows/bin src/ToneSnip/obj src/ToneSnip/bin; }
 
-build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 9 Desktop Runtime)
+build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 10 Desktop Runtime)
   # WindowsAppSDKSelfContained=true is required: a single-file publish with a framework-dependent Windows App SDK is
   # unsupported, and every XAML window throws XamlParseException. The csproj refuses that combination.
   rm -rf dist/tonesnip

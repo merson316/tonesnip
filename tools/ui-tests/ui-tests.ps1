@@ -751,6 +751,10 @@ if (Should-Run 'flyout') {
         winapp ui invoke 'Flyout_DelayPill' -a $id 2>&1 | Out-Null
         Start-Sleep -Milliseconds 600
 
+        # The pill keeps a tooltip up after the invoke, and the shot above brings the process's windows to the
+        # foreground in turn; the flyout loses the foreground and dismisses itself, as it would for a real
+        # click elsewhere. Reopen it rather than hover a window that has gone.
+        $id = Ensure-Flyout 'flyout-row' 200
         Test-UI "flyout-row: hover a row reveals its actions" {
             winapp ui hover 'Flyout_RowOpen' -a $id --dwell-time 1200
             if ($LASTEXITCODE -ne 0) { throw "hover failed" }

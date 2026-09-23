@@ -46,9 +46,13 @@ public static class SnipSettingsFile
         }
     }
 
+    /// <summary>How many <c>.bad-*</c> copies are kept. A file that stays unreadable is copied at every launch, so
+    /// without a limit they pile up; the newest few are the ones worth recovering.</summary>
+    public const int BadCopiesKept = 3;
+
     /// <summary>
     /// Defaults, after copying the file to <c>settings.json.bad-yyyyMMdd-HHmmss</c> so the next settings save does not
-    /// destroy a hand-edited file with a typo in it.
+    /// destroy a hand-edited file with a typo in it. Only the newest <see cref="BadCopiesKept"/> copies are kept.
     /// </summary>
     private static (SnipSettings, string) Unreadable(string path, string reason)
     {
@@ -56,12 +60,28 @@ public static class SnipSettingsFile
         try
         {
             if (!File.Exists(backup)) File.Copy(path, backup);
+            PruneBadCopies(path);
             return (new SnipSettings(), $"{reason}; using defaults, and the file was kept as {Path.GetFileName(backup)}");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return (new SnipSettings(), $"{reason}; using defaults, and it could not be kept ({e.Message})");
         }
+    }
+
+    /// <summary>Deletes all but the newest <see cref="BadCopiesKept"/> copies. The timestamp in the name sorts in time
+    /// order, so the names decide; a copy that cannot be deleted is left for the next time.</summary>
+    private static void PruneBadCopies(string path)
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
+            foreach (string old in Directory.GetFiles(dir, Path.GetFileName(path) + ".bad-*").OrderByDescending(f => f, StringComparer.Ordinal).Skip(BadCopiesKept))
+            {
+                try { File.Delete(old); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     public static void Save(string path, SnipSettings settings) => JsonFile.Save(path, settings);

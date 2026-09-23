@@ -21,17 +21,52 @@ public static class ShapeRenderer
     public const uint DefaultAccent = 0xFF0078D4;
 
     /// <summary>
-    /// The font family and typographic format for text shapes, owned by one render pass rather than shared statics:
-    /// the HDR sidecar write runs off the UI thread, and GDI+ handles are not thread-safe. Created lazily.
+    /// The font family, formats and counter fonts for text shapes. Not shared across threads: the HDR sidecar write
+    /// and the output render run off the UI thread, and GDI+ handles are not thread-safe. The UI thread, which renders
+    /// on every paint of the overlay and the editor, keeps one for the life of the process (<see cref="Text"/>); any
+    /// other thread gets one per pass, disposed with it. Created lazily.
     /// </summary>
     private sealed class TextResources : IDisposable
     {
+        /// <summary>More counter sizes than the style offers means something is producing odd sizes: the fonts are let
+        /// go rather than piling up GDI+ handles on the UI thread for good.</summary>
+        private const int MaxCounterFonts = 8;
         private Gp.FontFamily? _family;
-        private Gp.StringFormat? _typographic;
+        private Gp.StringFormat? _typographic, _centred;
+        private readonly Dictionary<float, Gp.Font> _counterFonts = new();
 
         /// <summary>"Segoe UI Variable Text", falling back to "Segoe UI" and then the generic sans-serif family.</summary>
         public Gp.FontFamily Family => _family ??= Resolve();
         public Gp.StringFormat Typographic => _typographic ??= Gp.StringFormat.GenericTypographic();
+
+        /// <summary>Centred both ways, for a counter's number.</summary>
+        public Gp.StringFormat Centred
+        {
+            get
+            {
+                if (_centred != null) return _centred;
+                var f = new Gp.StringFormat();
+                try { f.Alignment = Gp.StringAlignment.Center; f.LineAlignment = Gp.StringAlignment.Center; }
+                catch { f.Dispose(); throw; }
+                return _centred = f;
+            }
+        }
+
+        /// <summary>The bold font of a counter's number at <paramref name="emSize"/> pixels.</summary>
+        public Gp.Font CounterFont(float emSize)
+        {
+            if (_counterFonts.TryGetValue(emSize, out Gp.Font? font)) return font;
+            if (_counterFonts.Count >= MaxCounterFonts) DisposeCounterFonts();
+            font = new Gp.Font(Family, emSize, Gp.FontStyle.Bold);
+            _counterFonts[emSize] = font;
+            return font;
+        }
+
+        private void DisposeCounterFonts()
+        {
+            foreach (Gp.Font f in _counterFonts.Values) f.Dispose();
+            _counterFonts.Clear();
+        }
 
         private static Gp.FontFamily Resolve()
         {
@@ -42,9 +77,24 @@ public static class ShapeRenderer
 
         public void Dispose()
         {
+            DisposeCounterFonts();
             _family?.Dispose(); _family = null;
             _typographic?.Dispose(); _typographic = null;
+            _centred?.Dispose(); _centred = null;
         }
+    }
+
+    /// <summary>The UI thread's text resources, kept for the process: GDI+ is never shut down (see GdiPlus), and they
+    /// are a family, two formats and a few fonts.</summary>
+    [ThreadStatic] private static TextResources? t_uiText;
+
+    /// <summary>The resources for a pass on this thread, and whether the pass owns (and must dispose) them.</summary>
+    private static (TextResources Text, bool Owned) Text()
+    {
+        if (t_uiText != null) return (t_uiText, false);
+        // Only a thread with a dispatcher queue is a UI thread; pool threads come and go, so theirs are per pass.
+        if (Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread() == null) return (new TextResources(), true);
+        return (t_uiText = new TextResources(), false);
     }
 
     public static uint ResolveColor(uint c, uint accent) => c == Style.AccentPlaceholder ? accent : c;
@@ -91,8 +141,12 @@ public static class ShapeRenderer
             if (cache.Count > count) Prune(cache, doc);
         }
         using Surface g = new(target, area);
-        using TextResources text = new();
-        foreach (Shape s in doc.Shapes) if (!s.IsRedaction && s.Id != suppressId && s.DirtyBounds.IntersectsWith(areaSrc)) Draw(g.Graphics, s, viewport, accentArgb, text);
+        (TextResources text, bool owned) = Text();
+        try
+        {
+            foreach (Shape s in doc.Shapes) if (!s.IsRedaction && s.Id != suppressId && s.DirtyBounds.IntersectsWith(areaSrc)) Draw(g.Graphics, s, viewport, accentArgb, text);
+        }
+        finally { if (owned) text.Dispose(); }
         return area;
     }
 
@@ -170,7 +224,13 @@ public static class ShapeRenderer
 
     private static void Chrome(EditSession session, IntRect viewport, Gp.Graphics gr, int width, int height, uint accentArgb)
     {
-        using TextResources text = new();
+        (TextResources text, bool owned) = Text();
+        try { ChromeCore(session, viewport, gr, width, height, accentArgb, text); }
+        finally { if (owned) text.Dispose(); }
+    }
+
+    private static void ChromeCore(EditSession session, IntRect viewport, Gp.Graphics gr, int width, int height, uint accentArgb, TextResources text)
+    {
         if (session.InProgress is Shape ip)
         {
             if (ip is RedactShape rp)
@@ -214,7 +274,7 @@ public static class ShapeRenderer
 
     /// <summary>Diagonal magenta/black stripes over pixels that exceed SDR white after exposure. View only.</summary>
     /// <param name="dirty">Optional viewport-relative rectangle (0,0 at the viewport's top-left) restricting the striped area to a repaint region.</param>
-    public static void Zebra(BgraImage target, IntRect viewport, IEnumerable<(IntRect Bounds, HalfImage Half)> crops, float sdrWhiteScRgb, float exposure, IntRect? dirty = null)
+    public static void Zebra(BgraImage target, IntRect viewport, ReadOnlySpan<(IntRect Bounds, HalfImage Half)> crops, float sdrWhiteScRgb, float exposure, IntRect? dirty = null)
     {
         IntRect? dirtyAbs = dirty is IntRect d ? d.Offset(viewport.Left, viewport.Top) : null;
         foreach ((IntRect bounds, HalfImage half) in crops)
@@ -222,17 +282,26 @@ public static class ShapeRenderer
             IntRect hit = bounds.Intersect(viewport);
             if (dirtyAbs is IntRect da) hit = hit.Intersect(da);
             if (hit.IsEmpty) continue;
-            Parallel.For(hit.Top, hit.Bottom, y =>
-            {
-                for (int x = hit.Left; x < hit.Right; x++)
-                {
-                    (float r, float g, float b) = half.Sample(x - bounds.Left, y - bounds.Top);
-                    if (Transfer.Luminance709(r, g, b) * exposure <= sdrWhiteScRgb) continue;
-                    int i = ((y - viewport.Top) * target.Width + (x - viewport.Left)) * 4;
-                    bool on = (((x + y) >> 2) & 1) == 0;
-                    target.Data[i] = on ? (byte)255 : (byte)0; target.Data[i + 1] = 0; target.Data[i + 2] = on ? (byte)255 : (byte)0;
-                }
-            });
+            // A pen stroke's dirty rectangle is a few thousand pixels, less than the cost of fanning out to the pool.
+            if ((long)hit.Width * hit.Height < ZebraParallelPixels)
+                for (int y = hit.Top; y < hit.Bottom; y++) ZebraRow(target, viewport, bounds, half, sdrWhiteScRgb, exposure, hit, y);
+            else
+                Parallel.For(hit.Top, hit.Bottom, y => ZebraRow(target, viewport, bounds, half, sdrWhiteScRgb, exposure, hit, y));
+        }
+    }
+
+    /// <summary>Below this many pixels the zebra pass runs on the calling thread.</summary>
+    private const int ZebraParallelPixels = 64 * 1024;
+
+    private static void ZebraRow(BgraImage target, IntRect viewport, IntRect bounds, HalfImage half, float sdrWhiteScRgb, float exposure, IntRect hit, int y)
+    {
+        for (int x = hit.Left; x < hit.Right; x++)
+        {
+            (float r, float g, float b) = half.Sample(x - bounds.Left, y - bounds.Top);
+            if (Transfer.Luminance709(r, g, b) * exposure <= sdrWhiteScRgb) continue;
+            int i = ((y - viewport.Top) * target.Width + (x - viewport.Left)) * 4;
+            bool on = (((x + y) >> 2) & 1) == 0;
+            target.Data[i] = on ? (byte)255 : (byte)0; target.Data[i + 1] = 0; target.Data[i + 2] = on ? (byte)255 : (byte)0;
         }
     }
 
@@ -302,11 +371,8 @@ public static class ShapeRenderer
                 var r = new Gp.RectF(c.X - vp.Left - c.Radius, c.Y - vp.Top - c.Radius, 2 * c.Radius, 2 * c.Radius);
                 using Gp.Brush br = Gp.Brush.Solid(ResolveColor(c.Color, accent)); g.FillEllipse(br, r.X, r.Y, r.W, r.H);
                 using Gp.Pen edge = new(0xA0000000, 1f); g.DrawEllipse(edge, r.X, r.Y, r.W, r.H);
-                using Gp.Font font = new(text.Family, c.Size * 0.9f, Gp.FontStyle.Bold);
-                using Gp.StringFormat fmt = new();
-                fmt.Alignment = Gp.StringAlignment.Center; fmt.LineAlignment = Gp.StringAlignment.Center;
                 using Gp.Brush white = Gp.Brush.Solid(0xFFFFFFFF);
-                g.DrawString(c.Number.ToString(), font, white, r, fmt);
+                g.DrawString(c.Number.ToString(), text.CounterFont(c.Size * 0.9f), white, r, text.Centred);
                 break;
             }
         }

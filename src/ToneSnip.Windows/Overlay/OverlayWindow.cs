@@ -139,8 +139,15 @@ public sealed class OverlayWindow : IDisposable
     /// <summary>Puts the window on screen without taking the foreground; <see cref="Activate"/> hands it the keyboard.</summary>
     public void Show() => Win32.ShowWindow(Hwnd, Win32.SwShowNoActivate);
 
+    /// <summary>Paints any pending update now (UpdateWindow sends WM_PAINT straight to the window procedure), rather
+    /// than when the message queue gets round to it.</summary>
+    public void PaintNow()
+    {
+        if (!_disposed && Hwnd != IntPtr.Zero) Win32.UpdateWindow(Hwnd);
+    }
+
     /// <summary>Foreground plus keyboard focus, even when the snip came from a hotkey while another app was active.</summary>
-    public void Activate() => Win32.ForceForeground(Hwnd);
+    public void Activate() => Win32.ForceForeground(Hwnd, _log);
 
     /// <summary>The cursor for every state the overlay has; applied at once, and reaffirmed on each WM_SETCURSOR.</summary>
     public void SetCursor(OverlayCursor cursor)
@@ -278,11 +285,29 @@ public sealed class OverlayWindow : IDisposable
         bool drew = false;
         try
         {
+            bool region = rects > 0;   // _updateRgn holds exactly the rectangles read into _paintRects
             if (rects == 0) _paintRects[rects++] = IntRect.FromLtrb(ps.Paint.Left, ps.Paint.Top, ps.Paint.Right, ps.Paint.Bottom);
+            int clips = 0;
             for (int i = 0; i < rects; i++)
             {
                 IntRect clip = _paintRects[i].Intersect(Local);
-                if (!clip.IsEmpty) { Paint(dc, clip); drew = true; }
+                if (!clip.IsEmpty) _paintRects[clips++] = clip;
+            }
+            if (clips > 0)
+            {
+                // The rectangles are disjoint, so each pixel is painted by exactly one of them. The chrome is drawn once
+                // over all of them between the two passes, rather than through a GDI+ graphics per rectangle.
+                for (int i = 0; i < clips; i++) PaintUnder(_paintRects[i]);
+                if (_host.Annotating && _host.HasDocument)
+                {
+                    // Clipped to the update region itself when it was read, so the chrome lands only where the second
+                    // pass blits; otherwise to the one rectangle there is.
+                    if (region) Gdi.SelectClipRgn(_memDc, _updateRgn);
+                    else ClipTo(_paintRects[0]);
+                    _host.DrawChrome(_memDc, _bounds);
+                }
+                for (int i = 0; i < clips; i++) PaintOver(dc, _paintRects[i]);
+                drew = true;
             }
         }
         finally { Win32.EndPaint(Hwnd, ref ps); }
@@ -315,19 +340,27 @@ public sealed class OverlayWindow : IDisposable
         }
     }
 
-    private unsafe void Paint(IntPtr dc, IntRect clip)
+    /// <summary>Clips the double buffer's GDI and GDI+ drawing to one rectangle.</summary>
+    private void ClipTo(IntRect clip)
     {
-        // The annotated buffer replaces the frozen frame as soon as a document exists, so turning the tool row off
-        // still shows (and saves) what was drawn; only the live chrome belongs to the annotating state.
-        bool annotating = _host.Annotating && _host.HasDocument;
-        bool useBack = _host.HasDocument && _backValid && _back != null;
+        Gdi.SelectClipRgn(_memDc, IntPtr.Zero);
+        Gdi.IntersectClipRect(_memDc, clip.Left, clip.Top, clip.Right, clip.Bottom);
+    }
+
+    /// <summary>The annotated buffer replaces the frozen frame as soon as a document exists, so turning the tool row off
+    /// still shows (and saves) what was drawn; only the live chrome belongs to the annotating state.</summary>
+    private unsafe byte* Source => (byte*)(_host.HasDocument && _backValid && _back != null ? _backPin : _framePin).AddrOfPinnedObject();
+
+    /// <summary>What lies under the chrome in one rectangle: the frame, the dim and the selection frame.</summary>
+    private unsafe void PaintUnder(IntRect clip)
+    {
         int w = _bounds.Width, h = _bounds.Height;
 
         // GDI batches its drawing, so the previous paint's outline or pill could otherwise land on top of these bytes.
         Gdi.GdiFlush();
         byte* bits = (byte*)_bits;
-        byte* source = (byte*)(useBack ? _backPin : _framePin).AddrOfPinnedObject();
-        Gdi.CopyRows(source, bits, w, clip);
+        bool annotating = _host.Annotating && _host.HasDocument;
+        Gdi.CopyRows(Source, bits, w, clip);
 
         IntRect sel = _host.Selection.IsEmpty ? _host.Hover : _host.Selection;
         IntRect hit = sel.Intersect(_bounds).Offset(-_bounds.Left, -_bounds.Top);
@@ -345,8 +378,7 @@ public sealed class OverlayWindow : IDisposable
         }
 
         // Clip GDI and GDI+ drawing to the update rectangle; nothing outside it is blitted.
-        Gdi.SelectClipRgn(_memDc, IntPtr.Zero);
-        Gdi.IntersectClipRect(_memDc, clip.Left, clip.Top, clip.Right, clip.Bottom);
+        ClipTo(clip);
 
         IntRect r = sel.Offset(-_bounds.Left, -_bounds.Top);
         (int cx, int cy) = _host.Cursor;
@@ -367,9 +399,18 @@ public sealed class OverlayWindow : IDisposable
                 default: NormalFrame(bits, clip, r); break;
             }
         }
+    }
 
-        // The in-progress shape and the handles are painted onto the double buffer, never into the back buffer.
-        if (annotating) _host.DrawChrome(_memDc, _bounds);
+    /// <summary>What lies over the chrome in one rectangle (the lasso and the cursor readout), then the blit. The
+    /// in-progress shape and the handles, drawn between the two passes, go onto the double buffer, never into the
+    /// back buffer.</summary>
+    private unsafe void PaintOver(IntPtr dc, IntRect clip)
+    {
+        ClipTo(clip);
+        byte* bits = (byte*)_bits;
+        (int cx, int cy) = _host.Cursor;
+        int lx = cx - _bounds.Left, ly = cy - _bounds.Top;
+        bool readout = Readout(cx, cy);
 
         IReadOnlyList<(int X, int Y)> path = _host.Path;
         if (path.Count > 1)
@@ -383,7 +424,7 @@ public sealed class OverlayWindow : IDisposable
 
         if (readout)
         {
-            if (_style == FrameStyle.Guides) Loupe(bits, source, clip, lx, ly);
+            if (_style == FrameStyle.Guides) Loupe(bits, Source, clip, lx, ly);
             else if (_host.PillText(_bounds) is string text) Pill(text, lx, ly);
         }
 

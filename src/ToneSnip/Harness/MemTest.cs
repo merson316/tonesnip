@@ -258,10 +258,10 @@ internal static class MemTest
         foreach ((string device, IntRect bounds) in Native.Monitors())
         {
             displays.TryGetValue(device, out DisplayInfo? d);
-            list.Add(new OutputInfo(index++, device, bounds.Left, bounds.Top, bounds.Width, bounds.Height, 0,
+            list.Add(new OutputInfo(index++, device, bounds.Left, bounds.Top, bounds.Width, bounds.Height,
                                     d?.AdvancedColorEnabled ?? false, d?.SdrWhiteNits ?? 80f, 1000f, d?.FriendlyName));
         }
-        if (list.Count == 0) list.Add(new OutputInfo(0, @"\\.\DISPLAY1", 0, 0, 1920, 1080, 0, false, 80f, 400f, "Fallback"));
+        if (list.Count == 0) list.Add(new OutputInfo(0, @"\\.\DISPLAY1", 0, 0, 1920, 1080, false, 80f, 400f, "Fallback"));
         return list;
     }
 

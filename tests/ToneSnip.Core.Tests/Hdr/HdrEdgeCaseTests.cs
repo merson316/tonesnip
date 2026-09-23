@@ -117,7 +117,8 @@ public class FlattenOnWhiteTests
             Transfer.FloatToHalf(w), Transfer.FloatToHalf(w), Transfer.FloatToHalf(w), Transfer.FloatToHalf(1f) });
 
         BgraImage flatSdr = Flatten.OnWhite(sdr);
-        HalfImage flatHdr = HdrCanvas.FlattenOnWhite(canvas, white);
+        HdrCanvas.FlattenOnWhite(canvas, white);
+        HalfImage flatHdr = canvas;
 
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, flatSdr.Data[..4]);
         Assert.Equal(w, Transfer.HalfToFloat(flatHdr.Data[0]), 2);
@@ -131,5 +132,92 @@ public class FlattenOnWhiteTests
     {
         var sdr = new BgraImage(1, 1, new byte[] { 0, 0, 0, 128 });
         Assert.Equal(127, Flatten.OnWhite(sdr).Data[0]);   // (0*128 + 255*127) / 255
+    }
+
+    [Fact]
+    public void Opacity_is_detected_from_alpha_alone()
+    {
+        Assert.True(Flatten.IsOpaque(new BgraImage(2, 1, new byte[] { 0, 0, 0, 255, 9, 9, 9, 255 })));
+        Assert.False(Flatten.IsOpaque(new BgraImage(2, 1, new byte[] { 0, 0, 0, 255, 255, 255, 255, 254 })));
+    }
+}
+
+/// <summary>The UltraHDR JPEG's inputs are built with fewer buffers (the canvas flattened in place, an opaque SDR
+/// render not copied, the gain map in two passes); these pin them to what the copying code produced.</summary>
+public class UltraHdrInputTests
+{
+    /// <summary>The gain map as it was: every gain kept in a float array between the range and the quantisation.</summary>
+    private static GainMapResult OneArrayGainMap(HalfImage hdr, BgraImage sdr, float referenceWhiteNits)
+    {
+        int n = hdr.Width * hdr.Height;
+        float scale = HdrCanvas.ReferenceScale(referenceWhiteNits);
+        var gain = new float[n];
+        float min = 0f, max = 0f;
+        for (int i = 0; i < n; i++)
+        {
+            float hr = Transfer.HalfToFloat(hdr.Data[i * 4]), hg = Transfer.HalfToFloat(hdr.Data[i * 4 + 1]), hb = Transfer.HalfToFloat(hdr.Data[i * 4 + 2]);
+            float yh = Transfer.Luminance709(hr, hg, hb) / scale;
+            yh = float.IsNaN(yh) ? 0f : Math.Min(yh, GainMap.MaxNits / Math.Max(referenceWhiteNits, 1f));
+            ColorMath.LiftSrgb(sdr.Data[i * 4], sdr.Data[i * 4 + 1], sdr.Data[i * 4 + 2], 1f, out float sr, out float sg, out float sb);
+            float ys = Transfer.Luminance709(sr, sg, sb);
+            float g = MathF.Log2((Math.Max(yh, 0f) + GainMap.Offset) / (Math.Max(ys, 0f) + GainMap.Offset));
+            gain[i] = g; if (g < min) min = g; if (g > max) max = g;
+        }
+        if (max - min < 1e-3f) max = min + 1e-3f;
+        var gray = new byte[n];
+        float range = max - min;
+        for (int i = 0; i < n; i++) gray[i] = (byte)Math.Round(Math.Clamp((gain[i] - min) / range, 0f, 1f) * 255f);
+        return new GainMapResult(gray, hdr.Width, hdr.Height, min, max);
+    }
+
+    /// <summary>The HDR flatten as it was: on a copy.</summary>
+    private static HalfImage CopyFlattened(HalfImage canvas, float referenceWhiteNits)
+    {
+        var o = new HalfImage(canvas.Width, canvas.Height, (ushort[])canvas.Data.Clone());
+        float white = HdrCanvas.ReferenceScale(referenceWhiteNits);
+        ushort opaque = Transfer.FloatToHalf(1f);
+        for (int i = 0; i < o.Data.Length; i += 4)
+        {
+            float a = Math.Clamp(Transfer.HalfToFloat(o.Data[i + 3]), 0f, 1f);
+            if (a >= 1f) continue;
+            for (int c = 0; c < 3; c++) o.Data[i + c] = Transfer.FloatToHalf(HdrCanvas.Finite(Transfer.HalfToFloat(o.Data[i + c]) * a + white * (1f - a)));
+            o.Data[i + 3] = opaque;
+        }
+        return o;
+    }
+
+    private static (HalfImage Hdr, BgraImage Sdr) Random(int w, int h, int seed, bool transparent)
+    {
+        var rng = new Random(seed);
+        var hdr = new HalfImage(w, h);
+        var sdr = BgraImage.Blank(w, h);
+        rng.NextBytes(sdr.Data);
+        for (int p = 0; p < w * h; p++)
+        {
+            for (int c = 0; c < 3; c++) hdr.Data[p * 4 + c] = Transfer.FloatToHalf(rng.Next(40) == 0 ? rng.NextSingle() * 200f : rng.NextSingle() * 3f);
+            bool clear = transparent && rng.Next(3) == 0;
+            hdr.Data[p * 4 + 3] = Transfer.FloatToHalf(clear ? rng.NextSingle() : 1f);
+            if (!clear) sdr.Data[p * 4 + 3] = 255;
+        }
+        return (hdr, sdr);
+    }
+
+    [Theory]
+    [InlineData(false, 80f)]
+    [InlineData(true, 203f)]
+    public void The_gain_map_and_its_inputs_match_the_copying_code(bool transparent, float white)
+    {
+        (HalfImage canvas, BgraImage sdr) = Random(97, 61, transparent ? 11 : 12, transparent);
+        HalfImage before = CopyFlattened(canvas, white);
+        GainMapResult expected = OneArrayGainMap(before, Flatten.OnWhite(sdr), white);
+
+        BgraImage flat = Flatten.IsOpaque(sdr) ? sdr : Flatten.OnWhite(sdr);
+        Assert.Equal(!transparent, ReferenceEquals(flat, sdr));
+        HdrCanvas.FlattenOnWhite(canvas, white);
+        Assert.Equal(before.Data, canvas.Data);
+        Assert.Equal(Flatten.OnWhite(sdr).Data, flat.Data);
+        GainMapResult actual = GainMap.Compute(canvas, flat, white);
+        Assert.Equal(expected.Gray, actual.Gray);
+        Assert.Equal((expected.Min, expected.Max), (actual.Min, actual.Max));
     }
 }

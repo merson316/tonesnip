@@ -129,6 +129,31 @@ public class SnipSettingsTests
     }
 
     [Fact]
+    public void Only_the_newest_copies_of_an_unreadable_file_are_kept()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-bad-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string p = Path.Combine(dir, "settings.json");
+            File.WriteAllText(p, "{ not json");
+            string[] older = { "20200101-000000", "20210101-000000", "20220101-000000", "20230101-000000" };
+            foreach (string stamp in older) File.WriteAllText($"{p}.bad-{stamp}", "old");
+            File.WriteAllText(Path.Combine(dir, "other.json.bad-20190101-000000"), "not ours");
+
+            (_, string? err) = SnipSettingsFile.Load(p);
+
+            Assert.Contains("kept as", err);
+            string[] kept = Directory.GetFiles(dir, "settings.json.bad-*").Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray()!;
+            Assert.Equal(SnipSettingsFile.BadCopiesKept, kept.Length);
+            // Today's copy and the two newest old ones survive; another file's copies are not touched.
+            Assert.Equal(new[] { "settings.json.bad-20220101-000000", "settings.json.bad-20230101-000000" }, kept.Take(2));
+            Assert.True(File.Exists(Path.Combine(dir, "other.json.bad-20190101-000000")));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public void Round_trips_and_ignores_unknown_fields()
     {
         string p = Temp("{ \"version\": 1, \"tonemap\": \"hable\", \"hotkeys\": { \"region\": \"F9\" }, \"future\": true }");

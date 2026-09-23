@@ -1,11 +1,9 @@
 using System.ComponentModel;
+using ToneSnip.App.Controls;
 using ToneSnip.App.Output;
 using ToneSnip.Core.Output;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Storage;
-using Windows.Storage.Streams;
 
 namespace ToneSnip.App.Tray;
 
@@ -28,6 +26,10 @@ public sealed class HistoryRow : INotifyPropertyChanged
     private bool _missing;
     /// <summary>Whether the file's drive had a Recycle Bin at the last update, which decides the delete wording.</summary>
     private bool _covers;
+    /// <summary>Whether the thumbnail file was still being written at the last update.</summary>
+    private bool _thumbPending;
+    /// <summary>Whether a list container is showing this row, so its thumbnail is wanted (<see cref="LoadThumb"/>).</summary>
+    private bool _thumbWanted;
     private HistoryRowStyle _style;
     private bool _deleteArmed;
 
@@ -40,7 +42,9 @@ public sealed class HistoryRow : INotifyPropertyChanged
         _seen = item.Entry;
         _missing = item.FileMissing;
         _covers = item.RecycleBinCovers;
-        SetThumb(item.Entry.Thumb, style.ThumbWidth);
+        _thumbPending = item.ThumbPending;
+        // No thumbnail yet: the flyout asks for it once a container shows the row (LoadThumb), so opening the flyout
+        // does not start a decode for every snip in the history.
     }
 
     public HistoryItem Item { get; private set; }
@@ -60,13 +64,20 @@ public sealed class HistoryRow : INotifyPropertyChanged
         HistoryEntry now = item.Entry;
         bool missing = item.FileMissing;
         bool covers = item.RecycleBinCovers;
-        if (_seen == now && missing == _missing && covers == _covers) return;
-        bool rewritten = !string.Equals(_seen.Thumb, now.Thumb, StringComparison.OrdinalIgnoreCase);
+        bool pending = item.ThumbPending;
+        if (_seen == now && missing == _missing && covers == _covers && pending == _thumbPending) return;
+        // The editor writes a new thumbnail file per save, so a new path means a new bitmap; a new snip's file exists
+        // only once its pending write has landed.
+        bool rewritten = !pending && (_thumbPending || !string.Equals(_seen.Thumb, now.Thumb, StringComparison.OrdinalIgnoreCase));
         _seen = now;
         _missing = missing;
         _covers = covers;
-        // The editor writes a new thumbnail file per save, so a new path means a new bitmap.
-        if (rewritten) SetThumb(now.Thumb, _style.ThumbWidth);
+        _thumbPending = pending;
+        if (rewritten)
+        {
+            if (_thumbWanted) SetThumb(now.Thumb, _style.ThumbWidth);
+            else ThumbSource = null;   // the old bitmap is stale; the new one loads when a container asks
+        }
         foreach (string p in new[]
                  {
                      nameof(Title), nameof(TitleOpacity), nameof(Subtitle), nameof(AccessibleName), nameof(HdrVisibility),
@@ -145,40 +156,39 @@ public sealed class HistoryRow : INotifyPropertyChanged
 
     private void Raise(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
-    /// <summary>Loads the thumbnail PNG decoded at <paramref name="width"/> device pixels (the slot at 200 %), so the
-    /// full-size thumbnail is never held. The bitmap fills asynchronously from a stream.</summary>
-    private void SetThumb(string path, int width)
+    /// <summary>A container is showing this row: loads its thumbnail unless it is loaded, or its file is still being
+    /// written (<see cref="Update"/> loads it once the write lands).</summary>
+    public void LoadThumb()
     {
-        ThumbSource = null;
-        try
-        {
-            if (!File.Exists(path)) return;
-            var bmp = new BitmapImage { DecodePixelType = DecodePixelType.Physical, DecodePixelWidth = width };
-            ThumbSource = bmp;   // before the fill, so its failure path can tell this bitmap from a newer one
-            _ = FillAsync(bmp, path);
-        }
-        catch { ThumbSource = null; }
+        _thumbWanted = true;
+        if (ThumbSource != null || _thumbPending) return;
+        SetThumb(Item.Entry.Thumb, _style.ThumbWidth);
+        Raise(nameof(ThumbSource));
+        Raise(nameof(PlaceholderVisibility));
     }
 
-    private async Task FillAsync(BitmapImage bmp, string path)
+    /// <summary>The row's container was recycled: lets go of the decoded bitmap, which the next container to show the
+    /// row loads again.</summary>
+    public void DropThumb()
     {
-        try
-        {
-            StorageFile file = await StorageFile.GetFileFromPathAsync(path);
-            using IRandomAccessStreamWithContentType stream = await file.OpenReadAsync();
-            await bmp.SetSourceAsync(stream);
-        }
-        catch (Exception ex)
-        {
-            if (WarnedThumbs.Add(path)) App.Current.Log.Warn("history thumbnail: " + ex.Message);
-            // Show the placeholder, unless a newer thumbnail has replaced this bitmap mid-decode. The WinRT awaits
-            // resume on the UI thread, so raising here is safe.
-            if (ReferenceEquals(ThumbSource, bmp))
-            {
-                ThumbSource = null;
-                Raise(nameof(ThumbSource));
-                Raise(nameof(PlaceholderVisibility));
-            }
-        }
+        _thumbWanted = false;
+        if (ThumbSource == null) return;
+        ThumbSource = null;
+        Raise(nameof(ThumbSource));
+        Raise(nameof(PlaceholderVisibility));
     }
+
+    /// <summary>Loads the thumbnail decoded at <paramref name="width"/> device pixels (the slot at 200 %); a file that
+    /// is missing or fails to decode shows the placeholder.</summary>
+    private void SetThumb(string path, int width) => ThumbnailLoader.Load(path, width, bmp => ThumbSource = bmp, (bmp, ex) =>
+    {
+        if (ex != null && WarnedThumbs.Add(path)) App.Current.Log.Warn("history thumbnail: " + ex.Message);
+        // Show the placeholder, unless a newer thumbnail has replaced this bitmap mid-decode.
+        if (ReferenceEquals(ThumbSource, bmp))
+        {
+            ThumbSource = null;
+            Raise(nameof(ThumbSource));
+            Raise(nameof(PlaceholderVisibility));
+        }
+    });
 }

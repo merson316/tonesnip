@@ -6,7 +6,6 @@ using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Hdr;
 using ToneSnip.Core.Imaging;
-using ToneSnip.Core.Tonemap;
 using ToneSnip.Windows.Imaging;
 
 namespace ToneSnip.App.Output;
@@ -49,13 +48,9 @@ public static class HdrOutput
         AnnotationDoc? doc = r.Doc;
         IntRect viewport = doc != null && !doc.Crop.IsEmpty ? doc.Crop.Intersect(r.Region) : r.Region;
         float white = ReferenceWhite(r, s);
-        // The same exposure factors as the SDR composite, so both files match. Known limitation: they are computed from
-        // the current settings, so changing exposure settings between capture and an editor save makes them differ.
-        var layers = r.Crops.Select(c =>
-        {
-            float baseExposure = s.AutoExposure ? AutoExposure.Compute(c.Image, s.SdrWhiteNits ?? c.Output.SdrWhiteNits, s.Exposure) : s.Exposure;
-            return new HdrLayer(c.Bounds, c.Image, baseExposure);
-        }).ToList();
+        // The exposure each crop was tonemapped with when the snip was built, so both files match even if the exposure
+        // settings change before an editor save.
+        var layers = r.Crops.Select(c => new HdrLayer(c.Bounds, c.Image, c.BaseExposure)).ToList();
         // The lasso mask is always applied first: the HDR crops still hold colour outside the lasso, which would
         // otherwise inflate the gain-map JPEG's range (it has no alpha).
         HalfImage canvas = HdrCanvas.Build(r.Image, r.Region, layers, viewport, r.Exposure, r.Freeform, white);
@@ -74,6 +69,8 @@ public static class HdrOutput
         return (canvas, viewport, white);
     }
 
+    /// <summary>The sidecar's bytes. <paramref name="canvas"/> belongs to this call: the JPEG branch flattens it in
+    /// place.</summary>
     public static byte[] Encode(HalfImage canvas, BgraImage sdrRendered, string file, SnipSettings s, float referenceWhiteNits)
     {
         switch (file)
@@ -83,11 +80,14 @@ public static class HdrOutput
             case "jpeg":
             {
                 if (sdrRendered.Width != canvas.Width || sdrRendered.Height != canvas.Height) throw new ArgumentException("SDR render must match the canvas");
-                // JPEG has no alpha: both halves are flattened on white, matching the SDR JPEG.
-                BgraImage flat = Flatten.OnWhite(sdrRendered);
-                GainMapResult gm = GainMap.Compute(HdrCanvas.FlattenOnWhite(canvas, referenceWhiteNits), flat, referenceWhiteNits);
-                byte[] baseJpeg = JpegEncoder.EncodeBgra(flat, s.JpegQuality);
-                byte[] gainJpeg = JpegEncoder.EncodeGray(gm.Gray, gm.Width, gm.Height, 85);
+                // JPEG has no alpha: both halves are flattened on white, matching the SDR JPEG. The SDR render is
+                // shared with the rest of the output, so it is copied only when it has transparency to flatten (a
+                // freeform snip); the canvas is this file's own and is flattened in place.
+                BgraImage flat = Flatten.IsOpaque(sdrRendered) ? sdrRendered : Flatten.OnWhite(sdrRendered);
+                HdrCanvas.FlattenOnWhite(canvas, referenceWhiteNits);
+                GainMapResult gm = GainMap.Compute(canvas, flat, referenceWhiteNits);
+                byte[] baseJpeg = Bitmaps.EncodeJpeg(flat, s.JpegQuality);
+                byte[] gainJpeg = Bitmaps.EncodeGrayJpeg(gm.Gray, gm.Width, gm.Height, 85);
                 return UltraHdrContainer.Assemble(baseJpeg, gainJpeg, new UltraHdrMeta(gm.Min, gm.Max));
             }
             default: throw new ArgumentException(file);
@@ -109,11 +109,24 @@ public static class HdrOutput
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             (HalfImage canvas, _, float white) = BuildCanvas(r, s, accent);
-            byte[] bytes = Encode(canvas, sdrRendered, file, s, white);
-            File.WriteAllBytes(tmp, bytes);
+            long length;
+            if (file == "png")
+            {
+                // The PNG writer streams band by band, so it writes straight into the file: in memory the whole file
+                // would sit in a growing MemoryStream and then again in its ToArray copy.
+                using var stream = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16);
+                HdrPngWriter.Write(canvas, stream);
+                length = stream.Length;
+            }
+            else
+            {
+                byte[] bytes = Encode(canvas, sdrRendered, file, s, white);
+                File.WriteAllBytes(tmp, bytes);
+                length = bytes.Length;
+            }
             File.Move(tmp, path, overwrite: true);   // atomic on one volume, so a failed write leaves no truncated file
             r.HdrPath = path;
-            log.Info($"hdr saved {path} ({bytes.Length / 1024} KB, {file}, {sw.ElapsedMilliseconds} ms)");
+            log.Info($"hdr saved {path} ({length / 1024} KB, {file}, {sw.ElapsedMilliseconds} ms)");
             return true;
         }
         catch (Exception e) { log.Error($"hdr {file}: {e.Message}"); try { File.Delete(tmp); } catch { } return false; }

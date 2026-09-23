@@ -1,5 +1,6 @@
 using System.Text;
 using ToneSnip.Core.Capture;
+using ToneSnip.Core.Ipc;
 using Xunit;
 
 namespace ToneSnip.Core.Tests;
@@ -17,7 +18,7 @@ public class ProtocolSafetyTests
     [Fact]
     public void An_output_knows_its_bounds()
     {
-        var o = new OutputInfo(1, @"\\.\DISPLAY2", 3440, -300, 1080, 1920, 1, false, 80f, 1000f);
+        var o = new OutputInfo(1, @"\\.\DISPLAY2", 3440, -300, 1080, 1920, false, 80f, 1000f);
         Assert.Equal(new ToneSnip.Core.Geometry.IntRect(3440, -300, 1080, 1920), o.Bounds);
     }
 

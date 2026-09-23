@@ -36,6 +36,8 @@ internal static class Program
     {
         // Touch the stopwatch first: the class is beforefieldinit, so the static would otherwise start lazily.
         _ = Started.ElapsedMilliseconds;
+        // Heads every new log file, so a rolled log still names the build and process that wrote it.
+        Core.Diagnostics.FileLog.Header = $"ToneSnip {typeof(Program).Assembly.GetName().Version}, pid {Environment.ProcessId}";
 
         // Parsed before anything with a side effect, so a usage error touches nothing: no log, no mutex.
         StartupCommand command = CommandLine.Parse(args, out IReadOnlyList<string> errors);
@@ -72,6 +74,9 @@ internal static class Program
             // nothing (such as a Windows activation argument) exits quietly; for an activation, the running instance
             // owns the COM registration and receives it anyway.
             if (args.Length != 0 && command.IsEmpty) return 0;
+            // The packaged build's StartupTask launches with no arguments, which would otherwise read as the user asking
+            // for Settings; like the Run key's --background, it asks for nothing.
+            if (args.Length == 0 && LaunchedByStartupTask()) return 0;
             // A quitting instance closes its pipe before releasing the mutex; if the mutex comes free, stop forwarding
             // and carry on as the first instance.
             if (HostPipe.Forward(args.Length == 0 ? command with { OpenSettings = true } : command, giveUp: () => Acquired(mutex))) return 0;
@@ -79,15 +84,46 @@ internal static class Program
         }
 
         WinRT.ComWrappersSupport.InitializeComWrappers();
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { new Core.Diagnostics.FileLog(AppPaths.LogPath).Info("process exit (ProcessExit event)"); } catch { } };
+        var log = new Core.Diagnostics.FileLog(AppPaths.LogPath);
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { log.Info("process exit (ProcessExit event)"); } catch { } };
+        // XAML's UnhandledException (App.Launch) sees only exceptions on the UI thread's dispatch. These catch the rest:
+        // a pool or hook thread that throws kills the process, and each FileLog write is complete on disk when it
+        // returns, so the line survives the death that follows.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            try { log.Error($"unhandled{(e.IsTerminating ? ", the process is ending" : "")}: {e.ExceptionObject}"); } catch { }
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            try { log.Error("unobserved task exception: " + e.Exception); } catch { }
+            e.SetObserved();
+        };
         Application.Start(p =>   // not `_`: the discard below would bind to the parameter instead
         {
             var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
             SynchronizationContext.SetSynchronizationContext(context);
-            _ = new App { Command = command };
+            // A bad XAML resource throws from App's constructor, before OnLaunched and its own fence; unguarded, it
+            // escapes into native code and the process vanishes without a line.
+            try { _ = new App { Command = command }; }
+            catch (Exception e)
+            {
+                try { log.Error("startup failed: the app could not be created: " + e); } catch { }
+                Environment.Exit(1);
+            }
         });
-        try { new Core.Diagnostics.FileLog(AppPaths.LogPath).Debug("application message loop ended (Application.Start returned)"); } catch { }
+        try { log.Debug("application message loop ended (Application.Start returned)"); } catch { }
         return 0;
+    }
+
+    /// <summary>
+    /// True when Windows started the MSIX through its StartupTask. Asked only of a packaged second instance, which exits
+    /// straight after; on any failure it answers false, which keeps the old behaviour of a bare launch.
+    /// </summary>
+    private static bool LaunchedByStartupTask()
+    {
+        if (!Autostart.IsPackaged) return false;
+        try { return Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs()?.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.StartupTask; }
+        catch { return false; }
     }
 
     /// <summary>Takes the single-instance mutex if its owner has let go of it (or died holding it).</summary>

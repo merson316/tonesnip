@@ -17,9 +17,16 @@ public sealed class MessageWindow : IDisposable
 
     public const int WmDisplayChange = 0x007E, WmCommand = 0x0111, WmMeasureItem = 0x002C, WmDrawItem = 0x002B,
                      WmInitMenuPopup = 0x0117, WmNull = 0x0000, WmSettingChange = 0x001A, WmThemeChanged = 0x031A,
-                     WmPowerBroadcast = 0x0218, WmWtsSessionChange = 0x02B1;
+                     WmPowerBroadcast = 0x0218, WmWtsSessionChange = 0x02B1, WmEndSession = 0x0016, WmQueryEndSession = 0x0011;
 
-    private const int PbtApmSuspend = 0x4, PbtApmResumeAutomatic = 0x12;
+    /// <summary>ENDSESSION_CLOSEAPP in WM_QUERYENDSESSION and WM_ENDSESSION's lParam: the app alone is being closed, by an
+    /// installer's Restart Manager, rather than the session ending.</summary>
+    private const long EndSessionCloseApp = 0x1;
+
+    private const int PbtApmSuspend = 0x4, PbtApmResumeAutomatic = 0x12, PbtPowerSettingChange = 0x8013;
+    /// <summary>GUID_CONSOLE_DISPLAY_STATE: the console display went off, on or dimmed (0, 1, 2).</summary>
+    private static readonly Guid ConsoleDisplayState = new("6FE69556-704A-47A0-8F24-C28D936FDA47");
+    private const int DisplayOff = 0;
     private const int WtsSessionLock = 0x7, WtsSessionUnlock = 0x8;
     private const int DeviceNotifyWindowHandle = 0, NotifyForThisSession = 0;
 
@@ -49,6 +56,8 @@ public sealed class MessageWindow : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandleW(string? name);
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr RegisterSuspendResumeNotification(IntPtr recipient, int flags);
     [DllImport("user32.dll")] private static extern bool UnregisterSuspendResumeNotification(IntPtr handle);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr RegisterPowerSettingNotification(IntPtr recipient, ref Guid setting, int flags);
+    [DllImport("user32.dll")] private static extern bool UnregisterPowerSettingNotification(IntPtr handle);
     [DllImport("wtsapi32.dll", SetLastError = true)] private static extern bool WTSRegisterSessionNotification(IntPtr hwnd, int flags);
     [DllImport("wtsapi32.dll")] private static extern bool WTSUnRegisterSessionNotification(IntPtr hwnd);
 
@@ -92,8 +101,28 @@ public sealed class MessageWindow : IDisposable
     public event Action<bool>? PowerChanged;
     /// <summary>The session was locked (true) or unlocked (false).</summary>
     public event Action<bool>? SessionLockChanged;
+    /// <summary>
+    /// The displays were turned off by the idle timeout (false) or came back on (true). Unlike sleep this leaves the
+    /// machine running, so nothing else reports it. Raised only on a change: the state Windows sends on registering,
+    /// and dimming, are not reported.
+    /// </summary>
+    public event Action<bool>? DisplayPowerChanged;
+    /// <summary>
+    /// WM_ENDSESSION with the session really ending: sign-out, shutdown, or an installer's Restart Manager closing the
+    /// app (the argument is true for that last one, ENDSESSION_CLOSEAPP). The process can be terminated as soon as the
+    /// handler returns, so it must finish its work before then.
+    /// </summary>
+    public event Action<bool>? SessionEnding;
+    /// <summary>WM_QUERYENDSESSION: the session or the app is about to be closed, with the same argument as
+    /// <see cref="SessionEnding"/>. The window always agrees to end.</summary>
+    public event Action<bool>? SessionEndQueried;
+    /// <summary>WM_ENDSESSION with FALSE: the shutdown or close announced by <see cref="SessionEndQueried"/> was
+    /// cancelled, and the app carries on.</summary>
+    public event Action? SessionEndCancelled;
 
-    private IntPtr _suspendResume;
+    private IntPtr _suspendResume, _displayState;
+    /// <summary>Whether the displays were last reported on; null until Windows sends the first state.</summary>
+    private bool? _displaysOn;
 
     private Func<uint, IntPtr, IntPtr, IntPtr?>? _hook;
 
@@ -143,6 +172,9 @@ public sealed class MessageWindow : IDisposable
         _suspendResume = RegisterSuspendResumeNotification(Handle, DeviceNotifyWindowHandle);
         if (_suspendResume == IntPtr.Zero) _log?.Warn($"message window: no suspend/resume notifications, error {Marshal.GetLastWin32Error()}");
         if (!WTSRegisterSessionNotification(Handle, NotifyForThisSession)) _log?.Warn($"message window: no session lock notifications, error {Marshal.GetLastWin32Error()}");
+        Guid display = ConsoleDisplayState;
+        _displayState = RegisterPowerSettingNotification(Handle, ref display, DeviceNotifyWindowHandle);
+        if (_displayState == IntPtr.Zero) _log?.Warn($"message window: no display on/off notifications, error {Marshal.GetLastWin32Error()}");
     }
 
     private static IntPtr Proc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -180,7 +212,15 @@ public sealed class MessageWindow : IDisposable
             case WmPowerBroadcast:
                 if (wParam == (IntPtr)PbtApmSuspend) PowerChanged?.Invoke(false);
                 else if (wParam == (IntPtr)PbtApmResumeAutomatic) PowerChanged?.Invoke(true);
+                else if (wParam == (IntPtr)PbtPowerSettingChange && lParam != IntPtr.Zero) OnPowerSetting(lParam);
                 return (IntPtr)1;   // TRUE: nothing here refuses a suspend
+            case WmQueryEndSession:
+                SessionEndQueried?.Invoke(CloseApp(lParam));
+                return (IntPtr)1;   // TRUE: nothing here refuses a shutdown
+            case WmEndSession:
+                if (wParam != IntPtr.Zero) SessionEnding?.Invoke(CloseApp(lParam));
+                else SessionEndCancelled?.Invoke();   // FALSE: someone cancelled the shutdown
+                return IntPtr.Zero;
             case WmWtsSessionChange:
                 if (wParam == (IntPtr)WtsSessionLock) SessionLockChanged?.Invoke(true);
                 else if (wParam == (IntPtr)WtsSessionUnlock) SessionLockChanged?.Invoke(false);
@@ -202,10 +242,24 @@ public sealed class MessageWindow : IDisposable
     }
 
     /// <summary>
+    /// Reads a POWERBROADCAST_SETTING: the setting's GUID, a DWORD length, then the data, here one DWORD.
+    /// </summary>
+    private void OnPowerSetting(IntPtr setting)
+    {
+        if (Marshal.PtrToStructure<Guid>(setting) != ConsoleDisplayState || Marshal.ReadInt32(setting, 16) < sizeof(int)) return;
+        bool on = Marshal.ReadInt32(setting, 20) != DisplayOff;   // dimmed still counts as on
+        bool? was = _displaysOn;
+        _displaysOn = on;
+        if (was != null && was != on) DisplayPowerChanged?.Invoke(on);
+    }
+
+    /// <summary>
     /// Drops the class registration. UnregisterClassW fails while any window of the class is alive, so the flag follows
     /// the call's result; otherwise a later MessageWindow would fail to register an existing class.
     /// </summary>
     private static void UnregisterClass(IntPtr instance) => _registered = !UnregisterClassW(ClassName, instance);
+
+    private static bool CloseApp(IntPtr lParam) => (lParam.ToInt64() & EndSessionCloseApp) != 0;
 
     private static int Low(IntPtr v) => (short)(v.ToInt64() & 0xFFFF);
     private static int High(IntPtr v) => (short)((v.ToInt64() >> 16) & 0xFFFF);
@@ -216,6 +270,7 @@ public sealed class MessageWindow : IDisposable
         _disposed = true;
         if (Handle == IntPtr.Zero) return;
         if (_suspendResume != IntPtr.Zero) UnregisterSuspendResumeNotification(_suspendResume);
+        if (_displayState != IntPtr.Zero) UnregisterPowerSettingNotification(_displayState);
         WTSUnRegisterSessionNotification(Handle);
         DestroyWindow(Handle);
         lock (Gate)

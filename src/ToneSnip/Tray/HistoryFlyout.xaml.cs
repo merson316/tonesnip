@@ -66,6 +66,14 @@ public sealed partial class HistoryFlyout : PopupWindow
     private bool _placed;
     /// <summary>One background copy or open at a time, so repeated clicks do not race.</summary>
     private bool _working;
+    /// <summary>A <see cref="Refresh"/> is queued, so a burst of history changes refreshes once.</summary>
+    private bool _refreshQueued;
+    /// <summary>The footer's folder scan: whether one has run for this open, is running, or is wanted again once the
+    /// running one ends.</summary>
+    private bool _scanned, _scanning, _rescan;
+    /// <summary>The row each realized container is showing, so the row lets go of its thumbnail when its container is
+    /// recycled or re-filled.</summary>
+    private readonly Dictionary<SelectorItem, HistoryRow> _shownIn = new();
 
     public HistoryFlyout() : base(activate: true)
     {
@@ -199,7 +207,11 @@ public sealed partial class HistoryFlyout : PopupWindow
         if (_held || (DateTime.UtcNow - _shown).TotalMilliseconds > 1500) { timer.Stop(); Dismiss(); }
     }
 
-    private void OnHistoryChanged() => DispatcherQueue.TryEnqueue(Refresh);
+    private void OnHistoryChanged()
+    {
+        if (_refreshQueued) return;
+        _refreshQueued = DispatcherQueue.TryEnqueue(() => { _refreshQueued = false; Refresh(); });
+    }
 
     private void OnPlaced()
     {
@@ -271,25 +283,41 @@ public sealed partial class HistoryFlyout : PopupWindow
         if (IsClosed) return;
         _style ??= NewRowStyle();
         IReadOnlyList<HistoryItem> items = App.Current.History.Items;
+        bool membership = false;
         for (int i = _rows.Count - 1; i >= 0; i--)
         {
             if (items.Any(x => x.Entry.Id == _rows[i].Item.Entry.Id)) continue;
             Forget(_rows[i]);
             _rows.RemoveAt(i);
+            membership = true;
         }
         for (int i = 0; i < items.Count; i++)
         {
             HistoryItem item = items[i];
             int at = IndexOf(item.Entry.Id);
-            if (at < 0) { _rows.Insert(Math.Min(i, _rows.Count), new HistoryRow(item, _style)); continue; }
+            if (at < 0) { _rows.Insert(Math.Min(i, _rows.Count), new HistoryRow(item, _style)); membership = true; continue; }
             if (at != i) _rows.Move(at, i);
             _rows[i].Update(item);
         }
         Empty.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Empty.Text = $"Your snips will show up here. Press {App.Current.Settings.Hotkeys.Region} for a region snip.";
-        RefreshTotals();
-        // Once containers settle: re-sync focus (a delete moves it) and renumber the row ids.
-        DispatcherQueue.TryEnqueue(() => { StampRowIds(); SyncFocus(); });
+        // The folder is scanned once per open, and again only when a snip lands or is deleted: the probe's and the
+        // thumbnail writes' changes do not change what the folder holds.
+        if (!_scanned || membership) RefreshTotals();
+        // Once containers settle: re-sync focus (a delete moves it), renumber the row ids and load the thumbnails of
+        // the rows on screen.
+        DispatcherQueue.TryEnqueue(() => { StampRowIds(); SyncFocus(); LoadRealizedThumbs(); });
+    }
+
+    /// <summary>
+    /// Asks every row with a realized container for its thumbnail. Scrolling loads rows as their containers fill
+    /// (<see cref="OnContainerContentChanging"/>); this covers the rows realized by the first layout and by a refresh.
+    /// <see cref="HistoryRow.LoadThumb"/> does nothing for a row already loaded.
+    /// </summary>
+    private void LoadRealizedThumbs()
+    {
+        if (IsClosed) return;
+        for (int i = 0; i < _rows.Count; i++) if (_items.ContainerFromIndex(i) != null) _rows[i].LoadThumb();
     }
 
     /// <summary>The extensions the footer counts.</summary>
@@ -302,6 +330,10 @@ public sealed partial class HistoryFlyout : PopupWindow
     private void RefreshTotals()
     {
         ShowTotals(App.Current.FolderTotals);
+        _scanned = true;
+        // One scan at a time: a change during a scan asks for one more once it ends, not for a second enumeration now.
+        if (_scanning) { _rescan = true; return; }
+        _scanning = true;
         string folder = App.Current.Settings.ResolvedSaveFolder(AppPaths.Pictures);
         // Captured on the UI thread: Window is thread-affine.
         DispatcherQueue ui = DispatcherQueue;
@@ -312,7 +344,10 @@ public sealed partial class HistoryFlyout : PopupWindow
             ui.TryEnqueue(() =>
             {
                 App.Current.FolderTotals = totals;
-                if (!IsClosed) ShowTotals(totals);
+                _scanning = false;
+                if (IsClosed) return;
+                ShowTotals(totals);
+                if (_rescan) { _rescan = false; RefreshTotals(); }
             });
         });
     }
@@ -647,8 +682,25 @@ public sealed partial class HistoryFlyout : PopupWindow
     /// </summary>
     private void OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
-        // x:Phase raises this once per phase; only phase 0 (new row or recycle) matters.
+        // The list raises this for phase 0 only; x:Phase bindings are run by the list itself and raise nothing. The
+        // thumbnail loads in phase 1, once the row's text has shown, through a callback asked for here. A container
+        // leaving for the recycle queue lets go of its bitmap, so only the rows on screen hold one.
         if (args.Phase > 0) return;
+        if (args.ItemContainer is { } container)
+        {
+            // A container re-filled with another row without passing through the recycle queue still releases the
+            // row it showed before, unless another container has already taken that row over.
+            if (_shownIn.TryGetValue(container, out HistoryRow? before) && (args.InRecycleQueue || !ReferenceEquals(before, args.Item)))
+            {
+                _shownIn.Remove(container);
+                if (!_shownIn.ContainsValue(before)) before.DropThumb();
+            }
+            if (!args.InRecycleQueue && args.Item is HistoryRow row)
+            {
+                _shownIn[container] = row;
+                args.RegisterUpdateCallback(1, OnThumbPhase);
+            }
+        }
         // A container entering the recycle queue has no position to name.
         if (!args.InRecycleQueue && args.ItemContainer != null)
         {
@@ -662,6 +714,14 @@ public sealed partial class HistoryFlyout : PopupWindow
         if (ActionsOf(root) is not { } actions) return;
         StopFade(actions);
         actions.Opacity = 0;
+    }
+
+    /// <summary>Phase 1 of a container being filled: loads its row's thumbnail, unless the container has been recycled or
+    /// given another row since phase 0.</summary>
+    private void OnThumbPhase(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (IsClosed || args.InRecycleQueue || args.ItemContainer is not { } container) return;
+        if (args.Item is HistoryRow row && _shownIn.TryGetValue(container, out HistoryRow? shown) && ReferenceEquals(shown, row)) row.LoadThumb();
     }
 
     /// <summary>

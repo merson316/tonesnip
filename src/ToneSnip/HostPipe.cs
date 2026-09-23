@@ -1,6 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
-using ToneSnip.Core.Capture;
+using ToneSnip.Core.Ipc;
 using ToneSnip.Core.Diagnostics;
 
 namespace ToneSnip.App;

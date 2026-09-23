@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using ToneSnip.Core.Diagnostics;
 
 namespace ToneSnip.Windows.Overlay;
 
@@ -63,6 +65,7 @@ public static class Win32
     [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hwnd, int command);
     [DllImport("user32.dll")] internal static extern bool InvalidateRect(IntPtr hwnd, ref Rect r, bool erase);
     [DllImport("user32.dll")] internal static extern bool InvalidateRect(IntPtr hwnd, IntPtr all, bool erase);
+    [DllImport("user32.dll")] internal static extern bool UpdateWindow(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern IntPtr BeginPaint(IntPtr hwnd, out PaintStruct ps);
     [DllImport("user32.dll")] internal static extern bool EndPaint(IntPtr hwnd, ref PaintStruct ps);
     [DllImport("user32.dll")] internal static extern IntPtr SetCapture(IntPtr hwnd);
@@ -88,15 +91,25 @@ public static class Win32
     /// Brings a window to the foreground and gives it the keyboard even though this process is not the foreground one
     /// (a hotkey from the low-level hook does not count as user input): attaches to the foreground thread's input
     /// queue for the duration of the call. Used by the overlay and the WinUI popups alike.
+    /// <para>Attaching waits on the foreground thread, so a hung foreground app stalls the caller: a call slower than
+    /// <see cref="SlowForeground"/> is logged, since from outside it looks like a hotkey that did nothing.</para>
     /// </summary>
-    public static void ForceForeground(IntPtr hwnd)
+    public static void ForceForeground(IntPtr hwnd, ILog? log = null)
     {
+        long started = Stopwatch.GetTimestamp();
         IntPtr fg = GetForegroundWindow();
         uint fgThread = fg != IntPtr.Zero ? GetWindowThreadProcessId(fg, IntPtr.Zero) : 0, me = GetCurrentThreadId();
         bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
         try { BringWindowToTop(hwnd); SetForegroundWindow(hwnd); SetFocus(hwnd); }
-        finally { if (attached) AttachThreadInput(me, fgThread, false); }
+        finally
+        {
+            if (attached) AttachThreadInput(me, fgThread, false);
+            TimeSpan took = Stopwatch.GetElapsedTime(started);
+            if (took > SlowForeground) log?.Warn($"foreground: taking the foreground took {took.TotalMilliseconds:F0} ms{(attached ? " with the foreground app's input attached" : "")}");
+        }
     }
+
+    private static readonly TimeSpan SlowForeground = TimeSpan.FromMilliseconds(200);
 
     /// <summary>The low and high 16-bit halves of a message parameter, signed (mouse coordinates go negative).</summary>
     internal static int LoWord(IntPtr v) => (short)(v.ToInt64() & 0xFFFF);

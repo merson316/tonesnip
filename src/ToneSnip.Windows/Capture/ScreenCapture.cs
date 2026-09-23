@@ -16,8 +16,10 @@ using WinRT;
 namespace ToneSnip.Windows.Capture;
 
 /// <summary>Called once per output, on a worker thread, with that output's frame mapped for reading: B8G8R8A8_UNorm for
-/// an SDR output, R16G16B16A16_Float (scRGB) for an HDR one, in desktop orientation.</summary>
-public delegate void FrameConsumer(int output, IntPtr data, int rowPitch, int width, int height, Format format);
+/// an SDR output, R16G16B16A16_Float (scRGB) for an HDR one, in desktop orientation. It runs with the graphics device
+/// locked, so it should only copy the frame out; slower work on the copy (a tonemap) goes in the action it returns,
+/// which is run on the same thread once the frame is unmapped and the device free for the other monitors.</summary>
+public delegate Action? FrameConsumer(int output, IntPtr data, int rowPitch, int width, int height, Format format);
 
 /// <summary>
 /// Takes one frame of every monitor through Windows.Graphics.Capture, on demand.
@@ -45,13 +47,14 @@ public sealed class ScreenCapture(ILog log) : IDisposable
     private readonly object _displayGate = new();
     /// <summary>Guards the kept capture items. Held only to read or change the dictionary; items are created outside it.</summary>
     private readonly object _streamGate = new();
-    private DisplaySet? _displays;
+    private List<OutputHandle>? _displays;
     private ID3D11Device? _device;
     private ID3D11DeviceContext? _context;
     private IDirect3DDevice? _winrtDevice;
     private bool _accessAsked;
 
-    /// <summary>False on a Windows without Windows.Graphics.Capture; every output then goes to GDI.</summary>
+    /// <summary>False where Windows.Graphics.Capture is unavailable, such as some virtual machines and Remote Desktop
+    /// sessions; every output then goes to GDI.</summary>
     public static bool Supported
     {
         get { try { return GraphicsCaptureSession.IsSupported(); } catch { return false; } }
@@ -60,18 +63,16 @@ public sealed class ScreenCapture(ILog log) : IDisposable
     /// <summary>The monitors, enumerated on first use and again after <see cref="Refresh"/>.</summary>
     public IReadOnlyList<OutputHandle> Outputs
     {
-        get { lock (_displayGate) return (_displays ??= Enumerate()).Outputs; }
+        get { lock (_displayGate) return _displays ??= Enumerate(); }
     }
 
-    /// <summary>Enumerates the monitors again after a display change. The new set is built before the old one is
-    /// disposed, so a failed enumeration leaves the old set in place.</summary>
+    /// <summary>Enumerates the monitors again after a display change. The new list is built before the old one is
+    /// replaced, so a failed enumeration leaves the old list in place.</summary>
     public void Refresh()
     {
-        DisplaySet fresh = Enumerate();
-        DisplaySet? old;
-        lock (_displayGate) { old = _displays; _displays = fresh; }
+        List<OutputHandle> fresh = Enumerate();
+        lock (_displayGate) _displays = fresh;
         ReleaseStreams();   // monitor handles do not survive a display change
-        old?.Dispose();
     }
 
     /// <summary>
@@ -86,7 +87,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         lock (_displayGate)
         {
             if (_displays == null) return;
-            foreach (OutputHandle o in _displays.Outputs)
+            foreach (OutputHandle o in _displays)
             {
                 if (!info.TryGetValue(o.DeviceName, out DisplayInfo? d) || Math.Abs(d.SdrWhiteNits - o.SdrWhiteNits) < 0.5f) continue;
                 log.Info($"{o.DeviceName}: SDR white {o.SdrWhiteNits:F0} -> {d.SdrWhiteNits:F0} nits");
@@ -95,13 +96,13 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         }
     }
 
-    private DisplaySet Enumerate()
+    private List<OutputHandle> Enumerate()
     {
         Dictionary<string, DisplayInfo> info;
         try { info = DisplayConfigInterop.Query(); } catch (Exception e) { log.Warn("DisplayConfig: " + e.Message); info = new(); }
-        DisplaySet set = OutputEnumerator.Enumerate(info, log.Info);
-        foreach (OutputHandle o in set.Outputs) log.Debug($"output: {o}");
-        return set;
+        List<OutputHandle> outputs = OutputEnumerator.Enumerate(info, log.Info);
+        foreach (OutputHandle o in outputs) log.Debug($"output: {o}");
+        return outputs;
     }
 
     /// <summary>
@@ -216,6 +217,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
             Texture2DDescription d = texture.Description;
             lock (state) { if (state.Abandoned) return; }
             if (!Monitor.TryEnter(_gate, Math.Max(Remaining(), 250))) { reason = "the graphics device was busy"; return; }
+            Action? finish;
             try
             {
                 // Converting is set only with the gate held, so an output abandoned while waiting for it never starts a copy.
@@ -227,10 +229,12 @@ public sealed class ScreenCapture(ILog log) : IDisposable
                 using ID3D11Texture2D staging = device.CreateTexture2D(new Texture2DDescription(d.Format, d.Width, d.Height, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read));
                 context.CopyResource(staging, texture);
                 MappedSubresource map = context.Map(staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
-                try { consume(index, map.DataPointer, (int)map.RowPitch, (int)d.Width, (int)d.Height, d.Format); }
+                try { finish = consume(index, map.DataPointer, (int)map.RowPitch, (int)d.Width, (int)d.Height, d.Format); }
                 finally { context.Unmap(staging, 0); }
             }
             finally { Monitor.Exit(_gate); }
+            // Still Converting, so the caller waits for it as for the copy, but with the device free.
+            finish?.Invoke();
         }
         catch (SharpGenException e) when (e.ResultCode == Vortice.DXGI.ResultCode.DeviceRemoved || e.ResultCode == Vortice.DXGI.ResultCode.DeviceReset)
         {
@@ -309,8 +313,10 @@ public sealed class ScreenCapture(ILog log) : IDisposable
             if (plan.SettleMs > 0)
             {
                 Thread.Sleep(plan.SettleMs);
-                Dwm.Flush();
-                Dwm.Flush();
+                // Bounded like the snip's own wait: with no composition coming, an unbounded flush would hold this grab
+                // and every one after it.
+                if (!Dwm.FlushTwice().Wait(Dwm.CompositionBudget))
+                    log.Warn($"capture: DWM did not compose within {Dwm.CompositionBudget.TotalMilliseconds:F0} ms after the borderless prompt; capturing anyway");
             }
         }
         catch (Exception e) { log.Debug("capture: borderless access not asked: " + e.Message); }
@@ -329,7 +335,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
     public void Dispose()
     {
         ReleaseDevice();
-        lock (_displayGate) { _displays?.Dispose(); _displays = null; }
+        lock (_displayGate) _displays = null;
     }
 
     // ----- WinRT interop -----

@@ -19,6 +19,11 @@ public sealed class HistoryItem(HistoryEntry entry)
     /// <summary>Whether deleting the file would reach the Recycle Bin. Cached with <see cref="FileMissing"/>; true until
     /// probed.</summary>
     public bool RecycleBinCovers { get; internal set; } = true;
+    /// <summary>Whether <see cref="HistoryEntry.Thumb"/> is still being written on the thread pool. The flyout shows
+    /// the placeholder meanwhile and loads the file once this clears (<see cref="SnipHistory.Changed"/>).</summary>
+    public bool ThumbPending { get; internal set; }
+    /// <summary>Thumbnail writes started for this row, so one that finishes after a newer one is discarded.</summary>
+    internal int ThumbWrites;
 }
 
 /// <summary>Recent snips: history.json plus one thumbnail PNG per snip under thumbs/. Toasts and the flyout share the thumbnails.</summary>
@@ -118,36 +123,38 @@ public sealed class SnipHistory
     }
 #endif
 
-    /// <summary>Records a finished snip and writes its thumbnail; returns the thumbnail path for the toast.</summary>
-    public string Add(CaptureResult r)
+    /// <summary>
+    /// Records a finished snip and starts writing its thumbnail on the thread pool. The row is in the list at once; the
+    /// returned task completes on the calling (UI) thread with the thumbnail's path once the file is written (or the
+    /// write has failed), which is when the toast can show it.
+    /// </summary>
+    public Task<string> Add(CaptureResult r)
     {
-        Directory.CreateDirectory(_thumbDir);
         BgraImage img = r.Output ?? r.Image;
         string id = Guid.NewGuid().ToString("N");
         string thumb = Path.Combine(_thumbDir, id + ".png");
-        try { File.WriteAllBytes(thumb, Bitmaps.EncodePng(Bitmaps.Thumbnail(img, ThumbMaxEdge))); } catch (Exception e) { _log.Warn("thumbnail: " + e.Message); }
         Wrote(r.SavedPath); Wrote(r.HdrPath);
         var entry = new HistoryEntry(id, r.SavedPath, r.TakenLocal.ToUniversalTime(), img.Width, img.Height, r.AnyHdr, thumb, r.HdrPath);
         foreach (HistoryEntry dropped in _list.Add(entry)) { DeleteOwn(dropped.Thumb, Png); _items.RemoveAll(i => i.Entry.Id == dropped.Id); }
         foreach (HistoryItem older in _items.Skip(2)) older.Result = null;   // only the newest few keep their PNG in memory
-        _items.Insert(0, new HistoryItem(entry) { Result = r });
+        var item = new HistoryItem(entry) { Result = r };
+        _items.Insert(0, item);
+        Task<string> written = WriteThumb(item, img, thumb, keepOld: false);
         Save();
-        return thumb;
+        return written;
     }
 
-    /// <summary>After the editor saved over a snip's own file: rewrites that entry's thumbnail and size from the edited image.</summary>
+    /// <summary>After the editor saved over a snip's own file: rewrites that entry's size at once, and its thumbnail
+    /// once the new one is written on the thread pool.</summary>
     public void Replace(CaptureResult r, BgraImage img)
     {
         // Match by path first: after a Save as… the result's own entry still names the original file.
         HistoryItem? item = (r.SavedPath == null ? null : _items.FirstOrDefault(i => string.Equals(i.Entry.Path, r.SavedPath, StringComparison.OrdinalIgnoreCase)))
             ?? _items.FirstOrDefault(i => i.Result == r);
         if (item == null) return;
-        Directory.CreateDirectory(_thumbDir);
         // A fresh filename, not an overwrite: images are cached by URI, so a rewritten path would show the old bitmap.
+        // The row keeps showing the old thumbnail until the new file exists, and keeps it if the write fails.
         string thumb = Path.Combine(_thumbDir, Guid.NewGuid().ToString("N") + ".png");
-        try { File.WriteAllBytes(thumb, Bitmaps.EncodePng(Bitmaps.Thumbnail(img, ThumbMaxEdge))); }
-        catch (Exception e) { _log.Warn("thumbnail: " + e.Message); thumb = item.Entry.Thumb; }
-        if (!string.Equals(thumb, item.Entry.Thumb, StringComparison.OrdinalIgnoreCase)) DeleteOwn(item.Entry.Thumb, Png);
         item.Result = null;   // the retained result holds pre-edit pixels; Load decodes the new file instead
         // After a Save as… r.HdrPath may name the original snip's sidecar; adopt it only if it belongs to this path.
         bool ownsSidecar = OwnsSidecar(r.SavedPath, r.HdrPath);
@@ -155,9 +162,52 @@ public sealed class SnipHistory
         // Record only folders this call actually wrote into.
         Wrote(r.SavedPath);
         if (ownsSidecar) Wrote(r.HdrPath);
-        item.Entry = item.Entry with { Path = r.SavedPath, Width = img.Width, Height = img.Height, Thumb = thumb, HdrPath = hdrPath };
+        item.Entry = item.Entry with { Path = r.SavedPath, Width = img.Width, Height = img.Height, HdrPath = hdrPath };
         _list.Update(item.Entry);   // in place: Add would move a re-saved older snip to the front of the list
+        _ = WriteThumb(item, img, thumb, keepOld: true);
         Save();
+    }
+
+    /// <summary>
+    /// Scales <paramref name="img"/> to a thumbnail and writes it to <paramref name="thumb"/> on the thread pool: the
+    /// PNG encode used to run on the UI thread, in front of the toast. The result is applied back on the calling (UI)
+    /// thread, which raises <see cref="Changed"/> so the flyout loads the file.
+    /// <para>With <paramref name="keepOld"/> (a re-save) the entry names the new file only once it is written, and the
+    /// old file is deleted then; otherwise the entry already names it and is marked pending until it lands. A write
+    /// overtaken by a newer one for the same row, or finishing after its row has left the list, deletes its own
+    /// file.</para>
+    /// </summary>
+    private async Task<string> WriteThumb(HistoryItem item, BgraImage img, string thumb, bool keepOld)
+    {
+        int write = ++item.ThumbWrites;
+        if (!keepOld) item.ThumbPending = true;
+        string dir = _thumbDir;
+        bool ok = await Task.Run(() =>
+        {
+            try
+            {
+                Directory.CreateDirectory(dir);
+                File.WriteAllBytes(thumb, Bitmaps.EncodePng(Bitmaps.Thumbnail(img, ThumbMaxEdge)));
+                return true;
+            }
+            catch (Exception e) { _log.Warn("thumbnail: " + e.Message); return false; }
+        });
+        if (write != item.ThumbWrites || !_items.Contains(item))
+        {
+            if (ok) DeleteOwn(thumb, Png);
+            return ok ? thumb : item.Entry.Thumb;
+        }
+        item.ThumbPending = false;
+        if (keepOld && ok)
+        {
+            string old = item.Entry.Thumb;
+            item.Entry = item.Entry with { Thumb = thumb };
+            _list.Update(item.Entry);
+            DeleteOwn(old, Png);
+            Save();
+        }
+        else Changed?.Invoke();
+        return ok ? thumb : item.Entry.Thumb;
     }
 
     private static bool OwnsSidecar(string? sdrPath, string? hdrPath) => HdrOutput.OwnsSidecar(sdrPath, hdrPath);
@@ -167,14 +217,14 @@ public sealed class SnipHistory
     {
         // Save as… over a file that already has a row (its own, or another snip's) updates that row instead of adding a twin.
         if (_items.Any(i => string.Equals(i.Entry.Path, path, StringComparison.OrdinalIgnoreCase))) { Replace(r, img); return; }
-        Directory.CreateDirectory(_thumbDir);
         string id = Guid.NewGuid().ToString("N");
         string thumb = Path.Combine(_thumbDir, id + ".png");
-        try { File.WriteAllBytes(thumb, Bitmaps.EncodePng(Bitmaps.Thumbnail(img, ThumbMaxEdge))); } catch (Exception e) { _log.Warn("thumbnail: " + e.Message); }
         Wrote(path);
         var entry = new HistoryEntry(id, path, r.TakenLocal.ToUniversalTime(), img.Width, img.Height, r.AnyHdr, thumb);
         foreach (HistoryEntry dropped in _list.Add(entry)) { DeleteOwn(dropped.Thumb, Png); _items.RemoveAll(i => i.Entry.Id == dropped.Id); }
-        _items.Insert(0, new HistoryItem(entry));
+        var item = new HistoryItem(entry);
+        _items.Insert(0, item);
+        _ = WriteThumb(item, img, thumb, keepOld: false);
         Save();
     }
 

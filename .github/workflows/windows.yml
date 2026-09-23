@@ -10,6 +10,14 @@ on:
 permissions:
   contents: read
 
+# Releasing pushes main and then the tag for the same commit, which would build everything twice. A run for a tag
+# cancels the branch run still going for its commit, but is never cancelled itself, since it is the one that
+# releases. A branch run that starts after its tag's run waits for it instead. A newer push to a pull request
+# cancels the build of the push it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
     # The WinUI 3 app and the MSIX need the Windows .NET SDK. ci.yml covers the cross-platform checks.
@@ -18,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          global-json-file: global.json
 
       - name: Core tests
         run: dotnet test tests/ToneSnip.Core.Tests -c Release
@@ -32,7 +40,7 @@ jobs:
           Write-Host "analyzer: the publishes in this job therefore prove 0 MSBuild warnings and nothing about the WUI rules."
           Write-Host "analyzer: for that claim, run tools/publish.sh on a machine that has the plugin, or set WinUIAnalyzerDir."
 
-      # .NET framework-dependent (the .NET 9 Desktop Runtime is a prerequisite), but the Windows App SDK must be
+      # .NET framework-dependent (the .NET 10 Desktop Runtime is a prerequisite), but the Windows App SDK must be
       # self-contained: single-file with a framework-dependent Windows App SDK is unsupported and every XAML window
       # throws XamlParseException. ToneSnip.csproj refuses that combination.
       - name: Publish the production exe
@@ -54,10 +62,11 @@ jobs:
 
       - name: Self-test
         # --selftest exists only in the debug build (-p:ToneSnipHarness=true, tonesnip-debug.exe), so this publishes
-        # the same commit with the harness compiled in, as `tools/publish.sh debug` does.
+        # the same commit with the harness compiled in. Every other flag is the production exe's, so the self-test
+        # runs on the host, runtime and ReadyToRun code that ship, not on a self-contained copy of .NET.
         shell: pwsh
         run: |
-          dotnet publish src/ToneSnip -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:WindowsAppSDKSelfContained=true -p:ToneSnipHarness=true -o dist/selftest
+          dotnet publish src/ToneSnip -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:WindowsAppSDKSelfContained=true -p:ToneSnipHarness=true -o dist/selftest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Start-Process -Wait -PassThru for the real exit code of a GUI-subsystem exe (see the smoke test).
           $p = Start-Process dist\selftest\tonesnip-debug.exe -ArgumentList '--selftest','--no-capture' -Wait -PassThru -NoNewWindow -RedirectStandardOutput selftest.log
@@ -102,8 +111,11 @@ jobs:
             '-p:WindowsPackageType=MSIX', '-p:GenerateAppxPackageOnBuild=true', "-p:AppxPackageDir=$out"
           )
           if ('${{ steps.cert.outputs.signed }}' -eq 'true') {
+            # The timestamp keeps the signature valid after the certificate expires; without one, every release
+            # signed with it stops installing on that day.
             $publishArgs += @('-p:AppxPackageSigningEnabled=true', "-p:PackageCertificateKeyFile=$PWD\cert.pfx",
-                       "-p:PackageCertificatePassword=$env:MSIX_PFX_PASSWORD")
+                       "-p:PackageCertificatePassword=$env:MSIX_PFX_PASSWORD",
+                       '-p:AppxPackageSigningTimestampServerUrl=http://timestamp.digicert.com')
           } else {
             $publishArgs += '-p:AppxPackageSigningEnabled=false'
           }
@@ -140,6 +152,21 @@ jobs:
       # packaging/tonesnip.cer exists only once packaging/make-cert.ps1 has been run and its output committed;
       # fail_on_unmatched_files: false lets a release go out without it.
       - uses: actions/checkout@v4
+      # <Version> in the csproj is the only version number: it names the MSIX and stamps its manifest. A tag that
+      # says otherwise would publish a release whose files carry a different version from its name.
+      - name: Check the tag matches the version
+        shell: bash
+        run: |
+          versions=$(sed -n 's|^ *<Version>\([^<]*\)</Version> *$|\1|p' src/ToneSnip/ToneSnip.csproj)
+          if [ "$(printf '%s\n' "$versions" | grep -c .)" -ne 1 ]; then
+            echo "::error::expected exactly one <Version> line in src/ToneSnip/ToneSnip.csproj, found: '$versions'"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "v$versions" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match <Version>$versions</Version> in src/ToneSnip/ToneSnip.csproj; expected v$versions"
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches <Version>$versions</Version>"
       - uses: actions/download-artifact@v4
         with:
           path: dist

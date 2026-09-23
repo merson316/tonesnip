@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace ToneSnip.Core.Capture;
+namespace ToneSnip.Core.Ipc;
 
 /// <summary>Reads one newline-terminated UTF-8 line from a stream written by a process this one does not control.</summary>
 public static class LineReading

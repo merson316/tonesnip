@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read   # releases are windows.yml's job
 
+# As in windows.yml: a tag's run cancels the branch run for the same commit and is never cancelled itself, and a
+# newer push to a pull request cancels the check of the push it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          global-json-file: global.json
       - run: dotnet test tests/ToneSnip.Core.Tests -c Release
       # assets/ is generated from the SVGs in assets/; --check fails if anything committed is stale. It runs on
       # Linux because cairosvg needs a native cairo library that windows-latest does not ship.

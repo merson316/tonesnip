@@ -44,14 +44,4 @@ public class TransferTests
 
     [Fact]
     public void Luminance_of_white_is_one() => Assert.Equal(1.0, Transfer.Luminance709(1f, 1f, 1f), 0.0001);
-
-    [Fact]
-    public void Bt2020_white_stays_white()
-    {
-        float r = 1f, g = 1f, b = 1f;
-        Transfer.Bt2020To709(ref r, ref g, ref b);
-        Assert.Equal(1.0, r, 0.01);
-        Assert.Equal(1.0, g, 0.01);
-        Assert.Equal(1.0, b, 0.01);
-    }
 }

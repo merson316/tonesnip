@@ -2,9 +2,10 @@ using Vortice.DXGI;
 
 namespace ToneSnip.Windows.Display;
 
+/// <summary>One monitor as enumerated through DXGI. Plain data: the DXGI objects it was read from are released during
+/// enumeration, since the capture takes a monitor by its HMONITOR.</summary>
 public sealed class OutputHandle
 {
-    public required IDXGIOutput6 Output { get; init; }
     /// <summary>The HMONITOR, which Windows.Graphics.Capture takes a monitor by.</summary>
     public required IntPtr Monitor { get; init; }
     public required string AdapterName { get; init; }
@@ -27,47 +28,38 @@ public sealed class OutputHandle
         => $"{DeviceName}{(FriendlyName == null ? "" : $" ({FriendlyName})")} on {AdapterName}: {Width}x{Height} at ({Left},{Top}) hdr={Hdr} colorSpace={ColorSpace} sdrWhite={SdrWhiteNits:F0}nits peak={MaxLuminance:F0}nits rotation={Rotation}";
 }
 
-public sealed class DisplaySet : IDisposable
-{
-    public List<OutputHandle> Outputs { get; } = new();
-    internal List<IDXGIAdapter1> Adapters { get; } = new();
-
-    public void Dispose()
-    {
-        foreach (OutputHandle o in Outputs) o.Output.Dispose();
-        foreach (IDXGIAdapter1 a in Adapters) a.Dispose();
-    }
-}
-
 public static class OutputEnumerator
 {
-    public static DisplaySet Enumerate(IReadOnlyDictionary<string, DisplayInfo> displays, Action<string> log)
+    /// <summary>The monitors attached to the desktop, on every hardware adapter. Each adapter and output is released as
+    /// soon as it has been read, so nothing DXGI-side stays alive between display changes.</summary>
+    public static List<OutputHandle> Enumerate(IReadOnlyDictionary<string, DisplayInfo> displays, Action<string> log)
     {
-        var set = new DisplaySet();
+        var outputs = new List<OutputHandle>();
         using IDXGIFactory1 factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
         for (uint a = 0; factory.EnumAdapters1(a, out IDXGIAdapter1 adapter).Success; a++)
         {
+            using IDXGIAdapter1 owned = adapter;   // released after each pass, whether it had outputs or not
             AdapterDescription1 ad = adapter.Description1;
             if ((ad.Flags & AdapterFlags.Software) != 0)
             {
                 log($"skipping software adapter {ad.Description}");
-                adapter.Dispose();
                 continue;
             }
-            int before = set.Outputs.Count;
             for (uint o = 0; adapter.EnumOutputs(o, out IDXGIOutput output).Success; o++)
             {
-                IDXGIOutput6? out6 = output.QueryInterfaceOrNull<IDXGIOutput6>();
-                output.Dispose();
-                if (out6 == null) { log($"adapter {ad.Description} output {o}: no IDXGIOutput6, skipped"); continue; }
-                OutputDescription1 d = out6.Description1;
-                if (!d.AttachedToDesktop) { out6.Dispose(); continue; }
+                OutputDescription1 d;
+                using (IDXGIOutput6? out6 = output.QueryInterfaceOrNull<IDXGIOutput6>())
+                {
+                    output.Dispose();
+                    if (out6 == null) { log($"adapter {ad.Description} output {o}: no IDXGIOutput6, skipped"); continue; }
+                    d = out6.Description1;
+                }
+                if (!d.AttachedToDesktop) continue;
                 displays.TryGetValue(d.DeviceName, out DisplayInfo? info);
                 bool hdr = ToneSnip.Core.Capture.HdrDetection.IsHdr(d.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020,
                                                                    d.ColorSpace == ColorSpaceType.RgbFullG10NoneP709, info?.AdvancedColorBits);
-                set.Outputs.Add(new OutputHandle
+                outputs.Add(new OutputHandle
                 {
-                    Output = out6,
                     Monitor = d.Monitor,
                     AdapterName = ad.Description,
                     DeviceName = d.DeviceName,
@@ -83,9 +75,7 @@ public static class OutputEnumerator
                     SdrWhiteNits = info?.SdrWhiteNits ?? 80f,
                 });
             }
-            if (set.Outputs.Count > before) set.Adapters.Add(adapter);
-            else adapter.Dispose();
         }
-        return set;
+        return outputs;
     }
 }

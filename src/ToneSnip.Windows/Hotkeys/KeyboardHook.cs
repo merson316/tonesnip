@@ -82,8 +82,6 @@ public sealed class KeyboardHook : IDisposable
     public event Action<HotkeyBinding>? Pressed;
     /// <summary>When true, matching key-downs are swallowed so no other app sees them.</summary>
     public volatile bool Swallow;
-    /// <summary>Per-binding override of <see cref="Swallow"/>; null means use the flag.</summary>
-    public Func<HotkeyBinding, bool>? ShouldSwallow { get; set; }
     /// <summary>Whether a binding applies right now (<see cref="HotkeyFilter.IsActive"/>); null means every binding does.</summary>
     public Func<HotkeyBinding, bool>? IsActive { get; set; }
     /// <summary>
@@ -163,7 +161,6 @@ public sealed class KeyboardHook : IDisposable
             _filter.Bindings = _bindings;
             _filter.Paused = Paused;
             _filter.Swallow = Swallow;
-            _filter.ShouldSwallow = ShouldSwallow;
             _filter.IsActive = IsActive;
             _filter.Recorder = Recorder;
             KeyDecision d = _filter.OnKey(vk, isDown, injected, new KeyMods(Down(VkControl), Down(VkShift), Down(VkMenu), Down(VkLwin) || Down(VkRwin)));

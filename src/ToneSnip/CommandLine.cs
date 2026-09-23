@@ -2,7 +2,8 @@ using ToneSnip.Core.Capture;
 
 namespace ToneSnip.App;
 
-/// <summary>What a launch asked for: `--snip &lt;mode&gt; [--delay n]`, `--settings`, or nothing (run in the tray).
+/// <summary>What a launch asked for: `--snip &lt;mode&gt; [--delay n]`, `--settings`, or nothing (run in the tray;
+/// `--background` says so explicitly).
 /// <para>The harness parameters exist only in the debug build; in the shipping app their flags are reported as
 /// unknown, which <c>Program</c> refuses.</para></summary>
 #if TONESNIP_HARNESS
@@ -84,6 +85,8 @@ public static class CommandLine
         text.AppendLine($"  --delay <seconds>  count down before the snip starts (with --snip); 0 to {MaxDelaySeconds}");
         text.AppendLine("  --settings         open the settings window");
         text.AppendLine("  --history          open the Recent flyout");
+        text.AppendLine("  --background       start in the notification area and nothing else, even when");
+        text.AppendLine("                     ToneSnip is already running (how Windows starts it at sign-in)");
         text.AppendLine("  --help, -h         this text");
 #if TONESNIP_HARNESS
         text.AppendLine();
@@ -153,6 +156,9 @@ public static class CommandLine
                 }
                 case "--settings": settings = true; break;
                 case "--history": history = true; break;
+                // The Run key's switch. It adds nothing to the command, so a second launch with it reduces to an empty
+                // command and exits without forwarding (Program.Main), instead of opening Settings as a bare launch does.
+                case "--background": break;
                 // Recognised so it is not reported as unknown; read early in Program.
                 case "--help": case "-h": break;
 #if TONESNIP_HARNESS

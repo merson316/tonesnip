@@ -40,7 +40,7 @@ highlights are compressed. What you paste looks like what you saw.
 ## Requirements
 
 - Windows 11. ToneSnip turns off the yellow capture border, which Windows 10 does not allow.
-- For `tonesnip.exe` only: the [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0). The MSIX
+- For `tonesnip.exe` only: the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). The MSIX
   is self-contained.
 
 ## Install
@@ -63,7 +63,7 @@ signed with it; remove it with `certutil -delstore TrustedPeople merson316`.
 
 ### Single exe
 
-Put `tonesnip.exe` somewhere permanent and run it. It carries the Windows App SDK, so only the .NET 9 Desktop Runtime
+Put `tonesnip.exe` somewhere permanent and run it. It carries the Windows App SDK, so only the .NET 10 Desktop Runtime
 is needed.
 
 Either way, a tray icon appears. To start with Windows, turn on **Start with Windows** in Settings > General.
@@ -166,8 +166,8 @@ hotkey / tray / --snip ──▶ tonesnip.exe
 
 ## Building
 
-`ToneSnip.Core`, `ToneSnip.Windows` and the tests build with any .NET 9 SDK, Linux and WSL included. The app itself
-needs the Windows .NET 9 SDK for its WinUI tooling.
+`ToneSnip.Core`, `ToneSnip.Windows` and the tests build with any .NET 10 SDK, Linux and WSL included. The app itself
+needs the Windows .NET 10 SDK for its WinUI tooling.
 
 ```
 dotnet test tests/ToneSnip.Core.Tests

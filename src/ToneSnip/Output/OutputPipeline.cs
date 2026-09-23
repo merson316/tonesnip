@@ -16,7 +16,18 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
 {
     public event Action<CaptureResult>? Completed;
     /// <summary>When true the result keeps its image, half crops and document after output (an editor is about to open); the editor compacts on close.</summary>
-    public Func<CaptureResult, bool> KeepAlive { get; set; } = _ => false;
+    public Func<SnipSettings, bool> KeepAlive { get; set; } = _ => false;
+
+    /// <summary>Whether the auto-save writes an HDR file beside the SDR one, which is built from the snip's half crops.</summary>
+    public static bool WritesSidecar(SnipSettings s) => s.AutoSave && s.Hdr.File != "none";
+
+    /// <summary>
+    /// Whether a snip taken with these settings reads its HDR half crops after it is built: the editor that opens on it
+    /// (re-exposure, zebra, an HDR save) or the auto-saved HDR file. Otherwise they would be dropped by Compact straight
+    /// after the output, so <see cref="CaptureResult.Build"/> does not copy them. An editor opened later (from the toast
+    /// or the history) reads the compacted PNG and never had them.
+    /// </summary>
+    public bool UsesCrops(SnipSettings s) => KeepAlive(s) || WritesSidecar(s);
     public Func<uint> Accent { get; set; } = () => Annotate.ShapeRenderer.DefaultAccent;
 
     public async Task RunAsync(CaptureResult result)
@@ -29,7 +40,7 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
 #if TONESNIP_HARNESS
         MemoryProbe.Mark("after toast/viewer");
 #endif
-        if (!KeepAlive(result))
+        if (!KeepAlive(s))
         {
             // Encode on the pool, but compact on this thread, where Completed's listeners read the result.
             if (png == null)
@@ -69,7 +80,7 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
             MemoryProbe.Mark("after save");
 #endif
         }
-        if (s.AutoSave && result.SavedPath != null && s.Hdr.File != "none" && result.Crops.Count > 0)
+        if (WritesSidecar(s) && result.SavedPath != null && result.Crops.Count > 0)
         {
             // The HDR sidecar must never take the SDR save, Completed or Compact down with it.
             try { HdrOutput.Write(result, img, result.SavedPath, s.Hdr.File, s, accent, log); }

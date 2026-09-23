@@ -11,8 +11,17 @@ public static class Dwm
     private const int WindowCornerPreference = 33, BorderColor = 34;
     private const int ColorNone = unchecked((int)0xFFFFFFFE);
 
-    public static void Flush() => DwmFlush();
+    /// <summary>How long two DWM compositions (<see cref="FlushTwice"/>) may be waited for before going ahead anyway. Two
+    /// frames at even 24 Hz are about 83 ms.</summary>
+    public static readonly TimeSpan CompositionBudget = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>
+    /// Two DWM compositions, so a window just hidden or closed is off the screen, waited for on a pool thread. DwmFlush
+    /// returns at the next present, and with the displays off or still waking there may not be one until some window
+    /// forces a composition, so callers wait no longer than <see cref="CompositionBudget"/>. A late flush finishes on
+    /// its pool thread without holding anything.
+    /// </summary>
+    public static Task FlushTwice() => Task.Run(() => { DwmFlush(); DwmFlush(); });
 
 
     /// <summary>DWMWCP_ROUND (8 px), or DWMWCP_ROUNDSMALL (4 px) for a window drawn at the small radius.</summary>

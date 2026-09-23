@@ -4,7 +4,7 @@ namespace ToneSnip.Core.Hdr;
 
 public static class ColorMath
 {
-    /// <summary>Linear BT.709 RGB to linear BT.2020 RGB (same D65 white); the inverse of <see cref="Transfer.Bt2020To709"/>.</summary>
+    /// <summary>Linear BT.709 RGB to linear BT.2020 RGB (same D65 white).</summary>
     public static void Bt709To2020(ref float r, ref float g, ref float b)
     {
         float r2 = 0.6274f * r + 0.3293f * g + 0.0433f * b;
