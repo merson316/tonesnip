@@ -112,10 +112,11 @@ jobs:
           )
           if ('${{ steps.cert.outputs.signed }}' -eq 'true') {
             # The timestamp keeps the signature valid after the certificate expires; without one, every release
-            # signed with it stops installing on that day.
+            # signed with it stops installing on that day. SignTool refuses a timestamp without its digest (/td).
             $publishArgs += @('-p:AppxPackageSigningEnabled=true', "-p:PackageCertificateKeyFile=$PWD\cert.pfx",
                        "-p:PackageCertificatePassword=$env:MSIX_PFX_PASSWORD",
-                       '-p:AppxPackageSigningTimestampServerUrl=http://timestamp.digicert.com')
+                       '-p:AppxPackageSigningTimestampServerUrl=http://timestamp.digicert.com',
+                       '-p:AppxPackageSigningTimestampDigestAlgorithm=SHA256')
           } else {
             $publishArgs += '-p:AppxPackageSigningEnabled=false'
           }
