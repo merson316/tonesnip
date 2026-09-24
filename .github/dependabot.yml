@@ -1,5 +1,8 @@
-# Weekly update pull requests for the workflow actions and the NuGet packages. Minor and patch updates arrive as one
-# grouped pull request per ecosystem; a major version gets a pull request of its own, since it can change behaviour.
+# Weekly update pull requests for the workflow actions and the NuGet packages. Actions arrive as two grouped pull requests
+# (majors, and minors with patches), since several run only on a tag push and are proven together at the
+# next release. NuGet minor and patch updates are grouped; a NuGet major gets a pull request of its own, since it can
+# change behaviour. Work accumulates on a dev branch and main fast-forwards to it at each release, so apply these on
+# the dev branch rather than merging them on GitHub; Dependabot closes each one when the release carrying it lands.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -7,6 +10,8 @@ updates:
     schedule:
       interval: weekly
     groups:
+      actions-major:
+        update-types: [major]
       actions-minor-and-patch:
         update-types: [minor, patch]
 
