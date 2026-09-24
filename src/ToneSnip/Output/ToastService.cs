@@ -33,12 +33,16 @@ public sealed class ToastService : IDisposable
     private bool _registered;
     /// <summary>The card on screen, or null; a newer snip re-binds it rather than adding a second.</summary>
     private ToastWindow? _card;
-    /// <summary>The snip waiting for the overlay to come down, and the timer that watches for it.</summary>
-    private (CaptureResult Result, string Thumb)? _deferred;
+    /// <summary>The cards waiting for the overlay to come down (a snip's, or a notice), oldest first, and the timer that
+    /// watches for it. A queue, so a notice raised while a snip's card waits does not drop it.</summary>
+    private readonly Queue<Action> _deferred = new();
     private DispatcherQueueTimer? _defer;
     private DateTime _deferUntil;
+    /// <summary>When the next waiting card may replace the one just shown.</summary>
+    private DateTime _nextCardAt;
     public event Action<CaptureResult>? Opened;
     public event Action<CaptureResult>? Edited;
+    public event Action<CaptureResult>? Pinned;
     public Action<string, string>? Fallback { get; set; }
     /// <summary>Finds a snip by its saved path, for a notification whose result is no longer held (an earlier run, or
     /// older than <see cref="Keep"/>). Called on the UI thread.</summary>
@@ -56,7 +60,7 @@ public sealed class ToastService : IDisposable
         string id = Retain(r);
         if (!string.Equals(App.Current.Settings.Notification, "windows", StringComparison.OrdinalIgnoreCase))
         {
-            ShowCardWhenIdle(r, thumbPath);
+            ShowCardWhenIdle(() => ShowCard(r, thumbPath));
             return;
         }
         ShowWindowsToast(r, id, thumbPath);
@@ -112,36 +116,47 @@ public sealed class ToastService : IDisposable
     /// the session is still busy at first and the card usually waits one poll; it gives up after
     /// <see cref="DeferCap"/>.
     /// </summary>
-    private void ShowCardWhenIdle(CaptureResult r, string thumbPath)
+    private void ShowCardWhenIdle(Action show)
     {
-        _deferred = (r, thumbPath);
+        _deferred.Enqueue(show);
         _deferUntil = DateTime.UtcNow + DeferCap;
         if (!_ui.TryEnqueue(TryShowDeferred)) TryShowDeferred();
     }
 
     /// <summary>How long the card will wait for a snip session to end before giving up on itself.</summary>
     private static readonly TimeSpan DeferCap = TimeSpan.FromSeconds(30);
+    /// <summary>How long a card shown from the queue stays before the next waiting one re-binds it, so each can be
+    /// read. Shorter than the card's own dwell.</summary>
+    private static readonly TimeSpan NextCardGap = TimeSpan.FromSeconds(3);
 
     private void TryShowDeferred()
     {
-        if (_deferred is not { } pending) return;
+        if (_deferred.Count == 0) return;
         // App.Session is null in the harness side modes, which build the card themselves.
         if (App.Current.Session is { Busy: true })
         {
             if (DateTime.UtcNow > _deferUntil)
             {
-                _deferred = null;
+                int dropped = _deferred.Count;
+                _deferred.Clear();
                 _defer?.Stop();
-                _log.Warn("toast card: a snip was still running after 30 s; the card for the previous snip was dropped");
+                _log.Warn($"toast card: a snip was still running after 30 s; {dropped} waiting card(s) were dropped");
                 return;
             }
             _defer ??= CreateDeferTimer();
             _defer.Start();
             return;
         }
+        // The one before is still being read.
+        if (DateTime.UtcNow < _nextCardAt) { _defer ??= CreateDeferTimer(); _defer.Start(); return; }
         _defer?.Stop();
-        _deferred = null;
-        ShowCard(pending.Result, pending.Thumb);
+        Action pending = _deferred.Dequeue();
+        pending();
+        if (_deferred.Count == 0) return;
+        _nextCardAt = DateTime.UtcNow + NextCardGap;
+        _deferUntil = DateTime.UtcNow + DeferCap;
+        _defer ??= CreateDeferTimer();
+        _defer.Start();
     }
 
     private DispatcherQueueTimer CreateDeferTimer()
@@ -157,14 +172,7 @@ public sealed class ToastService : IDisposable
     /// one is already fading out to close.</summary>
     private void ShowCard(CaptureResult r, string thumbPath)
     {
-        try
-        {
-            if (_card is { IsDismissing: false } live) { live.Bind(r, thumbPath); return; }
-            var card = new ToastWindow(_log, x => Opened?.Invoke(x), x => Edited?.Invoke(x));
-            _card = card;
-            card.WhenClosed(() => { if (_card == card) _card = null; });
-            card.Bind(r, thumbPath);
-        }
+        try { Card().Bind(r, thumbPath); }
         catch (Exception e)
         {
             _card = null;
@@ -174,13 +182,43 @@ public sealed class ToastService : IDisposable
         }
     }
 
+    /// <summary>The card on screen, or a new one.</summary>
+    private ToastWindow Card()
+    {
+        if (_card is { IsDismissing: false } live) return live;
+        var card = new ToastWindow(_log, x => Opened?.Invoke(x), x => Edited?.Invoke(x), x => Pinned?.Invoke(x));
+        _card = card;
+        card.WhenClosed(() => { if (_card == card) _card = null; });
+        return card;
+    }
+
+    /// <summary>
+    /// A short notice with no snip behind it, such as "Text copied": on the card with a glyph in the picture slot and no
+    /// links, or as a tray balloon in the Windows style (an app notification would need the registration for one line).
+    /// Shown once no snip is running, as a snip's card is. UI thread.
+    /// </summary>
+    public void ShowNotice(string title, string detail, string glyph)
+    {
+        if (string.Equals(App.Current.Settings.Notification, "windows", StringComparison.OrdinalIgnoreCase)) { Fallback?.Invoke(title, detail); return; }
+        ShowCardWhenIdle(() =>
+        {
+            try { Card().BindNotice(title, detail, glyph); }
+            catch (Exception e)
+            {
+                _card = null;
+                _log.Warn("toast card: " + e.Message);
+                Fallback?.Invoke(title, detail);
+            }
+        });
+    }
+
     internal static SnipNotice NoticeFor(CaptureResult r) => SnipNotice.For(r.SavedPath, r.SaveAttempted, r.CopyAttempted, r.Copied);
 
     /// <summary>Hides the card immediately, without fading, so it is not captured. True when one was on
     /// screen.</summary>
     public bool HideForSnip()
     {
-        _deferred = null;
+        _deferred.Clear();
         _defer?.Stop();
         if (_card is not { IsDismissing: false } card) return false;
         card.HideNow();
@@ -191,7 +229,7 @@ public sealed class ToastService : IDisposable
     /// corner).</summary>
     public void Dismiss()
     {
-        _deferred = null;
+        _deferred.Clear();
         _defer?.Stop();
         _card?.Dismiss();
     }
@@ -286,7 +324,7 @@ public sealed class ToastService : IDisposable
     /// launches the app when clicked.</summary>
     public void Dispose()
     {
-        _deferred = null;
+        _deferred.Clear();
         _defer?.Stop();
         _card?.Dismiss();
     }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Config;
 using ToneSnip.Core.Diagnostics;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.Windows;
 
@@ -16,7 +17,7 @@ namespace ToneSnip.Windows;
 /// Every path is validated by <see cref="PathGuard"/> and must exist; anything else is a logged no-op, because the
 /// callers are click handlers where a stale row is ordinary.
 /// </summary>
-public static class Shell
+public static partial class Shell
 {
     /// <summary>Opens Explorer on the file's folder with the file selected. No-op unless the path is a safe absolute
     /// path naming a file that exists.</summary>
@@ -45,12 +46,10 @@ public static class Shell
     /// drive. Never throws.</summary>
     public static bool RecycleBinCovers(string? path)
     {
-        try { return RecycleBin.Covers(path, root => (int)GetDriveTypeW(root)); }
+        try { return RecycleBin.Covers(path, root => (int)Kernel32.GetDriveTypeW(root)); }
         catch { return false; }
     }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern uint GetDriveTypeW(string rootPathName);
 
     /// <summary>
     /// Moves one file to the Recycle Bin. True when the file is gone from <paramref name="path"/> afterwards (including
@@ -118,8 +117,8 @@ public static class Shell
         public IntPtr lpszProgressTitle;
     }
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern int SHFileOperationW(ref SHFILEOPSTRUCTW fileOp);
+    [LibraryImport("shell32.dll")]
+    private static partial int SHFileOperationW(ref SHFILEOPSTRUCTW fileOp);
 
     private static void Start(Action<ProcessStartInfo> arguments, string what, ILog? log)
     {

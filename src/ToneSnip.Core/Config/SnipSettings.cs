@@ -45,6 +45,10 @@ public sealed record HdrSettings
     public string File { get; init; } = "none";
     public bool JxrLossless { get; init; } = true;
     public int JxrQuality { get; init; } = 90;
+    /// <summary>Tonemap HDR frames on the graphics card and keep them there while the overlay is up, reading back only
+    /// what is asked for. Off falls back to the CPU path, which copies each frame into memory. No UI: a kill switch,
+    /// overridden by TONESNIP_GPU_TONEMAP=0 or 1.</summary>
+    public bool GpuTonemap { get; init; } = true;
 }
 
 /// <summary>Persistent settings of the snipping tool (%LOCALAPPDATA%\tonesnip\settings.json).</summary>
@@ -94,6 +98,12 @@ public sealed record SnipSettings
     /// <summary>colour | mono | accent. Monochrome is the default: the Windows 11 convention for a tray glyph.</summary>
     public string TrayIcon { get; init; } = "mono";
     public bool ShowNitsReadout { get; init; } = true;
+    /// <summary>hex | rgb: how the colour picker (C in the overlay, the editor's picker) writes the colour it copies.</summary>
+    public string ColorFormat { get; init; } = "hex";
+    /// <summary>Include the mouse pointer in what is captured: an instant snip's image, and the frozen screen a
+    /// selection snip starts from (the pointer as it was when the snip began, not the overlay's own crosshair). Off by
+    /// default, as in Snipping Tool. Monitors that fall back to GDI never show it.</summary>
+    public bool CaptureCursor { get; init; }
     public bool StartWithWindows { get; init; }
     /// <summary>Whether a snip removed from the Recent list goes to the Recycle Bin (with its HDR copy) rather than
     /// being deleted outright; on by default because a hover delete button is easy to mis-click. The cached thumbnail
@@ -166,6 +176,7 @@ public sealed record SnipSettings
             RecentFlyoutLayout = Or(s.RecentFlyoutLayout, d.RecentFlyoutLayout, "recentFlyoutLayout"),
             SelectionFrame = Or(s.SelectionFrame, d.SelectionFrame, "selectionFrame"),
             TrayIcon = Or(s.TrayIcon, d.TrayIcon, "trayIcon"),
+            ColorFormat = Or(s.ColorFormat, d.ColorFormat, "colorFormat"),
             Hdr = Or(s.Hdr, d.Hdr, "hdr"),
         };
     }
@@ -212,6 +223,8 @@ public sealed record SnipSettings
         else s = s with { TrayIcon = s.TrayIcon.ToLowerInvariant() };
         if (!Notifications.Contains(s.Notification.ToLowerInvariant())) { fixes.Add($"notification '{s.Notification}' -> tonesnip"); s = s with { Notification = "tonesnip" }; }
         else s = s with { Notification = s.Notification.ToLowerInvariant() };
+        if (!Extract.ColorText.Formats.Contains(s.ColorFormat.ToLowerInvariant())) { fixes.Add($"colorFormat '{s.ColorFormat}' -> hex"); s = s with { ColorFormat = "hex" }; }
+        else s = s with { ColorFormat = s.ColorFormat.ToLowerInvariant() };
         string? after = AfterSelects.FirstOrDefault(a => string.Equals(a, s.AfterSelect, StringComparison.OrdinalIgnoreCase));
         if (after == null) { fixes.Add($"afterSelect '{s.AfterSelect}' -> save"); s = s with { AfterSelect = "save" }; } else s = s with { AfterSelect = after };
         AnnotateSettings an = s.Annotate ?? new AnnotateSettings();

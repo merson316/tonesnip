@@ -10,7 +10,7 @@ namespace ToneSnip.Windows.Interop;
 /// SetForegroundWindow, which the tray menu needs, refuses a hidden window.
 /// Create it on the UI thread: its messages are pumped by that thread's loop.
 /// </summary>
-public sealed class MessageWindow : IDisposable
+public sealed partial class MessageWindow : IDisposable
 {
     /// <summary>The tray icon's callback message (WM_APP + 1).</summary>
     public const int TrayCallback = 0x8000 + 1;
@@ -36,30 +36,8 @@ public sealed class MessageWindow : IDisposable
 
     private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct WndClass
-    {
-        public uint Style;
-        public IntPtr WndProc;
-        public int ClsExtra, WndExtra;
-        public IntPtr Instance, Icon, Cursor, Background;
-        public IntPtr MenuName, ClassName;
-    }
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern ushort RegisterClassW(ref WndClass c);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool UnregisterClassW(string className, IntPtr instance);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr CreateWindowExW(int exStyle, string className, string? windowName, int style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
-    [DllImport("user32.dll")] private static extern IntPtr DefWindowProcW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int command);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessageW(string name);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandleW(string? name);
-    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr RegisterSuspendResumeNotification(IntPtr recipient, int flags);
-    [DllImport("user32.dll")] private static extern bool UnregisterSuspendResumeNotification(IntPtr handle);
-    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr RegisterPowerSettingNotification(IntPtr recipient, ref Guid setting, int flags);
-    [DllImport("user32.dll")] private static extern bool UnregisterPowerSettingNotification(IntPtr handle);
-    [DllImport("wtsapi32.dll", SetLastError = true)] private static extern bool WTSRegisterSessionNotification(IntPtr hwnd, int flags);
-    [DllImport("wtsapi32.dll")] private static extern bool WTSUnRegisterSessionNotification(IntPtr hwnd);
+    [LibraryImport("wtsapi32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool WTSRegisterSessionNotification(IntPtr hwnd, int flags);
+    [LibraryImport("wtsapi32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool WTSUnRegisterSessionNotification(IntPtr hwnd);
 
     private const int WsExToolWindow = 0x00000080, WsPopup = unchecked((int)0x80000000);
     private const int SwShowNa = 8;   // show at the current z-order without activating
@@ -144,8 +122,8 @@ public sealed class MessageWindow : IDisposable
     public MessageWindow(ILog? log = null)
     {
         _log = log;
-        _taskbarCreated = RegisterWindowMessageW("TaskbarCreated");
-        IntPtr instance = GetModuleHandleW(null);
+        _taskbarCreated = User32.RegisterWindowMessageW("TaskbarCreated");
+        IntPtr instance = Kernel32.GetModuleHandleW(null);
         lock (Gate)
         {
             if (!_registered)
@@ -153,13 +131,13 @@ public sealed class MessageWindow : IDisposable
                 IntPtr className = Marshal.StringToHGlobalUni(ClassName);
                 try
                 {
-                    var wc = new WndClass { WndProc = Marshal.GetFunctionPointerForDelegate(StaticProc), Instance = instance, ClassName = className };
-                    if (RegisterClassW(ref wc) == 0) throw new InvalidOperationException("RegisterClassW failed: " + Marshal.GetLastWin32Error());
+                    var wc = new User32.WndClass { WndProc = Marshal.GetFunctionPointerForDelegate(StaticProc), Instance = instance, ClassName = className };
+                    if (User32.RegisterClassW(ref wc) == 0) throw new InvalidOperationException("RegisterClassW failed: " + Marshal.GetLastWin32Error());
                 }
                 finally { Marshal.FreeHGlobal(className); }
                 _registered = true;
             }
-            Handle = CreateWindowExW(WsExToolWindow, ClassName, ClassName, WsPopup, OffScreen, OffScreen, 0, 0, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
+            Handle = User32.CreateWindowExW(WsExToolWindow, ClassName, ClassName, WsPopup, OffScreen, OffScreen, 0, 0, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
             if (Handle == IntPtr.Zero)
             {
                 int error = Marshal.GetLastWin32Error();
@@ -168,12 +146,12 @@ public sealed class MessageWindow : IDisposable
             }
             Live[Handle] = this;
         }
-        ShowWindow(Handle, SwShowNa);   // SetForegroundWindow (which the tray menu needs) refuses a window that is not visible
-        _suspendResume = RegisterSuspendResumeNotification(Handle, DeviceNotifyWindowHandle);
+        User32.ShowWindow(Handle, SwShowNa);   // SetForegroundWindow (which the tray menu needs) refuses a window that is not visible
+        _suspendResume = User32.RegisterSuspendResumeNotification(Handle, DeviceNotifyWindowHandle);
         if (_suspendResume == IntPtr.Zero) _log?.Warn($"message window: no suspend/resume notifications, error {Marshal.GetLastWin32Error()}");
         if (!WTSRegisterSessionNotification(Handle, NotifyForThisSession)) _log?.Warn($"message window: no session lock notifications, error {Marshal.GetLastWin32Error()}");
         Guid display = ConsoleDisplayState;
-        _displayState = RegisterPowerSettingNotification(Handle, ref display, DeviceNotifyWindowHandle);
+        _displayState = User32.RegisterPowerSettingNotification(Handle, ref display, DeviceNotifyWindowHandle);
         if (_displayState == IntPtr.Zero) _log?.Warn($"message window: no display on/off notifications, error {Marshal.GetLastWin32Error()}");
     }
 
@@ -182,7 +160,7 @@ public sealed class MessageWindow : IDisposable
         MessageWindow? self;
         lock (Gate) Live.TryGetValue(hwnd, out self);
         // Messages that arrive before CreateWindowExW returns (WM_NCCREATE, WM_CREATE) have no instance yet.
-        return self != null ? self.Dispatch(hwnd, msg, wParam, lParam) : DefWindowProcW(hwnd, msg, wParam, lParam);
+        return self != null ? self.Dispatch(hwnd, msg, wParam, lParam) : User32.DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     /// <summary>
@@ -195,7 +173,7 @@ public sealed class MessageWindow : IDisposable
         catch (Exception e)
         {
             _log?.Error($"message window: msg 0x{msg:X4}: {e}");
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
+            return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
         }
     }
 
@@ -227,17 +205,17 @@ public sealed class MessageWindow : IDisposable
                 return IntPtr.Zero;
             case WmThemeChanged:
                 ThemeChanged?.Invoke();
-                return DefWindowProcW(hwnd, msg, wParam, lParam);
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
             case WmSettingChange:
                 // lParam is a string pointer only for some senders, so it is read only in the shape the shell uses
                 // (wParam 0); the contrast switch is recognised by wParam alone.
                 if (wParam == (IntPtr)SpiSetHighContrast ||
                     (wParam == IntPtr.Zero && lParam != IntPtr.Zero && Marshal.PtrToStringUni(lParam) == ImmersiveColorSet))
                     ThemeChanged?.Invoke();
-                return DefWindowProcW(hwnd, msg, wParam, lParam);
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
             default:
                 if (msg == _taskbarCreated) { TaskbarCreated?.Invoke(); return IntPtr.Zero; }
-                return DefWindowProcW(hwnd, msg, wParam, lParam);
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
         }
     }
 
@@ -257,7 +235,7 @@ public sealed class MessageWindow : IDisposable
     /// Drops the class registration. UnregisterClassW fails while any window of the class is alive, so the flag follows
     /// the call's result; otherwise a later MessageWindow would fail to register an existing class.
     /// </summary>
-    private static void UnregisterClass(IntPtr instance) => _registered = !UnregisterClassW(ClassName, instance);
+    private static void UnregisterClass(IntPtr instance) => _registered = !User32.UnregisterClassW(ClassName, instance);
 
     private static bool CloseApp(IntPtr lParam) => (lParam.ToInt64() & EndSessionCloseApp) != 0;
 
@@ -269,15 +247,15 @@ public sealed class MessageWindow : IDisposable
         if (_disposed) return;
         _disposed = true;
         if (Handle == IntPtr.Zero) return;
-        if (_suspendResume != IntPtr.Zero) UnregisterSuspendResumeNotification(_suspendResume);
-        if (_displayState != IntPtr.Zero) UnregisterPowerSettingNotification(_displayState);
+        if (_suspendResume != IntPtr.Zero) User32.UnregisterSuspendResumeNotification(_suspendResume);
+        if (_displayState != IntPtr.Zero) User32.UnregisterPowerSettingNotification(_displayState);
         WTSUnRegisterSessionNotification(Handle);
-        DestroyWindow(Handle);
+        User32.DestroyWindow(Handle);
         lock (Gate)
         {
             Live.Remove(Handle);
             // The last window unregisters the class; a later MessageWindow registers it again.
-            if (Live.Count == 0 && _registered) UnregisterClass(GetModuleHandleW(null));
+            if (Live.Count == 0 && _registered) UnregisterClass(Kernel32.GetModuleHandleW(null));
         }
     }
 }

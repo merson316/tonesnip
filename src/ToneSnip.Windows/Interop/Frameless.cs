@@ -11,16 +11,13 @@ namespace ToneSnip.Windows.Interop;
 /// Uses comctl32 subclassing rather than <c>SetWindowLongPtr(GWLP_WNDPROC)</c>, because the XAML island installs its
 /// own window procedures on these windows.
 /// </remarks>
-public static class Frameless
+public static partial class Frameless
 {
     private delegate IntPtr SubclassProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr id, IntPtr refData);
 
     [DllImport("comctl32.dll", SetLastError = true)] private static extern bool SetWindowSubclass(IntPtr hwnd, SubclassProc callback, IntPtr id, IntPtr refData);
     [DllImport("comctl32.dll")] private static extern bool RemoveWindowSubclass(IntPtr hwnd, SubclassProc callback, IntPtr id);
-    [DllImport("comctl32.dll")] private static extern IntPtr DefSubclassProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    [LibraryImport("comctl32.dll")] private static partial IntPtr DefSubclassProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     private const int GwlStyle = -16;
     private const long WsThickFrame = 0x00040000;
@@ -51,13 +48,13 @@ public static class Frameless
     public static bool ApplyFrame(IntPtr hwnd)
     {
         if (HasFrame(hwnd)) return true;
-        long style = (long)GetWindowLongPtr(hwnd, GwlStyle);
-        SetWindowLongPtr(hwnd, GwlStyle, (IntPtr)(style | WsThickFrame));
-        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoOwnerZOrder | SwpNoActivate | SwpFrameChanged);
+        long style = (long)User32.GetWindowLongPtr(hwnd, GwlStyle);
+        User32.SetWindowLongPtr(hwnd, GwlStyle, (IntPtr)(style | WsThickFrame));
+        User32.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoOwnerZOrder | SwpNoActivate | SwpFrameChanged);
         return HasFrame(hwnd);
     }
 
-    public static bool HasFrame(IntPtr hwnd) => ((long)GetWindowLongPtr(hwnd, GwlStyle) & WsThickFrame) != 0;
+    public static bool HasFrame(IntPtr hwnd) => ((long)User32.GetWindowLongPtr(hwnd, GwlStyle) & WsThickFrame) != 0;
 
     private static IntPtr OnMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, IntPtr id, IntPtr refData)
     {

@@ -23,7 +23,7 @@
   <Identity
     Name="merson316.ToneSnip"
     Publisher="CN=merson316"
-    Version="1.0.3.0"
+    Version="1.0.4.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
@@ -53,14 +53,10 @@
         BackgroundColor="transparent"
         Square150x150Logo="assets\tiles\Square150x150Logo.png"
         Square44x44Logo="assets\tiles\Square44x44Logo.png">
-        <uap:DefaultTile
-          ShortName="ToneSnip"
-          Wide310x150Logo="assets\tiles\Wide310x150Logo.png"
-          Square71x71Logo="assets\tiles\Square71x71Logo.png"
-          Square310x310Logo="assets\tiles\Square310x310Logo.png">
+        <!-- Square logos only: Windows 11 has no live tiles, so it never shows a wide, small or large tile. -->
+        <uap:DefaultTile ShortName="ToneSnip">
           <uap:ShowNameOnTiles>
             <uap:ShowOn Tile="square150x150Logo" />
-            <uap:ShowOn Tile="wide310x150Logo" />
           </uap:ShowNameOnTiles>
         </uap:DefaultTile>
       </uap:VisualElements>

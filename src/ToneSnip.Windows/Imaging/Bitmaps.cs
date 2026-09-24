@@ -17,9 +17,9 @@ public static class Bitmaps
         for (int i = 0, o = 0; i < img.Data.Length; i += 4, o += 3)
         {
             int a = img.Data[i + 3];
-            bgr[o] = (byte)((img.Data[i] * a + 255 * (255 - a)) / 255);
-            bgr[o + 1] = (byte)((img.Data[i + 1] * a + 255 * (255 - a)) / 255);
-            bgr[o + 2] = (byte)((img.Data[i + 2] * a + 255 * (255 - a)) / 255);
+            bgr[o] = Flatten.OverWhite(img.Data[i], a);
+            bgr[o + 1] = Flatten.OverWhite(img.Data[i + 1], a);
+            bgr[o + 2] = Flatten.OverWhite(img.Data[i + 2], a);
         }
         return WicEncode.Run(Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, bgr, bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f));
     }

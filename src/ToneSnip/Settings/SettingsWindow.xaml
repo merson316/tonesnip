@@ -238,6 +238,12 @@
                 <ToggleSwitch x:Name="NitsReadout" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
                               AutomationProperties.Name="Show nits under the cursor" AutomationProperties.AutomationId="Settings_NitsReadout"/>
               </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Capture the mouse pointer"
+                                    Description="Shows the pointer where it was when the snip started.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCaptureCursor}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="CaptureCursor" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Capture the mouse pointer" AutomationProperties.AutomationId="Settings_CaptureCursor"/>
+              </toolkit:SettingsCard>
               <toolkit:SettingsCard Header="Default delay" Description="Used when a snip starts from the hotkey or the tray.">
                 <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphDelay}"/></toolkit:SettingsCard.HeaderIcon>
                 <ComboBox x:Name="DefaultDelay" MinWidth="160" SelectionChanged="OnComboChanged"
@@ -251,6 +257,13 @@
                           AutomationProperties.Name="After selecting" AutomationProperties.AutomationId="Settings_AfterSelect">
                   <ComboBoxItem Content="Save straight away"/><ComboBoxItem Content="Annotate then save"/>
                   <ComboBoxItem Content="Annotate first"/><ComboBoxItem Content="Save then open the editor"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Copied colour format" Description="How C in the snip screen and the editor's colour picker write the colour they copy.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPickColour}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="ColorFormat" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Copied colour format" AutomationProperties.AutomationId="Settings_ColorFormat">
+                  <ComboBoxItem Content="Hex (#RRGGBB)"/><ComboBoxItem Content="rgb(r, g, b)"/>
                 </ComboBox>
               </toolkit:SettingsCard>
 

@@ -30,6 +30,9 @@ public sealed class HistoryRow : INotifyPropertyChanged
     private bool _thumbPending;
     /// <summary>Whether a list container is showing this row, so its thumbnail is wanted (<see cref="LoadThumb"/>).</summary>
     private bool _thumbWanted;
+    /// <summary>The thumbnail path that last failed to open or decode, so a container showing the row again (a scroll, a
+    /// refresh) does not re-open a file already known to be bad. A save writes a new thumbnail path, which is tried.</summary>
+    private string? _failedThumb;
     private HistoryRowStyle _style;
     private bool _deleteArmed;
 
@@ -156,12 +159,12 @@ public sealed class HistoryRow : INotifyPropertyChanged
 
     private void Raise(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
-    /// <summary>A container is showing this row: loads its thumbnail unless it is loaded, or its file is still being
-    /// written (<see cref="Update"/> loads it once the write lands).</summary>
+    /// <summary>A container is showing this row: loads its thumbnail unless it is loaded, its file is still being
+    /// written (<see cref="Update"/> loads it once the write lands), or it already failed.</summary>
     public void LoadThumb()
     {
         _thumbWanted = true;
-        if (ThumbSource != null || _thumbPending) return;
+        if (ThumbSource != null || _thumbPending || string.Equals(Item.Entry.Thumb, _failedThumb, StringComparison.OrdinalIgnoreCase)) return;
         SetThumb(Item.Entry.Thumb, _style.ThumbWidth);
         Raise(nameof(ThumbSource));
         Raise(nameof(PlaceholderVisibility));
@@ -183,6 +186,7 @@ public sealed class HistoryRow : INotifyPropertyChanged
     private void SetThumb(string path, int width) => ThumbnailLoader.Load(path, width, bmp => ThumbSource = bmp, (bmp, ex) =>
     {
         if (ex != null && WarnedThumbs.Add(path)) App.Current.Log.Warn("history thumbnail: " + ex.Message);
+        _failedThumb = path;
         // Show the placeholder, unless a newer thumbnail has replaced this bitmap mid-decode.
         if (ReferenceEquals(ThumbSource, bmp))
         {

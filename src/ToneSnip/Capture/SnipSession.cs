@@ -35,6 +35,9 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// <summary>Hides the app's own transient windows (toast card, Recent flyout) before capture so they are not in the
     /// snip; returns whether any were hidden.</summary>
     public Func<bool>? HideOwnWindows { get; set; }
+    /// <summary>Takes a snip whose selection was for something other than an ordinary snip (its text, a pin) instead of
+    /// the output pipeline. Runs on the UI thread, inside the snip.</summary>
+    public Func<CaptureResult, SnipAction, Task>? Divert { get; set; }
 
     /// <summary>Holds <see cref="Busy"/> for the whole run, including a delay restart that re-enters
     /// <see cref="RunCore"/>, so a hotkey during the countdown cannot start a concurrent snip.</summary>
@@ -74,35 +77,50 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     {
         _last = Stopwatch.GetTimestamp();
         var sw = Stopwatch.StartNew();
+        List<CapturedOutput>? outputs = null;
         try
         {
             // Hidden before the countdown too, not just before the grab.
             if (HideOwnWindows?.Invoke() == true && delaySeconds <= 0) await WaitForComposition(mode, "after hiding the card and flyout");
             if (delaySeconds > 0) await Delay(mode, delaySeconds);
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("before grab");
-#endif
+            DebugHooks.MemoryMark("before grab");
             long grabStarted = Stopwatch.GetTimestamp();
-            List<CapturedOutput>? outputs = await Grab(mode);
-            if (outputs == null) return;
+            // Chosen before the grab, which for this mode captures the window itself: the parts other windows cover are
+            // in the snip, and only one window-sized frame is held. A window that cannot be captured that way is cropped
+            // from a grab of every monitor, as the other instant mode is.
+            WindowInfo? active = mode == SnipMode.ActiveWindow ? WindowFinder.ActiveForSnip() : null;
+            WindowGrab? window = null;
+            if (active != null)
+            {
+                (bool abandoned, window) = await Grab(mode, () => grabber.GrabWindow(active.Handle));
+                if (abandoned) return;
+                if (window != null) outputs = window.Outputs;
+            }
+            if (outputs == null)
+            {
+                (bool abandoned, outputs) = await Grab(mode, grabber.GrabAll);
+                if (abandoned || outputs == null) return;
+            }
             long tGrab = sw.ElapsedMilliseconds;
-            log.Info($"{mode}: grabbed {outputs.Count} monitor(s) in {Stopwatch.GetElapsedTime(grabStarted).TotalMilliseconds:F0} ms");
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("after grab");
-#endif
+            log.Info(window != null
+                ? $"{mode}: grabbed the window itself in {Stopwatch.GetElapsedTime(grabStarted).TotalMilliseconds:F0} ms"
+                : $"{mode}: grabbed {outputs.Count} monitor(s) in {Stopwatch.GetElapsedTime(grabStarted).TotalMilliseconds:F0} ms");
+            DebugHooks.MemoryMark("after grab");
             IntRect desktop = outputs.Aggregate(IntRect.Empty, (r, o) => r.Union(o.Info.Bounds));
             IntRect region;
             IReadOnlyList<(int X, int Y)>? freeform = null;
             AnnotationDoc? doc = null; float exposure = 1f; bool retonemap = false;
+            SnipAction action = SnipAction.Snip;
             switch (mode)
             {
                 case SnipMode.FullScreenAll: region = desktop; break;
+                case SnipMode.ActiveWindow when window != null: region = window.Region; break;
                 case SnipMode.ActiveWindow:
-                    region = (WindowFinder.ActiveForSnip()?.Bounds ?? desktop).Clamp(desktop);
+                    region = (active?.Bounds ?? desktop).Clamp(desktop);
                     if (region.IsEmpty) region = desktop;
                     break;
                 default:
-                    (region, freeform, doc, exposure, bool restarted, retonemap) = await SelectInteractively(mode, outputs, desktop);
+                    (region, freeform, doc, exposure, bool restarted, retonemap, action) = await SelectInteractively(mode, outputs, desktop);
                     if (region.IsEmpty)
                     {
                         log.Info(restarted ? $"{mode}: restarted with a delay" : $"{mode}: cancelled after {sw.ElapsedMilliseconds} ms");
@@ -110,22 +128,38 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
                     }
                     break;
             }
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("after overlay");
-#endif
+            DebugHooks.MemoryMark("after overlay");
             SnipSettings s = settings();
-            CaptureResult result = await Task.Run(() => CaptureResult.Build(outputs, region, freeform, grabber, s, doc, exposure, retonemap, keepCrops: output.UsesCrops(s)));
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("after build");
-#endif
-            log.Info($"{mode}: grab {tGrab} ms, region {region}, hdr={result.AnyHdr}, total {sw.ElapsedMilliseconds} ms, shapes={doc?.Shapes.Count ?? 0}, exposure={exposure:F2}");
-            await output.RunAsync(result);
+            List<CapturedOutput> frames = outputs;
+            // Text and pins read only the tonemapped image, so no HDR crops are kept for them.
+            bool diverted = action != SnipAction.Snip && Divert != null;
+            CaptureResult result = await Task.Run(() =>
+            {
+                CaptureResult built = CaptureResult.Build(frames, region, freeform, grabber, s, doc, exposure, retonemap, keepCrops: !diverted && output.UsesCrops(s));
+                // After the build, whose tonemap writes opaque pixels; the HDR file takes its alpha from this image. The
+                // result keeps them for the editor, whose exposure pass writes opaque pixels again.
+                built.ApplyCorners(window?.Corners);
+                return built;
+            });
+            // Built: the result has its own copies, so the HDR frames (on the graphics card, with their readback
+            // buffers) go now rather than with the pool a minute later. Off the UI thread, as each release may wait for
+            // the graphics device.
+            await Task.Run(() => FrameGrabber.Release(frames));
+            DebugHooks.MemoryMark("after build");
+            log.Info($"{mode}: grab {tGrab} ms, region {region}, hdr={result.AnyHdr}, total {sw.ElapsedMilliseconds} ms, shapes={doc?.Shapes.Count ?? 0}, exposure={exposure:F2}{(diverted ? ", for " + action : "")}");
+            if (diverted) await Divert!(result, action);
+            else await output.RunAsync(result);
         }
         catch (OperationCanceledException) { log.Info($"{mode}: countdown cancelled"); }
         catch (Exception e)
         {
             log.Error($"{mode}: {e}");
             Failed?.Invoke(e.Message);
+        }
+        finally
+        {
+            // A cancelled or failed snip frees its frames too; releasing twice is harmless.
+            if (outputs is { } held) await Task.Run(() => FrameGrabber.Release(held));
         }
     }
 
@@ -155,35 +189,45 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     private static readonly TimeSpan StuckNoticeInterval = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Grabs every monitor off the UI thread, logging a grab that runs past <see cref="GrabWarning"/>. Returns null
-    /// when it runs past <see cref="GrabGiveUp"/>: the snip is then abandoned, the late grab logs how it ended, and
-    /// <see cref="Run"/> refuses new snips until it has.
+    /// Runs a grab (every monitor, or one window) off the UI thread, logging one that runs past
+    /// <see cref="GrabWarning"/>. Returns abandoned when it runs past <see cref="GrabGiveUp"/>: the snip is then
+    /// abandoned, the late grab logs how it ended and frees its frames, and <see cref="Run"/> refuses new snips until it
+    /// has.
     /// </summary>
-    private async Task<List<CapturedOutput>?> Grab(SnipMode mode)
+    private Task<(bool Abandoned, List<CapturedOutput>? Value)> Grab(SnipMode mode, Func<List<CapturedOutput>> grab)
+        => Grab<List<CapturedOutput>>(mode, grab, FrameGrabber.Release);
+
+    private Task<(bool Abandoned, WindowGrab? Value)> Grab(SnipMode mode, Func<WindowGrab?> grab)
+        => Grab<WindowGrab>(mode, grab, w => w.Release());
+
+    private async Task<(bool Abandoned, T? Value)> Grab<T>(SnipMode mode, Func<T?> grab, Action<T> release) where T : class
     {
         long started = Stopwatch.GetTimestamp();
-        Task<List<CapturedOutput>> grabbing = Task.Run(grabber.GrabAll);
+        Task<T?> grabbing = Task.Run(grab);
         // The timeouts are caught unfiltered and the task checked inside: a grab finishing between the timer and an
         // exception filter would otherwise let the TimeoutException escape and fail a snip that worked. A grab that
         // ends in a TimeoutException of its own is rethrown by the await.
-        try { return await grabbing.WaitAsync(GrabWarning); }
+        try { return (false, await grabbing.WaitAsync(GrabWarning)); }
         catch (TimeoutException)
         {
-            if (grabbing.IsCompleted) return await grabbing;
+            if (grabbing.IsCompleted) return (false, await grabbing);
             log.Warn($"{mode}: stuck in the grab, which has not returned {GrabWarning.TotalSeconds:F0} s after it started");
         }
-        try { return await grabbing.WaitAsync(GrabGiveUp - GrabWarning); }
+        try { return (false, await grabbing.WaitAsync(GrabGiveUp - GrabWarning)); }
         catch (TimeoutException)
         {
-            if (grabbing.IsCompleted) return await grabbing;
+            if (grabbing.IsCompleted) return (false, await grabbing);
             log.Warn($"{mode}: the grab has not returned after {GrabGiveUp.TotalSeconds:F0} s; the snip is abandoned, and snips are refused until the grab returns");
             _abandonedGrab = grabbing;
             _abandonedAt = Stopwatch.GetTimestamp();
-            _ = grabbing.ContinueWith(t => log.Warn($"{mode}: the abandoned grab {(t.IsFaulted ? "failed: " + t.Exception?.InnerException?.Message : "returned")} after {Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s"),
-                                      TaskScheduler.Default);
+            _ = grabbing.ContinueWith(t =>
+            {
+                log.Warn($"{mode}: the abandoned grab {(t.IsFaulted ? "failed: " + t.Exception?.InnerException?.Message : "returned")} after {Stopwatch.GetElapsedTime(started).TotalSeconds:F0} s");
+                if (t.IsCompletedSuccessfully && t.Result != null) release(t.Result);   // no snip will read them
+            }, TaskScheduler.Default);
             // The snip ends with nothing on screen, so say why rather than fail silently.
             Failed?.Invoke("Windows did not hand over the screen image; nothing was captured");
-            return null;
+            return (true, null);
         }
     }
 
@@ -196,7 +240,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// returns is covered by a second, log-only timer started before it: it cannot end the snip (that needs the UI
     /// thread Show is holding), but the log then says where the snip stopped.</para>
     /// </summary>
-    private async Task<(IntRect, IReadOnlyList<(int X, int Y)>?, AnnotationDoc?, float, bool, bool)> SelectInteractively(SnipMode mode, List<CapturedOutput> outputs, IntRect desktop)
+    private async Task<(IntRect, IReadOnlyList<(int X, int Y)>?, AnnotationDoc?, float, bool, bool, SnipAction)> SelectInteractively(SnipMode mode, List<CapturedOutput> outputs, IntRect desktop)
     {
         long built = Stopwatch.GetTimestamp();
         bool painted = false;   // UI thread only
@@ -221,7 +265,8 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             }, TaskScheduler.Default);
             Task<Overlay.OverlayOutcome> selecting;
             try { selecting = overlay.Show(); }
-            finally { showing.Cancel(); }
+            // Disposed here: its only waiter is the delay above, which Cancel has already completed.
+            finally { showing.Cancel(); showing.Dispose(); }
             // Timed from here, not from before Show: Show runs synchronously on this thread, so a slow one would let the
             // watchdog's queued check run ahead of the first WM_PAINT and end an overlay that was about to draw.
             if (!painted)
@@ -248,12 +293,14 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
         finally { watchdog.Cancel(); _stage = null; }
         if (outcome.RestartWithDelay >= 0)
         {
-            // Awaited within the same Run, so Busy stays true across the countdown and the restarted snip.
+            // Awaited within the same Run, so Busy stays true across the countdown and the restarted snip. This grab's
+            // frames are not needed again, and must not stay on the graphics card through the countdown.
+            await Task.Run(() => FrameGrabber.Release(outputs));
             _last = 0;
             await RunCore(overlay.Mode, outcome.RestartWithDelay);
-            return (IntRect.Empty, null, null, 1f, true, false);
+            return (IntRect.Empty, null, null, 1f, true, false, SnipAction.Snip);
         }
-        return (outcome.Region, outcome.Freeform, outcome.Doc, outcome.Exposure, false, outcome.ExposurePreviewed);
+        return (outcome.Region, outcome.Freeform, outcome.Doc, outcome.Exposure, false, outcome.ExposurePreviewed, outcome.Action);
     }
 
     /// <summary>

@@ -8,6 +8,7 @@ using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Core.Output;
 using ToneSnip.Windows.Imaging;
+using ToneSnip.Windows.Interop;
 using ToneSnip.Windows.Overlay;
 using Shell = ToneSnip.Windows.Shell;
 using Microsoft.UI.Dispatching;
@@ -32,8 +33,6 @@ public sealed partial class HistoryFlyout : PopupWindow
 {
     /// <summary>Fade-in for the window and the delay band. Heights are never animated.</summary>
     private const double FadeMs = 120;
-    /// <summary>Fade for a row's action group on hover and focus.</summary>
-    private const double ActionFadeMs = 83;
 
     private readonly DispatcherQueueTimer _watch;
     private readonly DateTime _shown = DateTime.UtcNow;
@@ -46,21 +45,7 @@ public sealed partial class HistoryFlyout : PopupWindow
     /// <summary>The rows' shared brushes, built on the first refresh and rebuilt on theme change.</summary>
     private HistoryRowStyle? _style;
     private Storyboard? _bandFade;
-    /// <summary>
-    /// The fade in flight on each row's action group, removed when it lands. Tracked per row because a Storyboard
-    /// holds its end value, and one that is no longer referenced can neither be stopped nor overridden by a local
-    /// <c>Opacity</c>, which would leave rows stuck revealed.
-    /// </summary>
-    private readonly Dictionary<FrameworkElement, Storyboard> _actionFades = new();
-    /// <summary>The row under the pointer and the row containing focus.</summary>
-    private FrameworkElement? _hoverRoot, _focusRoot;
-    /// <summary>The row containing keyboard focus, or null. Actions are revealed for this or <see cref="_hoverRoot"/>,
-    /// not <see cref="_focusRoot"/>, since a click also focuses a row.</summary>
-    private FrameworkElement? _keyboardRoot;
     private HistoryRow? _focused;
-    private HistoryRow? _armed;
-    /// <summary>The chosen list's ScrollViewer, once its template has been applied.</summary>
-    private ScrollViewer? _scroller;
     private bool _held;
     private bool _closing;
     private bool _placed;
@@ -151,51 +136,6 @@ public sealed partial class HistoryFlyout : PopupWindow
         DispatcherQueue.TryEnqueue(Close);
     }
 
-#if TONESNIP_HARNESS
-    /// <summary>Screenshot harness: keeps the card open when it loses the foreground.</summary>
-    internal bool StaysOpen { get; set; }
-
-    /// <summary>Screenshot harness: shows one row hovered (and optionally armed for delete) without input.</summary>
-    internal void ShowRowState(int index, bool hover, bool armed)
-    {
-        if (index < 0 || index >= _rows.Count) return;
-        if (armed) Arm(_rows[index], fromKeyboard: false);
-        if (!hover || _items.ContainerFromIndex(index) is not SelectorItem container) return;
-        // ListViewItemPresenter's PointerOver is native state with no XAML VisualStateGroup, so GoToState fails; paint
-        // the same SurfaceLayer fill that ListViewItemBackgroundPointerOver aliases to instead.
-        if (!VisualStateManager.GoToState(container, "PointerOver", false)) container.Background = TokLayer.Background;
-        if (container.ContentTemplateRoot is FrameworkElement root) { _hoverRoot = root; Reveal(root); }
-    }
-
-    /// <summary>Screenshot harness: scrolls the list without animation, as a wheel would.</summary>
-    internal void ScrollBy(double pixels)
-    {
-        HookScrollViewer();
-        _scroller?.ChangeView(null, _scroller.VerticalOffset + pixels, null, true);
-    }
-
-    /// <summary>Screenshot harness: how many realized rows show their action group; at most one should.</summary>
-    internal (int Revealed, int Realized) RevealedRows()
-    {
-        int revealed = 0, realized = 0;
-        for (int i = 0; i < _rows.Count; i++)
-        {
-            if (_items.ContainerFromIndex(i) is not SelectorItem c || c.ContentTemplateRoot is not FrameworkElement root) continue;
-            realized++;
-            if (ActionsOf(root) is { } actions && actions.Opacity > 0.5) revealed++;
-        }
-        return (revealed, realized);
-    }
-
-    /// <summary>Screenshot harness: simulates the pointer entering row <paramref name="index"/>, or leaving the flyout
-    /// when negative, through the same <see cref="EnterRow"/> and <see cref="LeaveHover"/> paths real input uses.</summary>
-    internal void HoverRowForHarness(int index)
-    {
-        if (index < 0) { LeaveHover(); return; }
-        if (_items.ContainerFromIndex(index) is SelectorItem c && c.ContentTemplateRoot is FrameworkElement root) EnterRow(root);
-    }
-#endif
-
     private void OnActivated(WindowActivatedEventArgs e)
     {
         if (e.WindowActivationState == WindowActivationState.Deactivated) Dismiss();
@@ -203,7 +143,7 @@ public sealed partial class HistoryFlyout : PopupWindow
 
     private void OnWatch(DispatcherQueueTimer timer, object args)
     {
-        if (Native.GetForegroundWindow() == Hwnd) { _held = true; return; }
+        if (User32.GetForegroundWindow() == Hwnd) { _held = true; return; }
         if (_held || (DateTime.UtcNow - _shown).TotalMilliseconds > 1500) { timer.Stop(); Dismiss(); }
     }
 
@@ -545,7 +485,7 @@ public sealed partial class HistoryFlyout : PopupWindow
         try
         {
             HistoryItem item = r.Item;
-            await Task.Run(() =>
+            await ClipboardWriter.Enqueue(() =>
             {
                 if (App.Current.History.LoadForCopy(item) is { } loaded) ClipboardWriter.Set(loaded.Image, loaded.Png, App.Current.Log);
             });
@@ -578,80 +518,44 @@ public sealed partial class HistoryFlyout : PopupWindow
         finally { _working = false; }
     }
 
+    private async void OnPin(object sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) await PinAsync(r); }
+
+    private async void OnCopyText(object sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) await CopyTextAsync(r); }
+
+    /// <summary>Pins the row's snip and closes the card, which would otherwise sit over the new pin's corner.</summary>
+    private async Task PinAsync(HistoryRow r)
+    {
+        if (_working) return;
+        _working = true;
+        try
+        {
+            HistoryItem item = r.Item;
+            CaptureResult? result = await Task.Run(() => App.Current.History.ToResult(item));
+            if (result == null) return;
+            Dismiss();
+            await App.Current.PinAsync(result);
+        }
+        catch (Exception ex) { App.Current.Log.Warn("history pin: " + ex.Message); }
+        finally { _working = false; }
+    }
+
+    /// <summary>Recognises the row's snip; the card stays open, as it does for Copy.</summary>
+    private async Task CopyTextAsync(HistoryRow r)
+    {
+        if (_working) return;
+        _working = true;
+        try
+        {
+            HistoryItem item = r.Item;
+            if (await Task.Run(() => App.Current.History.Load(item)) is { } img) await App.Current.CopyTextAsync(img);
+        }
+        catch (Exception ex) { App.Current.Log.Warn("history copy text: " + ex.Message); }
+        finally { _working = false; }
+    }
+
     private void OnShowInFolder(object sender, RoutedEventArgs e)
     {
         if (RowOf(sender) is { Item.Entry.Path: { } path }) Shell.Reveal(path, App.Current.Log);
-    }
-
-    /// <summary>Shows the row's delete prompt (<see cref="HistoryRow.DeleteArmed"/>), which stays until Delete, Cancel,
-    /// Escape, or a delete on another row.</summary>
-    private void OnDelete(object sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) Delete(r, fromKeyboard: IsKeyboardFocused(sender)); }
-
-    private void OnConfirmDelete(object sender, RoutedEventArgs e)
-    {
-        if (RowOf(sender) is { DeleteArmed: true } r) Delete(r, fromKeyboard: false);
-    }
-
-    private void OnCancelDelete(object sender, RoutedEventArgs e)
-    {
-        if (RowOf(sender) is not { DeleteArmed: true } r) return;
-        bool keyboard = IsKeyboardFocused(sender);
-        Disarm();
-        // The focused button has just been collapsed; keep focus in the list so the keyboard still works.
-        FocusRow(r, keyboard ? FocusState.Keyboard : FocusState.Pointer);
-    }
-
-    /// <summary>Arms the prompt on the first request; deletes once armed (the prompt's Delete button, or a fresh Delete
-    /// key press while it has focus, see <see cref="OnListKey"/>).</summary>
-    private void Delete(HistoryRow r, bool fromKeyboard)
-    {
-        if (!r.DeleteArmed) { Arm(r, fromKeyboard); return; }
-        Disarm();
-        App.Current.History.Remove(r.Item, deleteFile: true);
-    }
-
-    private void Arm(HistoryRow r, bool fromKeyboard)
-    {
-        if (_armed != null && _armed != r) _armed.DeleteArmed = false;
-        // Read before showing the prompt, which collapses the delete button and moves its focus.
-        bool focusInRow = _focusRoot is { } f && ReferenceEquals(f.Tag, r);
-        _armed = r;
-        r.DeleteArmed = true;
-        // The prompt's buttons need a layout pass first. Focus moves to its Delete button: keyboard focus if a key
-        // armed it, pointer focus (no rectangle) if a click did.
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (!ReferenceEquals(_armed, r) || ButtonOf(r, "ConfirmDeleteBtn") is not Control confirm) return;
-            if (fromKeyboard) confirm.Focus(FocusState.Keyboard);
-            else if (focusInRow) confirm.Focus(FocusState.Pointer);
-            // A button that was collapsed until now may have no peer yet.
-            AutomationPeer? peer = FrameworkElementAutomationPeer.FromElement(confirm) ?? FrameworkElementAutomationPeer.CreatePeerForElement(confirm);
-            peer?.RaiseNotificationEvent(AutomationNotificationKind.ActionCompleted, AutomationNotificationProcessing.MostRecent,
-                                         $"{r.ShownTitle} {r.ShownSubtitle}", "ToneSnipDeletePrompt");
-        });
-    }
-
-    private void Disarm()
-    {
-        if (_armed == null) return;
-        _armed.DeleteArmed = false;
-        _armed = null;
-    }
-
-    private static bool IsKeyboardFocused(object element) => element is UIElement { FocusState: FocusState.Keyboard };
-
-    /// <summary>A named button inside one row's realized container, if that row is realized at all.</summary>
-    private FrameworkElement? ButtonOf(HistoryRow r, string name)
-    {
-        int at = _rows.IndexOf(r);
-        if (at < 0 || _items.ContainerFromIndex(at) is not SelectorItem c || c.ContentTemplateRoot is not FrameworkElement root) return null;
-        return root.FindName(name) as FrameworkElement ?? Descendant(root, name);
-    }
-
-    private void FocusRow(HistoryRow r, FocusState how)
-    {
-        int at = _rows.IndexOf(r);
-        if (at >= 0 && _items.ContainerFromIndex(at) is Control container) container.Focus(how);
     }
 
     private void OnListKey(object sender, KeyRoutedEventArgs e)
@@ -659,6 +563,7 @@ public sealed partial class HistoryFlyout : PopupWindow
         if (_focused is not { } r) return;
         if (e.Key == VirtualKey.Enter) { _ = OpenInViewerAsync(r); e.Handled = true; }
         else if (e.Key == VirtualKey.C && Win32.KeyDown(Win32.VkControl)) { _ = CopyAsync(r); e.Handled = true; }
+        else if (e.Key == VirtualKey.P && !Win32.KeyDown(Win32.VkControl)) { _ = PinAsync(r); e.Handled = true; }
         else if (e.Key == VirtualKey.Delete)
         {
             e.Handled = true;
@@ -669,12 +574,6 @@ public sealed partial class HistoryFlyout : PopupWindow
             if (ReferenceEquals(FocusManager.GetFocusedElement(Root.XamlRoot), ButtonOf(r, "ConfirmDeleteBtn"))) Delete(r, fromKeyboard: true);
         }
     }
-
-    // ---- hover- and focus-revealed actions -------------------------------------------------------------------------
-    // The actions live in the item template, out of reach of the container's PointerOver state. The template root tracks
-    // the pointer; focus is tracked on the list, because it lands on the container, an ancestor of the template root.
-
-    private void OnRowLoaded(object sender, RoutedEventArgs e) => Reveal((FrameworkElement)sender);
 
     /// <summary>
     /// A container is being filled with a row, new or recycled. Stamps its automation id and name, and resets its
@@ -749,165 +648,5 @@ public sealed partial class HistoryFlyout : PopupWindow
     private static void NameContainer(DependencyObject container, HistoryRow? row)
     {
         if (row != null) AutomationProperties.SetName(container, row.AccessibleName);
-    }
-
-    /// <summary>Subscribes to the list's own ScrollViewer once, whichever layout is up.</summary>
-    private void HookScrollViewer()
-    {
-        if (_scroller != null || IsClosed) return;
-        _scroller = Descendant(_items, "ScrollViewer") as ScrollViewer;
-        if (_scroller != null) _scroller.ViewChanged += OnItemsScrolled;
-        else App.Current.Log.Debug("flyout: no ScrollViewer template part; a scroll will not hide a revealed row");
-    }
-
-    /// <summary>Scrolling raises no PointerExited, so the hovered row is cleared; the row now under the pointer
-    /// reveals again on its next PointerEntered or PointerMoved.</summary>
-    private void OnItemsScrolled(object? sender, ScrollViewerViewChangedEventArgs e)
-    {
-        if (_hoverRoot is not { } root) return;
-        _hoverRoot = null;
-        SyncReveal();
-        Reveal(root);                                 // it may have scrolled out of realization
-    }
-
-    /// <summary>
-    /// Handles PointerEntered and PointerMoved, which also bubble from the row's children.
-    /// <para>The "at most one revealed row" invariant is kept on enter rather than exit, because exits can be missed:
-    /// a ToolTip opening over the row, or the pointer leaving through a row clipped by the viewport, raises an exit
-    /// that the bounds check in <see cref="OnRowPointerExited"/> ignores.</para>
-    /// </summary>
-    private void OnRowPointerEntered(object sender, PointerRoutedEventArgs e) => EnterRow((FrameworkElement)sender);
-
-    /// <summary>Makes <paramref name="root"/> the hovered row. Separate so the harness can call it without a
-    /// <see cref="PointerRoutedEventArgs"/>.</summary>
-    private void EnterRow(FrameworkElement root)
-    {
-        if (ReferenceEquals(_hoverRoot, root)) return;
-        _hoverRoot = root;
-        SyncReveal();
-    }
-
-    /// <summary>The pointer is on no row. Counterpart of <see cref="EnterRow"/>.</summary>
-    private void LeaveHover()
-    {
-        if (_hoverRoot == null) return;
-        _hoverRoot = null;
-        SyncReveal();
-    }
-
-    /// <summary>Moving onto a child of the row also raises an exit, so the row is only left when the pointer is
-    /// outside its bounds.</summary>
-    private void OnRowPointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        var root = (FrameworkElement)sender;
-        if (Inside(e, root)) return;
-        if (ReferenceEquals(_hoverRoot, root)) LeaveHover();
-    }
-
-    /// <summary>
-    /// The pointer left the hover region (either list or the card) without entering a row. WinUI also raises this
-    /// when the hit-test target changes among descendants, so the pointer position is checked against
-    /// <paramref name="sender"/>'s bounds.
-    /// </summary>
-    private void OnHoverRegionPointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        if (_hoverRoot == null) return;
-        if (Inside(e, (FrameworkElement)sender)) return;
-        LeaveHover();
-    }
-
-    /// <summary>Whether the pointer is inside <paramref name="box"/>'s bounds.</summary>
-    private static bool Inside(PointerRoutedEventArgs e, FrameworkElement box)
-    {
-        Point p = e.GetCurrentPoint(box).Position;
-        return p.X >= 0 && p.Y >= 0 && p.X < box.ActualWidth && p.Y < box.ActualHeight;
-    }
-
-    /// <summary>Deferred, because moving focus within a row raises LostFocus before GotFocus.</summary>
-    private void OnListFocusChanged(object sender, RoutedEventArgs e) => DispatcherQueue.TryEnqueue(SyncFocus);
-
-    private void SyncFocus()
-    {
-        if (IsClosed || Root.XamlRoot == null) return;
-        object? element = FocusManager.GetFocusedElement(Root.XamlRoot);
-        ContentControl? container = ContainerOf(element as DependencyObject);
-        if (container?.Content is HistoryRow r) _focused = r;
-        var root = container?.ContentTemplateRoot as FrameworkElement;
-        // Only keyboard focus reveals actions; after a click the pointer governs the reveal.
-        FrameworkElement? keyboard = element is UIElement { FocusState: FocusState.Keyboard } ? root : null;
-        if (ReferenceEquals(root, _focusRoot) && ReferenceEquals(keyboard, _keyboardRoot)) return;
-        _focusRoot = root;
-        _keyboardRoot = keyboard;
-        SyncReveal();
-    }
-
-    /// <summary>The item container (ListViewItem or GridViewItem) holding <paramref name="node"/>, if any.</summary>
-    private static ContentControl? ContainerOf(DependencyObject? node)
-    {
-        while (node != null && node is not SelectorItem) node = VisualTreeHelper.GetParent(node);
-        return node as ContentControl;
-    }
-
-    /// <summary>
-    /// Brings every realized row to the reveal state implied by <see cref="_hoverRoot"/> and <see cref="_keyboardRoot"/>,
-    /// so missed or out-of-order pointer events cannot strand a row revealed. Cheap: few rows are realized and
-    /// <see cref="Reveal"/> skips rows already at their target.
-    /// </summary>
-    private void SyncReveal()
-    {
-        if (IsClosed) return;
-        for (int i = 0; i < _rows.Count; i++)
-            if (_items.ContainerFromIndex(i) is SelectorItem c && c.ContentTemplateRoot is FrameworkElement root) Reveal(root);
-    }
-
-    private void Reveal(FrameworkElement root)
-    {
-        if (ActionsOf(root) is not { } actions) return;
-        double to = ReferenceEquals(root, _hoverRoot) || ReferenceEquals(root, _keyboardRoot) ? 1 : 0;
-        // Stop first: while a fade holds its end value, the local Opacity cannot be compared meaningfully.
-        StopFade(actions);
-        if (Math.Abs(actions.Opacity - to) < 0.001) return;
-        if (!Theme.ThemeManager.AnimationsEnabled) { actions.Opacity = to; return; }
-        var fade = new DoubleAnimation { To = to, Duration = new Duration(TimeSpan.FromMilliseconds(ActionFadeMs)), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-        Storyboard.SetTarget(fade, actions);
-        Storyboard.SetTargetProperty(fade, "Opacity");
-        var story = new Storyboard();
-        story.Children.Add(fade);
-        // On landing, replace the held animation with a plain local value. The identity check matters because Stop()
-        // also raises Completed, and a replaced fade must not undo its replacement.
-        story.Completed += (_, _) =>
-        {
-            if (!_actionFades.TryGetValue(actions, out Storyboard? tracked) || !ReferenceEquals(tracked, story)) return;
-            _actionFades.Remove(actions);
-            story.Stop();
-            actions.Opacity = to;
-        };
-        _actionFades[actions] = story;
-        story.Begin();
-    }
-
-    /// <summary>Stops any fade on these actions, keeping the current Opacity so the next fade continues from there.</summary>
-    private void StopFade(FrameworkElement actions)
-    {
-        if (!_actionFades.Remove(actions, out Storyboard? running)) return;
-        double at = actions.Opacity;
-        running.Stop();
-        actions.Opacity = at;
-    }
-
-    /// <summary>The action group of one item template, by FindName with a visual-tree walk as fallback.</summary>
-    private static FrameworkElement? ActionsOf(FrameworkElement root) =>
-        root.FindName("Actions") as FrameworkElement ?? Descendant(root, "Actions");
-
-    private static FrameworkElement? Descendant(DependencyObject node, string name)
-    {
-        int n = VisualTreeHelper.GetChildrenCount(node);
-        for (int i = 0; i < n; i++)
-        {
-            DependencyObject child = VisualTreeHelper.GetChild(node, i);
-            if (child is FrameworkElement fe && fe.Name == name) return fe;
-            if (Descendant(child, name) is { } hit) return hit;
-        }
-        return null;
     }
 }

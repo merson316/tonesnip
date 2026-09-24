@@ -63,7 +63,7 @@ find_analyzer() {
 
 # Every Windows publish is teed into BUILD_LOG so its warnings can be counted afterwards.
 BUILD_LOG="$(mktemp -t tonesnip-publish.XXXXXX)"
-winpublish() { (cd /mnt/c && "$WINDOTNET" publish "$@") | tr -d '\r' | tee -a "$BUILD_LOG"; }
+winpublish() { (cd "$SDK_DIR" && "$WINDOTNET" publish "$@") | tr -d '\r' | tee -a "$BUILD_LOG"; }
 
 # Any WUI diagnostic fails the publish: fix it, or silence it in tools/winui-analyzer.globalconfig.
 report_analyzer() {
@@ -94,6 +94,23 @@ NET_EXE="/mnt/c/Windows/System32/net.exe"
 WINDRIVE=""
 WINDRIVE_PERSIST=""
 
+# dotnet.exe chooses its SDK from the global.json in its working directory or above. It cannot run in the WSL
+# worktree, and from /mnt/c it sees no global.json, so every Windows build used the newest SDK installed rather than
+# the one global.json names. It runs instead from a scratch folder in the Windows temp holding a copy of the repo's
+# global.json; an installed SDK that does not satisfy it fails here, before anything is built.
+SDK_DIR=/mnt/c
+select_windows_sdk() {
+  if [ -z "$WINUSER" ]; then echo "sdk: no Windows profile found; dotnet.exe runs from C:\\ and ignores global.json" >&2; return 0; fi
+  SDK_DIR=$(mktemp -d "/mnt/c/Users/$WINUSER/AppData/Local/Temp/tonesnip-sdk.XXXXXX")
+  cp global.json "$SDK_DIR/global.json"
+  local version
+  version=$( (cd "$SDK_DIR" && "$WINDOTNET" --version 2>&1) | tr -d '\r' || true)
+  case "$version" in
+    [0-9]*) echo "sdk: Windows .NET SDK $version, as global.json allows" ;;
+    *) printf 'sdk: no installed Windows .NET SDK satisfies global.json:\n%s\n' "$version" >&2; return 1 ;;
+  esac
+}
+
 map_wsl_drive() {
   # /persistent:no keeps the mapping out of the profile, but it also changes net use's default, so the current
   # default is recorded here and restored by unmap_wsl_drive.
@@ -117,10 +134,11 @@ unmap_wsl_drive() {
 }
 
 # The only EXIT trap: a second `trap ... EXIT` would replace this one rather than add to it.
-cleanup_on_exit() { unmap_wsl_drive; rm -f "$BUILD_LOG"; }
+cleanup_on_exit() { unmap_wsl_drive; rm -f "$BUILD_LOG"; [ "$SDK_DIR" = /mnt/c ] || rm -rf "$SDK_DIR"; }
 trap cleanup_on_exit EXIT
+select_windows_sdk
 
-# Repo-relative path -> Windows path on the mapped drive. The publish runs from /mnt/c because dotnet.exe refuses a
+# Repo-relative path -> Windows path on the mapped drive. The publish runs from SDK_DIR because dotnet.exe refuses a
 # WSL working directory, so the repo root is captured here.
 REPO_ROOT="$(pwd)"
 winpath() { echo "$WINDRIVE:$(echo "$REPO_ROOT" | sed 's|/|\\|g')\\$(echo "$1" | sed 's|/|\\|g')"; }
@@ -152,7 +170,8 @@ build_debug() {  # the harness build, as tonesnip-debug.exe
 }
 
 build_msix() {  # the sideload package: fully self-contained, into dist/msix/
-  rm -rf dist/msix
+  # msix-publish too: a publish adds to its output folder, so it kept every file an earlier build had put there.
+  rm -rf dist/msix dist/msix-publish
   clean_obj
   local sign=(-p:AppxPackageSigningEnabled=false)
   if [ -n "${TONESNIP_PFX:-}" ] && [ -n "${TONESNIP_PFX_PASSWORD:-}" ]; then

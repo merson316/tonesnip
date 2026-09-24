@@ -1,0 +1,26 @@
+# Weekly update pull requests for the workflow actions and the NuGet packages. Minor and patch updates arrive as one
+# grouped pull request per ecosystem; a major version gets a pull request of its own, since it can change behaviour.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # ToneSnip.csproj references four Windows App SDK components at the versions one metapackage release names;
+      # they move together, whatever the size of the update, so a lone component bump never mixes two releases.
+      windows-app-sdk:
+        patterns: ['Microsoft.WindowsAppSDK*']
+      nuget-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Pruned from the restore graph (ToneSnip.csproj); a pull request for it would only reintroduce it.
+      - dependency-name: Microsoft.WindowsAppSDK

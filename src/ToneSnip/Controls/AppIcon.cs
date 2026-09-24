@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using ToneSnip.App.Interop;
+using ToneSnip.Windows.Interop;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -35,13 +35,13 @@ internal static class AppIcon
             {
                 string ico = App.Current.IconFile();
                 if (!File.Exists(ico)) return;
-                _big = LoadImageW(IntPtr.Zero, ico, ImageIconType, GetSystemMetrics(SmCxIcon), GetSystemMetrics(SmCyIcon), LrLoadFromFile);
-                _small = LoadImageW(IntPtr.Zero, ico, ImageIconType, GetSystemMetrics(SmCxSmIcon), GetSystemMetrics(SmCySmIcon), LrLoadFromFile);
+                _big = User32.LoadImageW(IntPtr.Zero, ico, ImageIconType, User32.GetSystemMetrics(SmCxIcon), User32.GetSystemMetrics(SmCyIcon), LrLoadFromFile);
+                _small = User32.LoadImageW(IntPtr.Zero, ico, ImageIconType, User32.GetSystemMetrics(SmCxSmIcon), User32.GetSystemMetrics(SmCySmIcon), LrLoadFromFile);
                 if (_big == IntPtr.Zero) { App.Current.Log.Warn("window icon: icon.ico did not load"); return; }
             }
             IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
-            SendMessageW(hwnd, WmSetIcon, (IntPtr)IconBig, _big);
-            SendMessageW(hwnd, WmSetIcon, (IntPtr)IconSmall, _small != IntPtr.Zero ? _small : _big);
+            User32.SendMessageW(hwnd, WmSetIcon, (IntPtr)IconBig, _big);
+            User32.SendMessageW(hwnd, WmSetIcon, (IntPtr)IconSmall, _small != IntPtr.Zero ? _small : _big);
         }
         catch (Exception e) { App.Current.Log.Warn("window icon: " + e.Message); }
     }
@@ -51,9 +51,6 @@ internal static class AppIcon
 
     private const uint WmSetIcon = 0x0080, ImageIconType = 1, LrLoadFromFile = 0x10;
     private const int IconSmall = 0, IconBig = 1, SmCxIcon = 11, SmCyIcon = 12, SmCxSmIcon = 49, SmCySmIcon = 50;
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr LoadImageW(IntPtr instance, string name, uint type, int cx, int cy, uint flags);
-    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
-    [DllImport("user32.dll")] private static extern IntPtr SendMessageW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     /// <summary>The manifest resource name ToneSnip.csproj gives assets/icon.svg.</summary>
     private const string Resource = "tonesnip.icon.svg";

@@ -96,7 +96,60 @@ public sealed class EditorSurface : UserControl
         _canvas.PointerMoved += OnPointerMoved;
         _canvas.PointerReleased += OnPointerReleased;
         _canvas.PointerCaptureLost += OnPointerCaptureLost;
+        _canvas.PointerExited += OnPointerExited;
     }
+
+    /// <summary>
+    /// The luminance under the pointer in nits, read from the snip's HDR crops (as the overlay's readout reads the
+    /// frame, before exposure), or null when the pointer is off the picture, over an SDR part of it, or the snip has no
+    /// HDR data left. Raised on every pointer move over the picture.
+    /// </summary>
+    public event Action<float?>? PointerNits;
+
+    /// <summary>Nits at (<paramref name="x"/>, <paramref name="y"/>) in the image's frame, or null outside every HDR
+    /// crop.</summary>
+    public float? NitsAt(int x, int y)
+    {
+        if (_result == null || _result.Crops.Count == 0) return null;
+        foreach (HalfCrop c in _result.Crops)
+        {
+            IntRect b = c.Bounds.Offset(-_result.Region.Left, -_result.Region.Top);
+            if (!b.Contains(x, y)) continue;
+            (float r, float g, float bl) = c.Image.Sample(x - b.Left, y - b.Top);
+            return Core.Color.Transfer.Luminance709(r, g, bl) * 80f;
+        }
+        return null;
+    }
+
+    private void OnPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        _pointerOver = false;
+        PointerNits?.Invoke(null);
+        PickerPointer?.Invoke(null);
+    }
+
+    /// <summary>While <see cref="Picking"/>: the source pixel under the pointer on every move, or null once it leaves
+    /// the picture. The host draws the loupe from it.</summary>
+    public event Action<(int X, int Y)?>? PickerPointer;
+
+    /// <summary>
+    /// Renders the picker's loupe around the source pixel (<paramref name="x"/>, <paramref name="y"/>) from the picture
+    /// as shown (shapes included, as a pick reads it) into <paramref name="into"/>; see <see cref="LoupeRaster"/>. False
+    /// when there is no picture.
+    /// </summary>
+    public bool RenderLoupe(int x, int y, GuidesLayout g, byte[] into)
+    {
+        if (_target is not { } t) return false;
+        LoupeRaster.Render(t, x - View.Left, y - View.Top, g.Source, g.Cell, g.Edge, into);
+        return true;
+    }
+
+    /// <summary>The rendered colour at a source pixel (0xAARRGGBB), or null off the view.</summary>
+    public uint? ColourAt(int x, int y) => PixelAt(x, y);
+
+    /// <summary>Where the middle of source pixel (<paramref name="x"/>, <paramref name="y"/>) is, in this element's
+    /// effective pixels.</summary>
+    public Point PixelCentre(int x, int y) => new((x - View.Left + 0.5) * Zoom, (y - View.Top + 0.5) * Zoom);
 
     public EditSession Session { get; private set; } = new(new AnnotationDoc());
     public IntRect View { get; private set; }
@@ -113,15 +166,18 @@ public sealed class EditorSurface : UserControl
     /// <summary>The last pointer position over the picture, in source pixels: what <see cref="ApplyCursor"/> hit-tests
     /// when the cursor has to change without a move.</summary>
     private (int X, int Y) _pointer;
+    /// <summary>The pointer is over the picture (it moved there and has not left).</summary>
+    private bool _pointerOver;
 
     /// <summary>
-    /// The one cursor decision: SizeAll while panning; arrow when not editing; under Select an arrow, a hand over a
+    /// The one cursor decision: SizeAll while panning; a crosshair while picking a colour or marking text; arrow when not editing; under Select an arrow, a hand over a
     /// shape or SizeAll over a handle; I-beam for Text; a crosshair for the drawing tools.
     /// </summary>
     private void ApplyCursor()
     {
         (int x, int y) = _pointer;
         ProtectedCursor = Panning ? SizeAllCursor
+            : Picking || SelectingText ? CrossCursor
             : !Editing ? ArrowCursor
             : Session.Tool == Tool.Select
             ? Session.HandleAt(x, y) != Handle.None ? SizeAllCursor : Session.Doc.HitTop(x, y) != null ? HandCursor : ArrowCursor
@@ -162,7 +218,7 @@ public sealed class EditorSurface : UserControl
 
     public void Load(CaptureResult result, uint accent)
     {
-        _result = result; _accent = accent; _original = result.Image; _zebraCrops = null;
+        _result = result; _accent = accent; _original = result.Image; _zebraCrops = null; _exposureLasso = null;
         var doc = new AnnotationDoc { Current = App.Current.Settings.Annotate.ToStyle(accent), Private = App.Current.Settings.Annotate.PrivacyMode, Exposure = result.Exposure };
         // The overlay's shapes are in virtual-desktop pixels, so re-base them into the image's frame. Their ids are
         // re-stamped so new shapes drawn here cannot collide with them.
@@ -333,14 +389,44 @@ public sealed class EditorSurface : UserControl
         // covers only the visible part, so the picture is offset by where that part starts.
         double w = double.IsNaN(Width) ? View.Width * Zoom : Width, h = double.IsNaN(Height) ? View.Height * Zoom : Height;
         var dest = new Rect(-_originX, -_originY, w, h);
-        // Nearest neighbour only where every picture pixel covers a whole number of screen pixels (100 %, 200 %…, in
-        // physical pixels); anywhere else it makes uneven pixel widths, so linear.
+        // Nearest neighbour where every picture pixel covers a whole number of screen pixels (100 %, 200 %…, in
+        // physical pixels), and from 300 % up, where crisp squares matter more for pixel inspection than the uneven
+        // widths it makes between whole multiples; linear below that.
         double physical = w / Math.Max(1, View.Width) * sender.Dpi / 96.0;
-        CanvasImageInterpolation interpolation = physical >= 1 && Math.Abs(physical - Math.Round(physical)) < 0.01
+        CanvasImageInterpolation interpolation = ZoomSteps.Crisp(physical)
             ? CanvasImageInterpolation.NearestNeighbor : CanvasImageInterpolation.Linear;
         // The transparency tile stays at screen scale; only a freeform snip's cut-away pixels ever show it.
-        if (_checkerBrush != null) args.DrawingSession.FillRectangle(new Rect(0, 0, sender.Size.Width, sender.Size.Height), _checkerBrush);
+        // Behind the picture only: while a zoom animates the control can be larger than the picture (HoldCanvasSize).
+        if (_checkerBrush != null) args.DrawingSession.FillRectangle(dest, _checkerBrush);
         args.DrawingSession.DrawImage(_bitmap, dest, new Rect(0, 0, View.Width, View.Height), 1f, interpolation);
+        if (!_textArea.IsEmpty) DrawTextArea(args.DrawingSession, sender, w / Math.Max(1, View.Width));
+    }
+
+    /// <summary>
+    /// The area being marked for Copy text, styled as the crop marquee is: the rest of the picture dimmed, a black line
+    /// just outside the area and a white one on its edge, one screen line wide at any zoom. Drawn over the blit rather
+    /// than into the picture's buffers, so marking re-renders nothing.
+    /// </summary>
+    private void DrawTextArea(CanvasDrawingSession ds, CanvasControl sender, double scale)
+    {
+        IntRect a = _textArea.Offset(-View.Left, -View.Top);
+        // Snapped to whole screen pixels and drawn aliased: antialiased edges at fractional positions leave a faint seam
+        // where the dimmed strips meet.
+        double px = 96.0 / sender.Dpi;
+        double Snap(double v) => Math.Round(v / px) * px;
+        double l = Snap(a.Left * scale - _originX), t = Snap(a.Top * scale - _originY), r = Snap(a.Right * scale - _originX), b = Snap(a.Bottom * scale - _originY);
+        double w = sender.Size.Width, h = sender.Size.Height;
+        CanvasAntialiasing was = ds.Antialiasing;
+        ds.Antialiasing = CanvasAntialiasing.Aliased;
+        var dim = global::Windows.UI.Color.FromArgb(0x88, 0, 0, 0);
+        ds.FillRectangle(new Rect(0, 0, w, Math.Max(0, t)), dim);
+        ds.FillRectangle(new Rect(0, b, w, Math.Max(0, h - b)), dim);
+        ds.FillRectangle(new Rect(0, t, Math.Max(0, l), Math.Max(0, b - t)), dim);
+        ds.FillRectangle(new Rect(r, t, Math.Max(0, w - r), Math.Max(0, b - t)), dim);
+        // Strokes are centred on the path, so each rectangle is inset by half a line to sit on whole pixels.
+        ds.DrawRectangle(new Rect(l - px / 2, t - px / 2, r - l + px, b - t + px), Microsoft.UI.Colors.Black, (float)px);
+        ds.DrawRectangle(new Rect(l + px / 2, t + px / 2, Math.Max(0, r - l - px), Math.Max(0, b - t - px)), Microsoft.UI.Colors.White, (float)px);
+        ds.Antialiasing = was;
     }
 
     /// <summary>
@@ -354,11 +440,37 @@ public sealed class EditorSurface : UserControl
         double left = Math.Clamp(Math.Floor(visible.X), 0, Math.Max(0, w - 1)), top = Math.Clamp(Math.Floor(visible.Y), 0, Math.Max(0, h - 1));
         double width = Math.Max(1, Math.Min(Math.Ceiling(visible.X + visible.Width) - left, w - left));
         double height = Math.Max(1, Math.Min(Math.Ceiling(visible.Y + visible.Height) - top, h - top));
+        // While a zoom animates, the control keeps the size it was given for the animation (HoldCanvasSize) and only
+        // grows past it, so the swap chain is not rebuilt every frame. Anything it covers beyond the picture stays clear.
+        if (_heldSize is (double hw, double hh))
+        {
+            width = Math.Max(width, Math.Ceiling(hw));
+            height = Math.Max(height, Math.Ceiling(hh));
+            _heldSize = (width, height);
+        }
         bool moved = left != _originX || top != _originY;
         if (moved) { _originX = left; _originY = top; Canvas.SetLeft(_canvas, left); Canvas.SetTop(_canvas, top); }
         if (_canvas.Width != width || _canvas.Height != height) { _canvas.Width = width; _canvas.Height = height; }
         else if (moved) _canvas.Invalidate();
     }
+
+    /// <summary>The size the Win2D control is held at while the zoom animates, in effective pixels, or null.</summary>
+    private (double W, double H)? _heldSize;
+
+    /// <summary>
+    /// Keeps the Win2D control at least <paramref name="width"/> × <paramref name="height"/> (effective pixels) and no
+    /// smaller than it is now, until <see cref="ReleaseCanvasSize"/>: a zoom animation calls it with the size on screen
+    /// at its end, so the control is resized at most once going in and once coming out rather than on every frame.
+    /// </summary>
+    public void HoldCanvasSize(double width, double height)
+    {
+        (double w, double h) = _heldSize ?? (_canvas.Width, _canvas.Height);
+        _heldSize = (Math.Max(w, width), Math.Max(h, height));
+    }
+
+    /// <summary>Ends <see cref="HoldCanvasSize"/>; the next <see cref="SetViewport"/> fits the control to the picture
+    /// again.</summary>
+    public void ReleaseCanvasSize() => _heldSize = null;
 
     /// <summary>16×16 BGRA of the two-grey chequerboard tiled behind the picture.</summary>
     private static readonly byte[] CheckerTile = BuildChecker();
@@ -412,11 +524,12 @@ public sealed class EditorSurface : UserControl
         _canvas.PointerMoved -= OnPointerMoved;
         _canvas.PointerReleased -= OnPointerReleased;
         _canvas.PointerCaptureLost -= OnPointerCaptureLost;
+        _canvas.PointerExited -= OnPointerExited;
         _bitmap?.Dispose(); _bitmap = null;
         _checkerBrush?.Dispose(); _checkerBrush = null;
         _checker?.Dispose(); _checker = null;
         _upload = null;
-        _target = null; _baseView = null; _original = null; _tmp = null; _lasso = null; _lassoSpans = null; _result = null; _zebraCrops = null;
+        _target = null; _baseView = null; _original = null; _tmp = null; _lasso = null; _lassoSpans = null; _exposureLasso = null; _result = null; _zebraCrops = null;
         _canvas.RemoveFromVisualTree();
         _host.Children.Clear();
         Content = null;
@@ -437,19 +550,23 @@ public sealed class EditorSurface : UserControl
     private bool Tonemap(float multiplier)
     {
         if (_result == null || _original == null || _result.Crops.Count == 0) return false;
-        foreach (HalfCrop c in _result.Crops)
+        // A window snip's transparent corners go back on in there, or the image and the HDR file saved from it (which
+        // takes its alpha from the image) would have black corners.
+        _result.Retonemap(_original, multiplier, App.Current.Grabber, ref _tmp);
+        // The copy restores pixels outside the lasso, so cut them again as CaptureResult.Build does (ApplyLasso
+        // does not when annotate.clipToLasso is off). The spans are built on the first pass and reused by every later
+        // one: rasterising the lasso again on each slider step cost as much as a small crop's tonemap.
+        if (LassoFits)
         {
-            if (_tmp == null || _tmp.Width != c.Image.Width || _tmp.Height != c.Image.Height) _tmp = BgraImage.Blank(c.Image.Width, c.Image.Height);
-            // The base the snip was built with, not measured again: a slider tick used to re-run the percentile.
-            App.Current.Grabber.TonemapInto(c.Image, c.Output, c.BaseExposure * multiplier, _tmp);
-            IntRect dst = c.Bounds.Offset(-_result.Region.Left, -_result.Region.Top);
-            for (int y = 0; y < dst.Height; y++) Buffer.BlockCopy(_tmp.Data, y * _tmp.Width * 4, _original.Data, ((dst.Top + y) * _original.Width + dst.Left) * 4, dst.Width * 4);
+            _exposureLasso ??= Core.Imaging.FreeformSpans.Build(_original.Width, _original.Height, _result.Region, _result.Freeform!);
+            _exposureLasso.ClearOutside(_original, Full);
         }
-        // The blit above restores pixels outside the lasso, so cut them again as CaptureResult.Build does (ApplyLasso
-        // does not when annotate.clipToLasso is off).
-        if (LassoFits) Core.Imaging.FreeformMask.Apply(_original, _result.Region, _result.Freeform!);
         return true;
     }
+
+    /// <summary>The lasso rasterised over the whole image, for <see cref="Tonemap"/>. Only the exposure loop touches it,
+    /// one pass at a time; reset when another snip is loaded.</summary>
+    private Core.Imaging.FreeformSpans? _exposureLasso;
 
     /// <summary>UI-thread half of a re-expose: the base pixels changed, so cached redaction tiles are stale.</summary>
     private void Apply(float multiplier)
@@ -503,11 +620,86 @@ public sealed class EditorSurface : UserControl
     private static InputMods Mods(VirtualKeyModifiers m)
         => ((m & VirtualKeyModifiers.Shift) != 0 ? InputMods.Shift : 0) | ((m & VirtualKeyModifiers.Control) != 0 ? InputMods.Ctrl : 0);
 
+    /// <summary>The colour picker is armed: the next left click reports the pixel under it (<see cref="ColourPicked"/>)
+    /// instead of reaching the document, whatever tool is up.</summary>
+    public bool Picking
+    {
+        get => _picking;
+        set
+        {
+            if (_picking == value) return;
+            _picking = value;
+            ApplyCursor();
+            // Armed with the pointer already over the picture (the K key), the loupe appears without waiting for a move.
+            if (value && View.Contains(_pointer.X, _pointer.Y) && _pointerOver) PickerPointer?.Invoke(_pointer);
+            else if (!value) PickerPointer?.Invoke(null);
+        }
+    }
+    private bool _picking;
+
+    /// <summary>
+    /// Copy text is armed: a left drag marks an area (<see cref="TextAreaSelected"/>) instead of reaching the document,
+    /// whatever tool is up. Setting it either way drops a mark in progress.
+    /// </summary>
+    public bool SelectingText
+    {
+        get => _selectingText;
+        set
+        {
+            if (_selectingText == value) return;
+            _selectingText = value;
+            _textFrom = null;
+            if (!_textArea.IsEmpty) { _textArea = IntRect.Empty; _canvas.Invalidate(); }
+            ApplyCursor();
+        }
+    }
+    private bool _selectingText;
+    /// <summary>Where the Copy text drag started and the area it covers so far, in source pixels.</summary>
+    private (int X, int Y)? _textFrom;
+    private IntRect _textArea;
+    /// <summary>Anything smaller than this either way is taken for a click, not an area.</summary>
+    private const int MinTextArea = 4;
+
+    /// <summary>A Copy text drag finished on an area at least <see cref="MinTextArea"/> square, in view pixels (0, 0 at
+    /// the crop's top-left), which is how the output render is laid out.</summary>
+    public event Action<IntRect>? TextAreaSelected;
+
+    /// <summary>A click while <see cref="Picking"/>: the pixel as shown (0xAARRGGBB, shapes included), the nits under it
+    /// when the snip has HDR data there, and whether Shift was held.</summary>
+    public event Action<uint, float?, bool>? ColourPicked;
+
+    /// <summary>The rendered pixel at a source-frame point, or null off the view.</summary>
+    private uint? PixelAt(int x, int y)
+    {
+        if (_target is not { } t) return null;
+        int lx = x - View.Left, ly = y - View.Top;
+        if (lx < 0 || ly < 0 || lx >= t.Width || ly >= t.Height) return null;
+        int i = (ly * t.Width + lx) * 4;
+        return (uint)t.Data[i + 3] << 24 | (uint)t.Data[i + 2] << 16 | (uint)t.Data[i + 1] << 8 | t.Data[i];
+    }
+
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (Panning || !Editing) return;   // the drag belongs to the view, not to the document
+        if (Panning) return;   // the drag belongs to the view, not to the document
         PointerPoint p = e.GetCurrentPoint(this);
         if (!p.Properties.IsLeftButtonPressed) return;
+        if (Picking)
+        {
+            (int px, int py) = ToSource(p.Position);
+            if (PixelAt(px, py) is uint argb) ColourPicked?.Invoke(argb, NitsAt(px, py), (e.KeyModifiers & VirtualKeyModifiers.Shift) != 0);
+            e.Handled = true;
+            return;
+        }
+        if (SelectingText)
+        {
+            (int tx, int ty) = ToSource(p.Position);
+            _textFrom = (tx, ty);
+            _textArea = IntRect.Empty;
+            _canvas.CapturePointer(e.Pointer);
+            e.Handled = true;
+            return;
+        }
+        if (!Editing) return;
         (int x, int y) = ToSource(p.Position);
         Focus(FocusState.Programmatic);
         if (Session.Begin(x, y, Mods(e.KeyModifiers))) _canvas.CapturePointer(e.Pointer);
@@ -518,6 +710,15 @@ public sealed class EditorSurface : UserControl
     {
         // Panning updates the cursor whether or not the tool row is up.
         (int x, int y) = _pointer = ToSource(e.GetCurrentPoint(this).Position);
+        _pointerOver = true;
+        PointerNits?.Invoke(NitsAt(x, y));
+        if (Picking) PickerPointer?.Invoke(View.Contains(x, y) ? (x, y) : null);
+        if (_textFrom is { } from)
+        {
+            _textArea = IntRect.FromDrag(from.X, from.Y, x, y).Intersect(View);
+            _canvas.Invalidate();
+            return;
+        }
         if (!Editing && !Panning) return;
         // Session.Busy cannot be true while panning: OnPointerPressed refuses to begin one.
         if (Session.Busy) Session.Move(x, y, Mods(e.KeyModifiers));
@@ -526,12 +727,28 @@ public sealed class EditorSurface : UserControl
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        // A Copy text mark is taken out first: releasing the capture raises PointerCaptureLost at once, which would
+        // otherwise drop it.
+        (int X, int Y)? textFrom = _textFrom;
+        _textFrom = null;
         // Always release capture first: Busy or Editing can be cleared mid-drag, and a stranded capture would swallow
         // every later click in the window.
         _canvas.ReleasePointerCaptures();
         // Fires for every button, so only a left-button release may commit the shape.
         Microsoft.UI.Input.PointerPoint point = e.GetCurrentPoint(this);
-        if (point.Properties.PointerUpdateKind != Microsoft.UI.Input.PointerUpdateKind.LeftButtonReleased) return;
+        if (point.Properties.PointerUpdateKind != Microsoft.UI.Input.PointerUpdateKind.LeftButtonReleased)
+        {
+            if (textFrom != null) { _textArea = IntRect.Empty; _canvas.Invalidate(); }
+            return;
+        }
+        if (textFrom is { } f)
+        {
+            // The release point counts too: a quick drag can deliver no move between the press and the release.
+            (int ex, int ey) = ToSource(point.Position);
+            _textArea = IntRect.FromDrag(f.X, f.Y, ex, ey).Intersect(View);
+            EndTextArea();
+            return;
+        }
         if (!Session.Busy) return;
         (int x, int y) = ToSource(point.Position);
         Session.End(x, y, Mods(e.KeyModifiers));
@@ -541,8 +758,19 @@ public sealed class EditorSurface : UserControl
     /// rather than leaving the session Busy for ever.</summary>
     private void OnPointerCaptureLost(object sender, PointerRoutedEventArgs e)
     {
+        if (_textFrom != null) { _textFrom = null; _textArea = IntRect.Empty; _canvas.Invalidate(); return; }
         if (!Session.Busy) return;
         (int x, int y) = ToSource(e.GetCurrentPoint(this).Position);
         Session.End(x, y, Mods(e.KeyModifiers));
+    }
+
+    /// <summary>The Copy text drag let go: an area big enough is reported (the host puts Copy text away, which clears
+    /// the mark); a click leaves Copy text armed for another try.</summary>
+    private void EndTextArea()
+    {
+        _textFrom = null;
+        IntRect area = _textArea;
+        if (area.Width < MinTextArea || area.Height < MinTextArea) { _textArea = IntRect.Empty; _canvas.Invalidate(); return; }
+        TextAreaSelected?.Invoke(area.Offset(-View.Left, -View.Top));
     }
 }

@@ -16,6 +16,11 @@
         %USERPROFILE%\Tools\tonesnip, and never `-a tonesnip` (which would attach to the installed instance).
       * It never sends Ctrl+S at the editor and never presses the delete prompt's own Delete on a history row: both
         write to (or remove) the user's own files.
+      * It never injects input into a window it did not open. Every verb that sends raw input (click, drag,
+        hover, send-keys, wheel scroll, touch, pen) and every injected pointer move first checks that the
+        target ToneSnip window is the foreground window; if it is not, nothing is sent and the test is
+        recorded as BLOCKED (not foreground), apart from pass and fail. Raw input goes to whatever window has
+        the foreground, so without this a stolen focus once typed into another app.
       * Every hover ends with an INJECTED pointer move (mouse_event MOUSEEVENTF_MOVE|ABSOLUTE), not
         SetCursorPos: a teleport raises no PointerExited in a XAML island, so a hover left standing makes
         the next assertion read as broken.
@@ -45,6 +50,7 @@ if ($Sections.Count -gt 0) { Write-Host "  only  $($Sections -join ', ')" }
 
 $script:pass = 0
 $script:fail = 0
+$script:blocked = 0
 $script:results = @()
 $script:notes = @()
 
@@ -55,11 +61,90 @@ Add-Type -Namespace TS -Name Win -MemberDefinition @'
 [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowExW(IntPtr p, IntPtr c, string cls, string name);
 [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
 [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
 '@
 
 # ---------------------------------------------------------------- plumbing
 
 function Write-Note { param([string]$Text) $script:notes += $Text; Write-Host "  ..    $Text" -ForegroundColor DarkGray }
+
+# ---------------------------------------------------------------- input guard
+
+# Raw input (SendInput, mouse_event) goes to whatever window has the foreground, not to the window a verb names,
+# so a hold that lost the foreground to another app would have its clicks and keys land in that app. Every such
+# send asks this first and throws a BLOCKED error instead of sending; Test-UI and Add-SectionError record that
+# apart from a failure, because it says nothing about ToneSnip.
+$script:GuardTag = 'BLOCKED (not foreground)'
+$script:ExeName = [IO.Path]::GetFileNameWithoutExtension($ExePath)
+
+function Get-WindowPid {
+    param([IntPtr]$Hwnd)
+    $wp = [uint32]0
+    [void][TS.Win]::GetWindowThreadProcessId($Hwnd, [ref]$wp)
+    return [int]$wp
+}
+
+function Get-ForegroundPid { return Get-WindowPid ([TS.Win]::GetForegroundWindow()) }
+
+# The target is a hold's pid (-a), a window handle (-w), or, with neither, any tonesnip-debug process.
+function Assert-Foreground {
+    param([string]$What, [int]$TargetPid = 0, [long]$Hwnd = 0)
+    $fg = Get-ForegroundPid
+    if ($Hwnd -ne 0) { $TargetPid = Get-WindowPid ([IntPtr]$Hwnd) }
+    if ($TargetPid -gt 0) {
+        if ($fg -eq $TargetPid) { return }
+    } else {
+        $proc = Get-Process -Id $fg -ErrorAction SilentlyContinue
+        if ($proc -and $proc.ProcessName -eq $script:ExeName) { return }
+    }
+    $fgName = (Get-Process -Id $fg -ErrorAction SilentlyContinue).ProcessName
+    throw "$($script:GuardTag): $What not sent, the foreground window belongs to pid $fg ($fgName), not the target"
+}
+
+# Shadows winapp.exe for the whole script. UIA verbs (invoke, focus, set-value, wait-for, inspect and the like)
+# act on the element and pass straight through; the verbs below synthesise real input and are guarded.
+$script:WinappExe = (Get-Command winapp -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+function winapp {
+    $verb = if ($args.Count -ge 2 -and $args[0] -eq 'ui') { [string]$args[1] } else { '' }
+    $raw = $verb -in 'click', 'drag', 'hover', 'send-keys', 'touch', 'pen' -or ($verb -eq 'scroll' -and $args -contains '--wheel')
+    if ($raw) {
+        $targetPid = 0; $hwnd = [long]0
+        $i = [array]::IndexOf($args, '-a')
+        if ($i -ge 0 -and $i + 1 -lt $args.Count -and "$($args[$i + 1])" -match '^\d+$') { $targetPid = [int]"$($args[$i + 1])" }
+        $i = [array]::IndexOf($args, '-w')
+        if ($i -ge 0 -and $i + 1 -lt $args.Count) { $hwnd = [long]"$($args[$i + 1])" }
+        # A named app (-a tonesnip) could attach to the installed instance; only a hold's pid or hwnd is a target.
+        if ($targetPid -le 0 -and $hwnd -eq 0) { throw "INPUT GUARD: 'winapp ui $verb' has no -a <pid> or -w <hwnd> target" }
+        # The bars and the card never take the foreground when they open (they are no-activate windows), so a hold of
+        # one leaves it where it was. UIA focus on the element the verb is about to act on activates its window; try
+        # that once for a pointer verb before blocking. send-keys is left alone: focusing some other element would
+        # change what the keys do.
+        $sel = if ($verb -ne 'send-keys' -and $args.Count -ge 3) { [string]$args[2] } else { '' }
+        if ($targetPid -gt 0 -and $sel -and -not $sel.StartsWith('-') -and (Get-ForegroundPid) -ne $targetPid) {
+            & $script:WinappExe ui focus $sel -a "$targetPid" 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 300
+        }
+        Assert-Foreground "winapp ui $verb" -TargetPid $targetPid -Hwnd $hwnd
+    }
+    & $script:WinappExe @args
+}
+
+function Add-Blocked {
+    param([string]$Name, [string]$Detail)
+    $script:blocked++
+    $script:results += @{ name = $Name; status = "BLOCKED"; detail = $Detail }
+    Write-Host "  BLOCK $Name -- $Detail" -ForegroundColor Yellow
+}
+
+# A section's own catch: a guard refusal outside any Test-UI still blocks rather than fails.
+function Add-SectionError {
+    param([string]$Name, $Err)
+    if ("$Err" -like "$($script:GuardTag)*") { Add-Blocked $Name "$Err"; return }
+    $script:fail++
+    $script:results += @{ name = $Name; status = "FAIL"; detail = "$Err" }
+    Write-Host "  FAIL  $Name -- $Err" -ForegroundColor Red
+}
 
 function Test-UI {
     param([string]$Name, [scriptblock]$Script)
@@ -77,17 +162,26 @@ function Test-UI {
             Write-Host "  FAIL  $Name -- $detail" -ForegroundColor Red
         }
     } catch {
+        if ("$_" -like "$($script:GuardTag)*") { Add-Blocked $Name "$_"; return }
         $script:fail++
         $script:results += @{ name = $Name; status = "FAIL"; detail = "$_" }
         Write-Host "  FAIL  $Name -- $_" -ForegroundColor Red
     }
 }
 
-# An injected move, not a cursor set. See the header.
+# An injected move, not a cursor set. See the header. Guarded like any other input. After a hover it only clears
+# the hover state, so when ToneSnip is not in the foreground it is skipped with a note and the section carries on
+# with its UIA checks; -Required is for a test whose subject is the move itself, which is then blocked.
 function Move-PointerAway {
-    param([int]$X = 24, [int]$Y = 24)
+    param([int]$X = 24, [int]$Y = 24, [switch]$Required)
     $w = [TS.Win]::GetSystemMetrics(0); $h = [TS.Win]::GetSystemMetrics(1)
     if ($w -le 0 -or $h -le 0) { return }
+    try { Assert-Foreground 'pointer move' }
+    catch {
+        if ($Required) { throw }
+        Write-Note "pointer move skipped: $_"
+        return
+    }
     [TS.Win]::mouse_event(0x8001, [uint32](($X * 65535) / $w), [uint32](($Y * 65535) / $h), 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 500
 }
@@ -149,6 +243,23 @@ function Get-Prop {
     if (-not $r) { return $null }
     if ($Name) { return $r.properties.$Name }
     return $r.properties
+}
+
+# An element's screen bounds as @{ X; Y; W; H }, whichever shape get-property reports them in.
+function Get-Rect {
+    param([int]$TargetPid, [string]$Selector)
+    $b = Get-Prop $TargetPid $Selector 'BoundingRectangle'
+    if (-not $b) { return $null }
+    if ($b -is [string]) {
+        $n = @($b -split '[^0-9.\-]+' | Where-Object { $_ -ne '' } | ForEach-Object { [double]$_ })
+        if ($n.Count -lt 4) { return $null }
+        return @{ X = $n[0]; Y = $n[1]; W = $n[2]; H = $n[3] }
+    }
+    $x = if ($null -ne $b.X) { $b.X } elseif ($null -ne $b.x) { $b.x } else { $b.left }
+    $y = if ($null -ne $b.Y) { $b.Y } elseif ($null -ne $b.y) { $b.y } else { $b.top }
+    $w = if ($null -ne $b.Width) { $b.Width } else { $b.width }
+    $h = if ($null -ne $b.Height) { $b.Height } else { $b.height }
+    return @{ X = [double]$x; Y = [double]$y; W = [double]$w; H = [double]$h }
 }
 
 # The app's own top-level window, so an assertion is not answered by a tooltip or a menu popup that
@@ -454,6 +565,18 @@ if (Should-Run 'settings') {
             Start-Sleep -Milliseconds 400
             winapp ui wait-for 'Settings_StartWithWindows' -a $id --value $swWas -t 4000
         }
+        # UIA invoke only: no raw input reaches whatever else is on screen.
+        Test-UI "settings: CaptureCursor toggles and returns" {
+            $was = (Get-Json @('get-value','Settings_CaptureCursor','-a',"$id",'--json')).text
+            winapp ui invoke 'Settings_CaptureCursor' -a $id
+            if ($LASTEXITCODE -ne 0) { throw "invoke failed" }
+            Start-Sleep -Milliseconds 400
+            $now = (Get-Json @('get-value','Settings_CaptureCursor','-a',"$id",'--json')).text
+            if ($now -eq $was) { throw "did not change from $was" }
+            winapp ui invoke 'Settings_CaptureCursor' -a $id
+            Start-Sleep -Milliseconds 400
+            winapp ui wait-for 'Settings_CaptureCursor' -a $id --value $was -t 4000
+        }
         Test-UI "settings: the hold wrote nothing to HKCU Run" {
             $after = (Get-ItemProperty -Path $runKey -ErrorAction SilentlyContinue).ToneSnip
             if ($after -ne $runBefore) { throw "HKCU Run\ToneSnip moved: '$runBefore' -> '$after'" }
@@ -525,8 +648,7 @@ if (Should-Run 'settings') {
 
         Test-A11y $id 'settings'
     } catch {
-        $script:fail++; $script:results += @{ name = "settings section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  settings section -- $_" -ForegroundColor Red
+        Add-SectionError "settings section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -569,6 +691,74 @@ if (Should-Run 'editor') {
             if ($after -eq $before) { throw "zoom readout stayed at $before" }
             Write-Host "        $before -> $after" -ForegroundColor DarkGray
             winapp ui send-keys 'ctrl+0' -a $id --via send-input | Out-Null
+        }
+
+        # Continuous zoom: the buttons step along a fine ladder up to 3200 %, Ctrl+1 is actual size, and the wheel
+        # over the picture zooms (as in Windows Photos) rather than scrolling.
+        Test-UI "editor: zoom in climbs in small steps to 3200 %" {
+            winapp ui send-keys 'ctrl+1' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 600
+            $seen = @()
+            for ($i = 0; $i -lt 16; $i++) {
+                winapp ui invoke 'Editor_ZoomInButton' -a $id | Out-Null
+                Start-Sleep -Milliseconds 600
+                $seen += [int](((Get-EditorText $id '^\d+\s*%$')[0].name) -replace '[^\d]', '')
+            }
+            Write-Host "        $($seen -join ', ')" -ForegroundColor DarkGray
+            # The readout is read through UIA, which can trail the animation by a step, so the ladder is checked by
+            # its spread and its end rather than step by step.
+            $distinct = @($seen | Select-Object -Unique).Count
+            if ($distinct -lt 12) { throw "only $distinct distinct zoom levels on the way up" }
+            if ($seen[-1] -ne 3200) { throw "zooming in stopped at $($seen[-1]) %, not 3200 %" }
+        }
+        Test-UI "editor: ctrl+1 returns to 100 %" {
+            winapp ui send-keys 'ctrl+1' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 700
+            $m = Get-EditorText $id '^100\s*%$'
+            if ($m.Count -eq 0) { throw "the readout is '$((Get-EditorText $id '^\d+\s*%$')[0].name)', not 100 %" }
+        }
+        Test-UI "editor: the wheel over the picture zooms in" {
+            $before = (Get-EditorText $id '^\d+\s*%$')[0].name
+            winapp ui scroll 'Editor_Canvas' -a $id --wheel 2 2>&1 | Out-Null
+            Start-Sleep -Milliseconds 700
+            $after = (Get-EditorText $id '^\d+\s*%$')[0].name
+            Write-Host "        $before -> $after" -ForegroundColor DarkGray
+            if ($after -eq $before) { throw "the wheel left the zoom at $before" }
+            winapp ui send-keys 'ctrl+0' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 500
+        }
+
+        # Copy text reads an area dragged on the picture. Escape is sent only once the toggle reads On: with nothing
+        # armed, Escape closes the editor.
+        Test-UI "editor: ctrl+t arms Copy text and the status strip says so" {
+            winapp ui send-keys 'ctrl+t' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Editor_CopyTextToggle' -a $id -p ToggleState --value 'On' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Copy text did not arm" }
+            $v = Get-Prop $id 'Editor_StatusNote' 'Name'
+            Write-Host "        '$v'" -ForegroundColor DarkGray
+            if ($v -notmatch 'drag') { throw "the status note says '$v'" }
+        }
+        Test-UI "editor: Escape puts Copy text away and leaves the editor open" {
+            winapp ui wait-for 'Editor_CopyTextToggle' -a $id -p ToggleState --value 'On' -t 500
+            if ($LASTEXITCODE -ne 0) { throw "Copy text is not armed, so Escape would close the editor; not sent" }
+            winapp ui send-keys 'esc' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Editor_CopyTextToggle' -a $id -p ToggleState --value 'Off' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Copy text stayed armed" }
+            if ($p.HasExited) { throw "Escape closed the editor" }
+        }
+        Test-UI "editor: a drag with Copy text armed marks an area and puts Copy text away" {
+            winapp ui invoke 'Editor_CopyTextToggle' -a $id | Out-Null
+            winapp ui wait-for 'Editor_CopyTextToggle' -a $id -p ToggleState --value 'On' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Copy text did not arm from its button" }
+            $r = Get-Rect $id 'Editor_Canvas'
+            if (-not $r) { throw "no bounds for Editor_Canvas" }
+            $cx = [int]($r.X + $r.W / 2); $cy = [int]($r.Y + $r.H / 2)
+            Write-Host "        canvas at $($r.X),$($r.Y) $($r.W)x$($r.H); dragging about $cx,$cy" -ForegroundColor DarkGray
+            $hwnd = Get-MainHwnd $id
+            winapp ui drag "$($cx - 60),$($cy - 30)" "$($cx + 60),$($cy + 30)" -a $id | Out-Null
+            # The editor's own window by handle: the "Text copied" card can be up by now, and an -a lookup could land on it.
+            winapp ui wait-for 'Editor_CopyTextToggle' -w $hwnd -p ToggleState --value 'Off' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Copy text was still armed after the drag" }
         }
 
         Test-UI "editor: ctrl+c copies (the clipboard holds an image)" {
@@ -624,8 +814,7 @@ if (Should-Run 'editor') {
             winapp ui wait-for 'Editor_MoreButton' -a $id --gone -t 5000
         }
     } catch {
-        $script:fail++; $script:results += @{ name = "editor section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  editor section -- $_" -ForegroundColor Red
+        Add-SectionError "editor section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -699,8 +888,7 @@ if (Should-Run 'editor-hdr') {
         }
         Test-A11y $id 'editor-hdr'
     } catch {
-        $script:fail++; $script:results += @{ name = "editor-hdr section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  editor-hdr section -- $_" -ForegroundColor Red
+        Add-SectionError "editor-hdr section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -815,8 +1003,7 @@ if (Should-Run 'flyout') {
             if ($left -ne 0) { throw "the prompt is still up after Cancel" }
         }
     } catch {
-        $script:fail++; $script:results += @{ name = "flyout-row section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  flyout-row section -- $_" -ForegroundColor Red
+        Add-SectionError "flyout-row section" $_
     } finally { Stop-Hold $script:flyProc; $script:flyProc = $null }
 }
 
@@ -884,8 +1071,7 @@ if (Should-Run 'flyout-grid') {
         }
         Start-Sleep -Milliseconds 900
     } catch {
-        $script:fail++; $script:results += @{ name = "flyout-grid section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  flyout-grid section -- $_" -ForegroundColor Red
+        Add-SectionError "flyout-grid section" $_
     } finally { Stop-Hold $script:flyProc; $script:flyProc = $null }
 }
 
@@ -958,10 +1144,57 @@ if (Should-Run 'toolbar') {
         Test-UI "toolbar: hover the delay pill" { winapp ui hover 'Overlay_DelayPill' -a $id --dwell-time 1200 }
         Shot $id 'toolbar-delaypill-hover'
         Move-PointerAway
+        # Copy text and Pin arm what the selection is for, one at a time. Toggled through UIA patterns only: no input.
+        Test-UI "toolbar: Copy text arms" {
+            winapp ui invoke 'Overlay_CopyTextToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_CopyTextToggle' -a $id -p ToggleState --value 'On' -t 3000
+        }
+        Test-UI "toolbar: Pin takes over from Copy text" {
+            winapp ui invoke 'Overlay_PinToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_PinToggle' -a $id -p ToggleState --value 'On' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Pin did not arm" }
+            winapp ui wait-for 'Overlay_CopyTextToggle' -a $id -p ToggleState --value 'Off' -t 3000
+        }
+        Test-UI "toolbar: the live region says Pin is armed" {
+            $v = Get-Prop $id 'Overlay_Announcer' 'Name'
+            Write-Host "        '$v'" -ForegroundColor DarkGray
+            if ($v -notmatch 'Pin') { throw "the announcer says '$v'" }
+        }
+        Shot $id 'toolbar-pin-armed'
+        Test-UI "toolbar: Pin disarms" {
+            winapp ui invoke 'Overlay_PinToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_PinToggle' -a $id -p ToggleState --value 'Off' -t 3000
+        }
+        # The colour picker sits beside them and excludes them, both ways.
+        Test-UI "toolbar: Pick colour arms and takes over from Copy text" {
+            winapp ui invoke 'Overlay_CopyTextToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_CopyTextToggle' -a $id -p ToggleState --value 'On' -t 3000
+            winapp ui invoke 'Overlay_PickColourToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_PickColourToggle' -a $id -p ToggleState --value 'On' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Pick colour did not arm" }
+            winapp ui wait-for 'Overlay_CopyTextToggle' -a $id -p ToggleState --value 'Off' -t 3000
+        }
+        Test-UI "toolbar: the live region says the picker is armed, with its key" {
+            $v = Get-Prop $id 'Overlay_Announcer' 'Name'
+            Write-Host "        '$v'" -ForegroundColor DarkGray
+            if ($v -notmatch 'colour') { throw "the announcer says '$v'" }
+        }
+        Test-UI "toolbar: Pick colour names its shortcut" {
+            $k = Get-Prop $id 'Overlay_PickColourToggle' 'AcceleratorKey'
+            if ($k -ne 'C') { throw "AcceleratorKey is '$k'" }
+        }
+        Shot $id 'toolbar-picker-armed'
+        Test-UI "toolbar: Pin takes over from Pick colour" {
+            winapp ui invoke 'Overlay_PinToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_PinToggle' -a $id -p ToggleState --value 'On' -t 3000
+            winapp ui wait-for 'Overlay_PickColourToggle' -a $id -p ToggleState --value 'Off' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "Pick colour stayed armed" }
+            winapp ui invoke 'Overlay_PinToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_PinToggle' -a $id -p ToggleState --value 'Off' -t 3000
+        }
         Test-A11y $id 'toolbar'
     } catch {
-        $script:fail++; $script:results += @{ name = "toolbar section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  toolbar section -- $_" -ForegroundColor Red
+        Add-SectionError "toolbar section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -1026,8 +1259,7 @@ if (Should-Run 'toolbar-annotate') {
         Move-PointerAway
         Test-A11y $id 'toolbar-annotate'
     } catch {
-        $script:fail++; $script:results += @{ name = "toolbar-annotate section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  toolbar-annotate section -- $_" -ForegroundColor Red
+        Add-SectionError "toolbar-annotate section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -1061,8 +1293,7 @@ if (Should-Run 'countdown') {
             Write-Host "        Countdown_Digit Name '$($pr.Name)' type $($pr.ControlType)" -ForegroundColor DarkGray
         }
     } catch {
-        $script:fail++; $script:results += @{ name = "countdown section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  countdown section -- $_" -ForegroundColor Red
+        Add-SectionError "countdown section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -1095,8 +1326,7 @@ if (Should-Run 'textentry') {
         Write-Note ("IsPassword probe: TextEntry_Box type={0} class={1} IsPassword={2}" -f $probe.ControlType, $probe.ClassName, $probe.IsPassword)
         Test-A11y $id 'textentry'
     } catch {
-        $script:fail++; $script:results += @{ name = "textentry section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  textentry section -- $_" -ForegroundColor Red
+        Add-SectionError "textentry section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -1107,7 +1337,7 @@ if (Should-Run 'toast') {
     try {
         $p = Start-Hold 'toast-saved' 120
         $id = $p.Id
-        foreach ($el in 'Toast_Card','Toast_Open','Toast_Folder','Toast_Edit','Toast_Close') {
+        foreach ($el in 'Toast_Card','Toast_Open','Toast_Folder','Toast_Edit','Toast_Pin','Toast_Close') {
             Test-UI "toast: $el exists" { winapp ui wait-for $el -a $id -t 4000 }
         }
         Shot $id 'toast-saved'
@@ -1140,8 +1370,7 @@ if (Should-Run 'toast') {
             winapp ui wait-for 'Toast_Card' -a $id --gone -t 6000
         }
     } catch {
-        $script:fail++; $script:results += @{ name = "toast section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  toast section -- $_" -ForegroundColor Red
+        Add-SectionError "toast section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -1159,7 +1388,7 @@ if (Should-Run 'toast-dwell') {
             if ($LASTEXITCODE -ne 0) { throw "the card went away while the pointer was on it" }
         }
         Test-UI "toast-dwell: an injected move away lets the dwell finish" {
-            Move-PointerAway
+            Move-PointerAway -Required
             for ($i = 0; $i -lt 14; $i++) {
                 if ($p.HasExited) { Write-Host "        the card closed $i s after the pointer left" -ForegroundColor DarkGray; return }
                 Start-Sleep -Seconds 1
@@ -1167,8 +1396,64 @@ if (Should-Run 'toast-dwell') {
             winapp ui wait-for 'Toast_Card' -a $id --gone -t 4000
         }
     } catch {
-        $script:fail++; $script:results += @{ name = "toast-dwell section"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  toast-dwell section -- $_" -ForegroundColor Red
+        Add-SectionError "toast-dwell section" $_
+    } finally { Stop-Hold $p }
+}
+
+# ---------------------------------------------------------------- 11b. the text-only notice card (Copy text)
+
+if (Should-Run 'toast-notice') {
+    $p = $null
+    try {
+        $p = Start-Hold 'toast-notice' 60
+        $id = $p.Id
+        Test-UI "toast-notice: the card is up" { winapp ui wait-for 'Toast_Card' -a $id -t 5000 }
+        Test-UI "toast-notice: no snip links on a notice" {
+            foreach ($l in 'Toast_Open','Toast_Edit','Toast_Pin') {
+                winapp ui wait-for $l -a $id -t 800 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { throw "$l is showing on a notice" }
+            }
+            # Each wait-for above is meant to time out, which leaves a non-zero exit code that Test-UI would read
+            # as a failure.
+            $global:LASTEXITCODE = 0
+        }
+        Test-UI "toast-notice: the card's name says what was copied" {
+            $v = Get-Prop $id 'Toast_Card' 'Name'
+            Write-Host "        '$v'" -ForegroundColor DarkGray
+            if ($v -notmatch 'Text copied') { throw "the card is named '$v'" }
+        }
+        Shot $id 'toast-notice'
+        Test-A11y $id 'toast-notice'
+    } catch {
+        Add-SectionError "toast-notice section" $_
+    } finally { Stop-Hold $p }
+}
+
+# ---------------------------------------------------------------- 11c. a snip pinned to the screen
+
+if (Should-Run 'pin') {
+    $p = $null
+    try {
+        $p = Start-Hold 'pin' 60
+        $id = $p.Id
+        foreach ($el in 'Pin_Root','Pin_CloseButton') {
+            Test-UI "pin: $el exists" { winapp ui wait-for $el -a $id -t 5000 }
+        }
+        Test-UI "pin: the window is named for its snip" {
+            $v = Get-Prop $id 'Pin_Root' 'Name'
+            Write-Host "        '$v'" -ForegroundColor DarkGray
+            if ($v -notmatch 'Pinned snip') { throw "the pin is named '$v'" }
+        }
+        Shot $id 'pin'
+        Test-A11y $id 'pin'
+        Test-UI "pin: the close button unpins it" {
+            winapp ui invoke 'Pin_CloseButton' -a $id | Out-Null
+            Start-Sleep -Seconds 2
+            if ($p.HasExited) { return }
+            winapp ui wait-for 'Pin_Root' -a $id --gone -t 5000
+        }
+    } catch {
+        Add-SectionError "pin section" $_
     } finally { Stop-Hold $p }
 }
 
@@ -1209,8 +1494,7 @@ if ((Should-Run 'gallery') -and -not $SkipGallery) {
             if ($rows.Count -eq 0) { throw "no property read back" }
         }
     } catch {
-        $script:fail++; $script:results += @{ name = "gallery probe"; status = "FAIL"; detail = "$_" }
-        Write-Host "  FAIL  gallery probe -- $_" -ForegroundColor Red
+        Add-SectionError "gallery probe" $_
     } finally {
         if ($g -and -not $g.HasExited) { Stop-Process -Id $g.Id -Force -ErrorAction SilentlyContinue }
     }
@@ -1219,12 +1503,16 @@ if ((Should-Run 'gallery') -and -not $SkipGallery) {
 # ---------------------------------------------------------------- results
 
 Write-Host "`n================================================" -ForegroundColor White
-Write-Host "Passed: $script:pass | Failed: $script:fail" -ForegroundColor White
+Write-Host "Passed: $script:pass | Failed: $script:fail | Blocked (not foreground): $script:blocked" -ForegroundColor White
 $script:results | Where-Object { $_.status -eq 'FAIL' } | ForEach-Object {
     Write-Host "  FAIL: $($_.name) -- $($_.detail)" -ForegroundColor Red
 }
-@{ passed = $script:pass; failed = $script:fail; results = $script:results; notes = $script:notes } |
+$script:results | Where-Object { $_.status -eq 'BLOCKED' } | ForEach-Object {
+    Write-Host "  BLOCKED: $($_.name) -- $($_.detail)" -ForegroundColor Yellow
+}
+@{ passed = $script:pass; failed = $script:fail; blocked = $script:blocked; results = $script:results; notes = $script:notes } |
     ConvertTo-Json -Depth 6 | Out-File (Join-Path $OutDir 'test-results.json') -Encoding ascii
 Write-Host "results  $(Join-Path $OutDir 'test-results.json')"
 Write-Host "shots    $ShotDir"
-if ($script:fail -gt 0) { exit 1 } else { exit 0 }
+# 2 when nothing failed but some input was held back: the run is incomplete, not green.
+if ($script:fail -gt 0) { exit 1 } elseif ($script:blocked -gt 0) { exit 2 } else { exit 0 }

@@ -13,7 +13,7 @@ namespace ToneSnip.Windows.Imaging;
 /// problems. Handles are released by <see cref="IDisposable"/>.
 /// </para>
 /// </summary>
-public static class GdiPlus
+public static partial class GdiPlus
 {
     // ----- enums (native values; only the members the rasterizer uses) -----
 
@@ -318,59 +318,59 @@ public static class GdiPlus
     [StructLayout(LayoutKind.Sequential)]
     private struct StartupOutput { public IntPtr NotificationHook, NotificationUnhook; }
 
-    [DllImport("gdiplus.dll")] private static extern int GdiplusStartup(out IntPtr token, ref StartupInput input, out StartupOutput output);
+    [LibraryImport("gdiplus.dll")] private static partial int GdiplusStartup(out IntPtr token, ref StartupInput input, out StartupOutput output);
 
-    [DllImport("gdiplus.dll")] private static extern int GdipCreateBitmapFromScan0(int width, int height, int stride, int format, IntPtr scan0, out IntPtr bitmap);
-    [DllImport("gdiplus.dll")] private static extern int GdipDisposeImage(IntPtr image);
-    [DllImport("gdiplus.dll")] private static extern int GdipGetImageGraphicsContext(IntPtr image, out IntPtr graphics);
-    [DllImport("gdiplus.dll")] private static extern int GdipCreateFromHDC(IntPtr hdc, out IntPtr graphics);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeleteGraphics(IntPtr graphics);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetSmoothingMode(IntPtr graphics, int mode);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetPixelOffsetMode(IntPtr graphics, int mode);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetTextRenderingHint(IntPtr graphics, int hint);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetTextContrast(IntPtr graphics, uint contrast);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetClipRectI(IntPtr graphics, int x, int y, int width, int height, int combineMode);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetCompositingMode(IntPtr graphics, int mode);
-    [DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] private static extern int GdipMeasureString(IntPtr graphics, string text, int length, IntPtr font, ref RectF layoutRect, IntPtr format, out RectF bounds, out int codepointsFitted, out int linesFilled);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreateBitmapFromScan0(int width, int height, int stride, int format, IntPtr scan0, out IntPtr bitmap);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDisposeImage(IntPtr image);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipGetImageGraphicsContext(IntPtr image, out IntPtr graphics);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreateFromHDC(IntPtr hdc, out IntPtr graphics);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteGraphics(IntPtr graphics);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetSmoothingMode(IntPtr graphics, int mode);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetPixelOffsetMode(IntPtr graphics, int mode);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetTextRenderingHint(IntPtr graphics, int hint);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetTextContrast(IntPtr graphics, uint contrast);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetClipRectI(IntPtr graphics, int x, int y, int width, int height, int combineMode);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetCompositingMode(IntPtr graphics, int mode);
+    [LibraryImport("gdiplus.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GdipMeasureString(IntPtr graphics, string text, int length, IntPtr font, ref RectF layoutRect, IntPtr format, out RectF bounds, out int codepointsFitted, out int linesFilled);
 
-    [DllImport("gdiplus.dll")] private static extern int GdipCreatePen1(uint argb, float width, int unit, out IntPtr pen);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeletePen(IntPtr pen);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetPenStartCap(IntPtr pen, int cap);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetPenEndCap(IntPtr pen, int cap);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetPenLineJoin(IntPtr pen, int join);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetPenDashStyle(IntPtr pen, int style);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetPenMode(IntPtr pen, int alignment);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreatePen1(uint argb, float width, int unit, out IntPtr pen);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeletePen(IntPtr pen);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetPenStartCap(IntPtr pen, int cap);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetPenEndCap(IntPtr pen, int cap);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetPenLineJoin(IntPtr pen, int join);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetPenDashStyle(IntPtr pen, int style);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetPenMode(IntPtr pen, int alignment);
 
-    [DllImport("gdiplus.dll")] private static extern int GdipCreateSolidFill(uint argb, out IntPtr brush);
-    [DllImport("gdiplus.dll")] private static extern int GdipCreateHatchBrush(int style, uint foreArgb, uint backArgb, out IntPtr brush);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeleteBrush(IntPtr brush);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreateSolidFill(uint argb, out IntPtr brush);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreateHatchBrush(int style, uint foreArgb, uint backArgb, out IntPtr brush);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteBrush(IntPtr brush);
 
-    [DllImport("gdiplus.dll")] private static extern int GdipDrawLine(IntPtr graphics, IntPtr pen, float x1, float y1, float x2, float y2);
-    [DllImport("gdiplus.dll")] private static extern int GdipDrawLines(IntPtr graphics, IntPtr pen, [In] PointF[] points, int count);
-    [DllImport("gdiplus.dll")] private static extern int GdipDrawRectangle(IntPtr graphics, IntPtr pen, float x, float y, float width, float height);
-    [DllImport("gdiplus.dll")] private static extern int GdipFillRectangle(IntPtr graphics, IntPtr brush, float x, float y, float width, float height);
-    [DllImport("gdiplus.dll")] private static extern int GdipDrawEllipse(IntPtr graphics, IntPtr pen, float x, float y, float width, float height);
-    [DllImport("gdiplus.dll")] private static extern int GdipFillEllipse(IntPtr graphics, IntPtr brush, float x, float y, float width, float height);
-    [DllImport("gdiplus.dll")] private static extern int GdipFillPolygon(IntPtr graphics, IntPtr brush, [In] PointF[] points, int count, int fillMode);
-    [DllImport("gdiplus.dll")] private static extern int GdipDrawPath(IntPtr graphics, IntPtr pen, IntPtr path);
-    [DllImport("gdiplus.dll")] private static extern int GdipFillPath(IntPtr graphics, IntPtr brush, IntPtr path);
-    [DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] private static extern int GdipDrawString(IntPtr graphics, string text, int length, IntPtr font, ref RectF layoutRect, IntPtr format, IntPtr brush);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDrawLine(IntPtr graphics, IntPtr pen, float x1, float y1, float x2, float y2);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDrawLines(IntPtr graphics, IntPtr pen, [In] PointF[] points, int count);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDrawRectangle(IntPtr graphics, IntPtr pen, float x, float y, float width, float height);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipFillRectangle(IntPtr graphics, IntPtr brush, float x, float y, float width, float height);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDrawEllipse(IntPtr graphics, IntPtr pen, float x, float y, float width, float height);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipFillEllipse(IntPtr graphics, IntPtr brush, float x, float y, float width, float height);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipFillPolygon(IntPtr graphics, IntPtr brush, [In] PointF[] points, int count, int fillMode);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDrawPath(IntPtr graphics, IntPtr pen, IntPtr path);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipFillPath(IntPtr graphics, IntPtr brush, IntPtr path);
+    [LibraryImport("gdiplus.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GdipDrawString(IntPtr graphics, string text, int length, IntPtr font, ref RectF layoutRect, IntPtr format, IntPtr brush);
 
-    [DllImport("gdiplus.dll")] private static extern int GdipCreatePath(int fillMode, out IntPtr path);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeletePath(IntPtr path);
-    [DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] private static extern int GdipAddPathString(IntPtr path, string text, int length, IntPtr family, int style, float emSize, ref RectF layoutRect, IntPtr format);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreatePath(int fillMode, out IntPtr path);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeletePath(IntPtr path);
+    [LibraryImport("gdiplus.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GdipAddPathString(IntPtr path, string text, int length, IntPtr family, int style, float emSize, ref RectF layoutRect, IntPtr format);
 
-    [DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] private static extern int GdipCreateFontFamilyFromName(string name, IntPtr fontCollection, out IntPtr family);
-    [DllImport("gdiplus.dll")] private static extern int GdipGetGenericFontFamilySansSerif(out IntPtr family);
-    [DllImport("gdiplus.dll")] private static extern int GdipCloneFontFamily(IntPtr family, out IntPtr clone);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeleteFontFamily(IntPtr family);
-    [DllImport("gdiplus.dll")] private static extern int GdipCreateFont(IntPtr family, float emSize, int style, int unit, out IntPtr font);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeleteFont(IntPtr font);
+    [LibraryImport("gdiplus.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GdipCreateFontFamilyFromName(string name, IntPtr fontCollection, out IntPtr family);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipGetGenericFontFamilySansSerif(out IntPtr family);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCloneFontFamily(IntPtr family, out IntPtr clone);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteFontFamily(IntPtr family);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreateFont(IntPtr family, float emSize, int style, int unit, out IntPtr font);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteFont(IntPtr font);
 
-    [DllImport("gdiplus.dll")] private static extern int GdipCreateStringFormat(int formatAttributes, int language, out IntPtr format);
-    [DllImport("gdiplus.dll")] private static extern int GdipStringFormatGetGenericTypographic(out IntPtr format);
-    [DllImport("gdiplus.dll")] private static extern int GdipCloneStringFormat(IntPtr format, out IntPtr clone);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetStringFormatAlign(IntPtr format, int align);
-    [DllImport("gdiplus.dll")] private static extern int GdipSetStringFormatLineAlign(IntPtr format, int align);
-    [DllImport("gdiplus.dll")] private static extern int GdipDeleteStringFormat(IntPtr format);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCreateStringFormat(int formatAttributes, int language, out IntPtr format);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipStringFormatGetGenericTypographic(out IntPtr format);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipCloneStringFormat(IntPtr format, out IntPtr clone);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetStringFormatAlign(IntPtr format, int align);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipSetStringFormatLineAlign(IntPtr format, int align);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteStringFormat(IntPtr format);
 }

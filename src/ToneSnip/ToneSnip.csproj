@@ -20,7 +20,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../assets/icon.ico</ApplicationIcon>
-    <Version>1.0.3</Version>
+    <Version>1.0.4</Version>
     <!-- Text input asks for the current input language; invariant globalization (set repo-wide) makes that throw. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <PublishReadyToRun>true</PublishReadyToRun>
@@ -99,7 +99,20 @@
     <EmbeddedResource Include="../../assets/icon.svg" LogicalName="tonesnip.icon.svg" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <!-- The Windows App SDK's components, not the Microsoft.WindowsAppSDK metapackage: the metapackage also brings
+         AI, ML (ONNX Runtime and DirectML), Search, Widgets and DWriteCore, which the app never calls and which a
+         self-contained build copies into every exe (about 60 MB of the single file, 25 MB of the MSIX). The versions
+         are the ones the 2.4.0 metapackage names, so the code that runs is unchanged; to update, take the new
+         metapackage's .nuspec versions for all four together. Runtime carries no code for a self-contained app, but
+         holds the framework MSIX that IncludeInsightsResourceDll unzips.
+         The Community Toolkit still depends on Microsoft.WindowsAppSDK >= 1.6. Without the metapackage NuGet would
+         restore that 1.6 package, a whole second SDK, beside these; pruning (a .NET 10 SDK restore feature) drops it
+         from the graph. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.6" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.6" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.4.0" />
+    <PrunePackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <!-- SettingsCard / SettingsExpander for the settings window. The version is the one the WinUI 3 Gallery pins
          against Windows App SDK 2.4.0, so the pair is known to restore together. -->

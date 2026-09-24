@@ -4,10 +4,10 @@ namespace ToneSnip.App;
 
 /// <summary>This process's open handles counted by kernel object type (Event, Thread, Composition...), so --memtest
 /// and --leaktest can show what a growing handle count is made of.</summary>
-internal static class HandleCensus
+internal static partial class HandleCensus
 {
-    [DllImport("ntdll.dll")] private static extern int NtQueryObject(IntPtr handle, int infoClass, IntPtr info, int length, out int returned);
-    [DllImport("kernel32.dll")] private static extern bool GetHandleInformation(IntPtr handle, out uint flags);
+    [LibraryImport("ntdll.dll")] private static partial int NtQueryObject(IntPtr handle, int infoClass, IntPtr info, int length, out int returned);
+    [LibraryImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetHandleInformation(IntPtr handle, out uint flags);
 
     public static Dictionary<string, int> Take()
     {

@@ -77,6 +77,9 @@ public sealed partial class ToolbarWindow : PopupWindow
     {
         Modes.Mode = _session.Mode;
         BtnAnnotate.IsChecked = _session.Annotating;
+        BtnCopyText.IsChecked = _session.Then == SnipAction.CopyText;
+        BtnPin.IsChecked = _session.Then == SnipAction.Pin;
+        BtnPickColour.IsChecked = _session.Picking;
         if (_session.Annotating && _session.Edit != null && !_attached)
         {
             Bar.Attach(_session.Edit, _session.AnyHdr, showCrop: false, showDone: false, _session.Accent, "No HDR monitor in this snip");
@@ -225,6 +228,43 @@ public sealed partial class ToolbarWindow : PopupWindow
         _fade = new Storyboard();
         _fade.Children.Add(fade);
         _fade.Begin();
+    }
+
+    /// <summary>Arms (or disarms) "Copy text". Deferred like Close: with a selection already made, arming finishes the
+    /// session, which destroys this window. The session's Refresh sets the checked state back from what it
+    /// decided.</summary>
+    private void OnCopyText(object sender, RoutedEventArgs e) => ArmFromClick(SnipAction.CopyText);
+    private void OnPin(object sender, RoutedEventArgs e) => ArmFromClick(SnipAction.Pin);
+
+    private void ArmFromClick(SnipAction action)
+    {
+        ClosePopups();
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _session.Arm(action);
+            if (!IsClosed) _session.RefocusOverlay();
+        });
+    }
+
+    /// <summary>Arms (or puts away) the colour picker. Deferred like the others, and the checked state is set back by
+    /// the session's Refresh.</summary>
+    private void OnPickColour(object sender, RoutedEventArgs e)
+    {
+        ClosePopups();
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _session.SetPicking(!_session.Picking);
+            if (!IsClosed) { Refresh(); _session.RefocusOverlay(); }
+        });
+    }
+
+    /// <summary>Speaks <paramref name="sentence"/> through the bar's polite live region.</summary>
+    public void Announce(string sentence)
+    {
+        if (IsClosed) return;
+        Announcer.Text = sentence;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(Announcer, sentence);
+        Controls.LiveRegion.Announce(Announcer);
     }
 
     // Deferred: Finish destroys this window, so it waits for the click to be delivered.

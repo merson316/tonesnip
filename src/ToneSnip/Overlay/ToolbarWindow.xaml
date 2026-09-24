@@ -31,6 +31,26 @@
             <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAnnotate}" FontSize="16"/>
           </ToggleButton>
           <Rectangle Style="{StaticResource ToolDivider}"/>
+          <!-- What the selection is for, instead of an ordinary snip. Checked while armed: the next selection finishes
+               straight into it. -->
+          <ToggleButton x:Name="BtnCopyText" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Copy text"
+                        AutomationProperties.AutomationId="Overlay_CopyTextToggle" AutomationProperties.AcceleratorKey="T"
+                        ToolTipService.ToolTip="Copy text from the selection (T)" Click="OnCopyText">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopyText}" FontSize="16"/>
+          </ToggleButton>
+          <ToggleButton x:Name="BtnPin" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pin to screen"
+                        AutomationProperties.AutomationId="Overlay_PinToggle" AutomationProperties.AcceleratorKey="P"
+                        ToolTipService.ToolTip="Pin the selection to the screen (P)" Click="OnPin">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPin}" FontSize="16"/>
+          </ToggleButton>
+          <!-- The colour picker, as C arms it: checked while the loupe follows the cursor, until a click copies. The
+               pointer is for one thing at a time, so it and the two above exclude each other. -->
+          <ToggleButton x:Name="BtnPickColour" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pick colour"
+                        AutomationProperties.AutomationId="Overlay_PickColourToggle" AutomationProperties.AcceleratorKey="C"
+                        ToolTipService.ToolTip="Pick a colour (C); Shift+click adds the nits" Click="OnPickColour">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPickColour}" FontSize="16"/>
+          </ToggleButton>
+          <Rectangle Style="{StaticResource ToolDivider}"/>
           <Button Style="{StaticResource ToolButton}" AutomationProperties.Name="Close"
                   AutomationProperties.AutomationId="Overlay_CloseButton"
                   ToolTipService.ToolTip="Close (Esc)" Click="OnClose">
@@ -51,6 +71,11 @@
           <annotate:AnnotateBar x:Name="Bar" HorizontalAlignment="Center"/>
         </Border>
       </StackPanel>
+      <!-- Narrator hears mode, annotate and armed-action changes through this polite live region: the frozen desktop
+           is a plain Win32 window with no UIA of its own. Zero-sized rather than collapsed, since a collapsed element
+           is out of the UIA tree and raises nothing. -->
+      <TextBlock x:Name="Announcer" Width="0" Height="0" AutomationProperties.LiveSetting="Polite"
+                 AutomationProperties.AutomationId="Overlay_Announcer"/>
       <!-- The brushes the delay pill switches between, resolved by XAML so the window's forced dark theme picks them;
            a code-side resource lookup would read the app's theme instead. -->
       <Grid Visibility="Collapsed">

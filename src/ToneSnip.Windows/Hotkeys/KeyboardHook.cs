@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Hotkeys;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.Windows.Hotkeys;
 
@@ -10,7 +11,7 @@ namespace ToneSnip.Windows.Hotkeys;
 /// The hook lives on its own message-loop thread so UI work can never stall it (Windows silently removes
 /// a low-level hook whose thread stops answering), and it is re-armed every few minutes as a safety net.
 /// </summary>
-public sealed class KeyboardHook : IDisposable
+public sealed partial class KeyboardHook : IDisposable
 {
     private const int WhKeyboardLl = 13;
     private const int WmKeydown = 0x0100, WmSyskeydown = 0x0104, WmKeyup = 0x0101, WmSyskeyup = 0x0105, WmQuit = 0x0012, WmUser = 0x0400;
@@ -25,14 +26,12 @@ public sealed class KeyboardHook : IDisposable
     private struct Msg { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int ptX; public int ptY; }
 
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr SetWindowsHookExW(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool UnhookWindowsHookEx(IntPtr hhk);
-    [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
-    [DllImport("user32.dll")] private static extern bool GetMessageW(out Msg msg, IntPtr hWnd, uint min, uint max);
-    [DllImport("user32.dll")] private static extern bool PostThreadMessageW(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandleW(string? lpModuleName);
-    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, [In] Input[] inputs, int size);
+    [LibraryImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool UnhookWindowsHookEx(IntPtr hhk);
+    [LibraryImport("user32.dll")] private static partial IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+    [LibraryImport("user32.dll")] private static partial short GetAsyncKeyState(int vKey);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetMessageW(out Msg msg, IntPtr hWnd, uint min, uint max);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool PostThreadMessageW(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
+    [LibraryImport("user32.dll", SetLastError = true)] private static partial uint SendInput(uint count, [In] Input[] inputs, int size);
 
     /// <summary>INPUT with its keyboard member, laid out for x64: type, 4 bytes of padding, then KEYBDINPUT padded to the
     /// union's 32 bytes (MOUSEINPUT is the largest member).</summary>
@@ -114,7 +113,7 @@ public sealed class KeyboardHook : IDisposable
 
     private void HookThread(ManualResetEventSlim ready)
     {
-        _threadId = GetCurrentThreadId();
+        _threadId = Kernel32.GetCurrentThreadId();
         Arm();
         ready.Set();
         while (GetMessageW(out Msg msg, IntPtr.Zero, 0, 0))
@@ -128,7 +127,7 @@ public sealed class KeyboardHook : IDisposable
     private void Arm()
     {
         Disarm();
-        _hook = SetWindowsHookExW(WhKeyboardLl, _proc, GetModuleHandleW(null), 0);
+        _hook = SetWindowsHookExW(WhKeyboardLl, _proc, Kernel32.GetModuleHandleW(null), 0);
         _installed = _hook != IntPtr.Zero;
         if (!_installed) _log.Error($"keyboard hook failed: {Marshal.GetLastWin32Error()}");
         // Info on the first arm so the log always shows the hook came up; Debug on the periodic re-arms.

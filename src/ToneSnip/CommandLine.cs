@@ -100,8 +100,8 @@ public static class CommandLine
         text.AppendLine("  --memtest [cycles] run the snip lifecycle end to end and weigh the process (default 6)");
         text.AppendLine("  --hold <window> [seconds]  open one window for real and leave it up for `winapp ui`");
         text.AppendLine("                     (default 30). flyout-row, flyout-grid, settings-<page>, editor,");
-        text.AppendLine("                     editor-hdr, toolbar, toolbar-annotate, countdown, textentry,");
-        text.AppendLine("                     toast-saved, toast-copied, toast-dwell");
+        text.AppendLine("                     editor-hdr, editor-front, toolbar, toolbar-annotate, countdown,");
+        text.AppendLine("                     textentry, toast-saved, toast-copied, toast-dwell");
         text.AppendLine("  --flip-theme       half way through a --hold, apply the other theme to the live window");
 #endif
         text.AppendLine();

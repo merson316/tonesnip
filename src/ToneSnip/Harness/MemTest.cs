@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
 using ToneSnip.Core.Capture;
@@ -9,6 +8,7 @@ using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Windows.Display;
 using ToneSnip.Windows.Overlay;
+using ToneSnip.Windows.Interop;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
@@ -32,8 +32,6 @@ internal static class MemTest
     /// <summary>How far the last cycle's private bytes may sit above cycle 2's and still count as a plateau.</summary>
     private const double PlateauPercent = 15.0;
 
-    [DllImport("kernel32.dll")] private static extern bool AttachConsole(int pid);
-
     private static int _cycles = 6;
     private static int _exit;
     private static IntRect _desktop;
@@ -52,7 +50,7 @@ internal static class MemTest
     /// <summary>Starts the XAML application for this mode, as the leak harness does.</summary>
     internal static int Start(StartupCommand command)
     {
-        AttachConsole(-1);   // WinExe: reattach to the launching console so Console.WriteLine is visible
+        Kernel32.AttachConsole(Kernel32.AttachParentProcess);   // WinExe: reattach to the launching console so Console.WriteLine is visible
         _cycles = Math.Clamp(command.MemTestCycles, 2, 50);
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(p =>   // not `_`: the discard below would bind to the parameter instead
@@ -74,7 +72,7 @@ internal static class MemTest
             app.PrimaryMonitor = _outputs[0].Bounds;
             OutputInfo anchor = _outputs.FirstOrDefault(o => o.Hdr) ?? _outputs[0];   // on an HDR panel where there is one, so the half-crop path runs
             _region = new IntRect(anchor.Left + 32, anchor.Top + 32, Math.Min(256, anchor.Width - 32), Math.Min(256, anchor.Height - 32));
-            Line($"memtest: {_cycles} cycles of grab + overlay + Escape, synthetic frames on the real monitor layout");
+            Line($"memtest: {_cycles} cycles of grab + overlay + Escape, synthetic frames on the real monitor layout, HDR frames on the {(app.Grabber.UseGpu() ? "GPU" : "CPU")}");
             foreach (OutputInfo o in _outputs) Line($"memtest: {o.DeviceName} {o.Width}x{o.Height} {(o.Hdr ? "hdr" : "sdr")}, {Mb(Bytes(o))} MB of frames");
             Line($"memtest: {Mb(_outputs.Sum(Bytes))} MB of frames per grab across {_outputs.Count} output(s)");
             Line($"memtest: each cycle also builds a real CaptureResult over {_region}, kept alive across the next grab");
@@ -161,7 +159,7 @@ internal static class MemTest
         if (pixels != null)
             foreach (CapturedOutput o in outputs)
             {
-                if (o.Half != null) pixels.Add(($"HalfImage {o.Info.Index}", new WeakReference<object>(o.Half.Data)));
+                if (o.Hdr is Core.Hdr.HalfFrame h) pixels.Add(($"HalfImage {o.Info.Index}", new WeakReference<object>(h.Image.Data)));
                 pixels.Add(($"BgraImage {o.Info.Index}", new WeakReference<object>(o.Sdr.Data)));
             }
         Task<Overlay.OverlayOutcome> shown = session.Show();
@@ -172,8 +170,10 @@ internal static class MemTest
         await shown;
         await Settle();
 
-        // The rest of a real snip (crop and composite), on a worker thread as SnipSession does it.
+        // The rest of a real snip (crop and composite), on a worker thread as SnipSession does it, and the release of
+        // the HDR frames that follows it.
         CaptureResult result = await Task.Run(() => CaptureResult.Build(outputs, _region, null, app.Grabber, app.Settings));
+        FrameGrabber.Release(outputs);
         ulong hash = Fingerprint(result);
         if (_previous != null && hash == _previousHash && !RealCapture)
         {
@@ -199,12 +199,13 @@ internal static class MemTest
 
         List<CapturedOutput> frames = app.Grabber.GrabSynthetic(_outputs, 101);
         CaptureResult result = CaptureResult.Build(frames, anchor.Bounds, null, app.Grabber, settings);
+        FrameGrabber.Release(frames);
         ulong image = Hash(result.Image.Data);
         List<ulong> crops = result.Crops.Select(c => Hash(c.Image.Data)).ToList();
         ulong pooled = Hash(frames[at].Sdr.Data);
         Line($"memtest: ownership at the full rect of {anchor.DeviceName} ({anchor.Width}x{anchor.Height}): composite {result.Image.Width}x{result.Image.Height} and {crops.Count} half crop(s) fingerprinted");
 
-        app.Grabber.GrabSynthetic(_outputs, 202);   // every pooled buffer overwritten, with a picture that differs everywhere
+        FrameGrabber.Release(app.Grabber.GrabSynthetic(_outputs, 202));   // every pooled buffer overwritten, with a picture that differs everywhere
         if (Hash(frames[at].Sdr.Data) == pooled)
         {
             _ownershipFailures++;   // the check has no teeth if the second grab did not actually change the buffers
@@ -265,8 +266,9 @@ internal static class MemTest
         return list;
     }
 
-    /// <summary>Managed bytes one output costs a grab: the half frame for an HDR panel, plus the BGRA frame for every panel.</summary>
-    private static long Bytes(OutputInfo o) => (long)o.Width * o.Height * (o.Hdr ? 12 : 4);
+    /// <summary>Managed bytes one output costs a grab: the BGRA frame for every panel, plus the half frame for an HDR
+    /// panel on the CPU path (on the GPU path it stays on the graphics card).</summary>
+    private static long Bytes(OutputInfo o) => (long)o.Width * o.Height * (o.Hdr && !App.Current.Grabber.UseGpu() ? 12 : 4);
 
     // ----- the numbers -------------------------------------------------------------------------------------------
 
@@ -279,11 +281,9 @@ internal static class MemTest
         long priv = me.PrivateMemorySize64;
         Line($"memtest: {label,-9} private {Mb(priv),7} MB  task manager {Mb(Interop.ProcessMemory.PrivateWorkingSet()),7} MB  managed {Mb(GC.GetTotalMemory(false)),7} MB  " +
              $"gc {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}  handles {me.HandleCount}  threads {me.Threads.Count}  " +
-             $"gdi {GetGuiResources(me.Handle, 0)}  user {GetGuiResources(me.Handle, 1)}");
+             $"gdi {User32.GetGuiResources(me.Handle, 0)}  user {User32.GetGuiResources(me.Handle, 1)}");
         return priv;
     }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetGuiResources(IntPtr process, uint flags);
 
     private static Dictionary<string, int>? _censusStart;
 

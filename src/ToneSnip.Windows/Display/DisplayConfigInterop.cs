@@ -12,7 +12,7 @@ public sealed record DisplayInfo(float SdrWhiteNits, uint? AdvancedColorBits, st
 }
 
 /// <summary>Reads per-monitor SDR white level, advanced-colour (HDR) state and the EDID name via the DisplayConfig API.</summary>
-public static class DisplayConfigInterop
+public static partial class DisplayConfigInterop
 {
     private const uint QdcOnlyActivePaths = 2;
     private const uint InfoGetSourceName = 1;
@@ -72,12 +72,12 @@ public static class DisplayConfigInterop
     private struct AdvancedColorInfo { public DeviceInfoHeader header; public uint value; public uint colorEncoding; public uint bitsPerColorChannel; }
 
     private const int ErrorInsufficientBuffer = 122;
-    [DllImport("user32.dll")] private static extern int GetDisplayConfigBufferSizes(uint flags, out uint numPaths, out uint numModes);
-    [DllImport("user32.dll")] private static extern int QueryDisplayConfig(uint flags, ref uint numPaths, [Out] PathInfo[] paths, ref uint numModes, [Out] ModeInfo[] modes, IntPtr currentTopologyId);
-    [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SourceDeviceName info);
-    [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref TargetDeviceName info);
-    [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SdrWhiteLevel info);
-    [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref AdvancedColorInfo info);
+    [LibraryImport("user32.dll")] private static partial int GetDisplayConfigBufferSizes(uint flags, out uint numPaths, out uint numModes);
+    [LibraryImport("user32.dll")] private static partial int QueryDisplayConfig(uint flags, ref uint numPaths, [Out] PathInfo[] paths, ref uint numModes, [Out] ModeInfo[] modes, IntPtr currentTopologyId);
+    [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SourceDeviceName info);   // runtime-marshalled: inline string
+    [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref TargetDeviceName info);   // runtime-marshalled: inline strings
+    [LibraryImport("user32.dll")] private static partial int DisplayConfigGetDeviceInfo(ref SdrWhiteLevel info);
+    [LibraryImport("user32.dll")] private static partial int DisplayConfigGetDeviceInfo(ref AdvancedColorInfo info);
 
     /// <summary>Keyed by GDI device name such as \\.\DISPLAY1 (matches DXGI OutputDescription.DeviceName).</summary>
     public static Dictionary<string, DisplayInfo> Query()

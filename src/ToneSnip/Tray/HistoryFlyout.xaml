@@ -115,6 +115,19 @@
               <Grid Background="Transparent" Tag="{x:Bind}" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}"
                     Loaded="OnRowLoaded" DoubleTapped="OnRowDoubleTapped"
                     PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited">
+                <!-- The hover strip has no room for more buttons (the grid's cells are full), so the rarer commands are
+                     on the context menu, in both layouts; P pins the focused row. -->
+                <Grid.ContextFlyout>
+                  <MenuFlyout>
+                    <MenuFlyoutItem Text="Pin to screen" Click="OnPin" Tag="{x:Bind}" KeyboardAcceleratorTextOverride="P"
+                                    AutomationProperties.AutomationId="Flyout_RowPin">
+                      <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPin}"/></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="Copy text" Click="OnCopyText" Tag="{x:Bind}" AutomationProperties.AutomationId="Flyout_RowCopyText">
+                      <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopyText}"/></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </Grid.ContextFlyout>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <Border Width="64" Height="40" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceLayer}"
                         VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
@@ -241,6 +254,17 @@
               <Grid Background="Transparent" Tag="{x:Bind}" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}"
                     Loaded="OnRowLoaded" DoubleTapped="OnRowDoubleTapped"
                     PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited">
+                <Grid.ContextFlyout>
+                  <MenuFlyout>
+                    <MenuFlyoutItem Text="Pin to screen" Click="OnPin" Tag="{x:Bind}" KeyboardAcceleratorTextOverride="P"
+                                    AutomationProperties.AutomationId="Flyout_CellPin">
+                      <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPin}"/></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem Text="Copy text" Click="OnCopyText" Tag="{x:Bind}" AutomationProperties.AutomationId="Flyout_CellCopyText">
+                      <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopyText}"/></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </Grid.ContextFlyout>
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Grid Width="164" Height="96">
                   <Border CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceLayer}"

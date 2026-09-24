@@ -169,9 +169,10 @@ public partial class SettingsWindow : Window
     {
         ThemeCombo.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Themes, s.Theme));
         TrayIconCombo.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.TrayIcons, s.TrayIcon));
-        StartWithWindows.IsOn = s.StartWithWindows; NitsReadout.IsOn = s.ShowNitsReadout;
+        StartWithWindows.IsOn = s.StartWithWindows; NitsReadout.IsOn = s.ShowNitsReadout; CaptureCursor.IsOn = s.CaptureCursor;
         DefaultDelay.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Delays, s.DefaultDelay));
         AfterSelect.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.AfterSelects, s.AfterSelect));
+        ColorFormat.SelectedIndex = Math.Max(0, Array.IndexOf(Core.Extract.ColorText.Formats, s.ColorFormat));
         PrivacyMode.IsOn = s.Annotate.PrivacyMode; ClipToLasso.IsOn = s.Annotate.ClipToLasso;
         DeleteToRecycleBin.IsOn = s.DeleteToRecycleBin;
         // Matched by each radio's Tag rather than by position in FlyoutLayouts.
@@ -248,8 +249,10 @@ public partial class SettingsWindow : Window
                 TrayIcon = SnipSettings.TrayIcons[Math.Max(0, TrayIconCombo.SelectedIndex)],
                 StartWithWindows = StartWithWindows.IsOn,
                 ShowNitsReadout = NitsReadout.IsOn,
+                CaptureCursor = CaptureCursor.IsOn,
                 DefaultDelay = SnipSettings.Delays[Math.Max(0, DefaultDelay.SelectedIndex)],
                 AfterSelect = SnipSettings.AfterSelects[Math.Max(0, AfterSelect.SelectedIndex)],
+                ColorFormat = Core.Extract.ColorText.Formats[Math.Max(0, ColorFormat.SelectedIndex)],
                 Annotate = s.Annotate with { PrivacyMode = PrivacyMode.IsOn, ClipToLasso = ClipToLasso.IsOn },
                 DeleteToRecycleBin = DeleteToRecycleBin.IsOn,
                 RecentFlyoutLayout = LayoutValue(LayoutGrid.IsChecked == true ? LayoutGrid : LayoutRow),

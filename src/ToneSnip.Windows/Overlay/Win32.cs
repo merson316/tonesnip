@@ -1,22 +1,23 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using ToneSnip.Core.Diagnostics;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.Windows.Overlay;
 
 /// <summary>
-/// The user32 declarations the overlay windows are built from. Everything here is physical pixels: the app's
-/// manifest is PerMonitorV2 and the overlay never goes through a framework's DIP layout.
+/// The user32 vocabulary the overlay windows are built from: keys, messages, styles and the foreground helper. The
+/// imports themselves are in <see cref="User32"/>. Everything here is physical pixels: the app's manifest is
+/// PerMonitorV2 and the overlay never goes through a framework's DIP layout.
 /// </summary>
 public static class Win32
 {
     // ----- virtual keys (the overlay's whole keyboard vocabulary) -----
-    public const int VkReturn = 0x0D, VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkEscape = 0x1B,
+    public const int VkTab = 0x09, VkReturn = 0x0D, VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkEscape = 0x1B, VkSpace = 0x20,
                      VkLeft = 0x25, VkUp = 0x26, VkRight = 0x27, VkDown = 0x28,
-                     VkA = 0x41, VkF = 0x46, VkL = 0x4C, VkR = 0x52, VkW = 0x57;
+                     VkA = 0x41, VkC = 0x43, VkF = 0x46, VkL = 0x4C, VkP = 0x50, VkR = 0x52, VkT = 0x54, VkW = 0x57;
 
     /// <summary>True while <paramref name="vk"/> is held.</summary>
-    public static bool KeyDown(int vk) => (GetKeyState(vk) & 0x8000) != 0;
+    public static bool KeyDown(int vk) => (User32.GetKeyState(vk) & 0x8000) != 0;
 
     // ----- messages -----
     internal const uint WmDestroy = 0x0002, WmActivate = 0x0006, WmPaint = 0x000F, WmEraseBkgnd = 0x0014,
@@ -33,59 +34,7 @@ public static class Win32
     /// <summary>IDC_ARROW, IDC_IBEAM, IDC_CROSS.</summary>
     internal const int IdcArrow = 32512, IdcIBeam = 32513, IdcCross = 32515;
 
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct Rect { public int Left, Top, Right, Bottom; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal unsafe struct PaintStruct
-    {
-        public IntPtr Hdc;
-        public int Erase;
-        public Rect Paint;
-        public int Restore, IncUpdate;
-        public fixed byte Reserved[32];   // rgbReserved, at native offset 36: bytes, so no alignment padding creeps in
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    internal struct WndClassEx
-    {
-        public uint Size, Style;
-        public IntPtr WndProc;
-        public int ClsExtra, WndExtra;
-        public IntPtr Instance, Icon, Cursor, Background, MenuName, ClassName, IconSm;
-    }
-
     internal delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern ushort RegisterClassExW(ref WndClassEx c);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern bool UnregisterClassW(string className, IntPtr instance);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern IntPtr CreateWindowExW(int exStyle, string className, string? windowName, int style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
-    [DllImport("user32.dll")] internal static extern IntPtr DefWindowProcW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")] internal static extern bool DestroyWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] internal static extern bool ShowWindow(IntPtr hwnd, int command);
-    [DllImport("user32.dll")] internal static extern bool InvalidateRect(IntPtr hwnd, ref Rect r, bool erase);
-    [DllImport("user32.dll")] internal static extern bool InvalidateRect(IntPtr hwnd, IntPtr all, bool erase);
-    [DllImport("user32.dll")] internal static extern bool UpdateWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] internal static extern IntPtr BeginPaint(IntPtr hwnd, out PaintStruct ps);
-    [DllImport("user32.dll")] internal static extern bool EndPaint(IntPtr hwnd, ref PaintStruct ps);
-    [DllImport("user32.dll")] internal static extern IntPtr SetCapture(IntPtr hwnd);
-    [DllImport("user32.dll")] internal static extern bool ReleaseCapture();
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr LoadCursorW(IntPtr instance, IntPtr name);
-    [DllImport("user32.dll")] internal static extern IntPtr SetCursor(IntPtr cursor);
-    [DllImport("user32.dll")] internal static extern IntPtr GetDC(IntPtr hwnd);
-    [DllImport("user32.dll")] internal static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
-    [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(IntPtr hwnd);
-    /// <summary>Copies the window's update region into <paramref name="rgn"/>; returns its type (3 = COMPLEXREGION).</summary>
-    [DllImport("user32.dll")] internal static extern int GetUpdateRgn(IntPtr hwnd, IntPtr rgn, bool erase);
-    [DllImport("user32.dll")] private static extern short GetKeyState(int vk);
-    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern IntPtr SetFocus(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr pid);
-    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint to, bool flag);
-    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr GetModuleHandleW(string? name);
 
     /// <summary>
     /// Brings a window to the foreground and gives it the keyboard even though this process is not the foreground one
@@ -97,16 +46,24 @@ public static class Win32
     public static void ForceForeground(IntPtr hwnd, ILog? log = null)
     {
         long started = Stopwatch.GetTimestamp();
-        IntPtr fg = GetForegroundWindow();
-        uint fgThread = fg != IntPtr.Zero ? GetWindowThreadProcessId(fg, IntPtr.Zero) : 0, me = GetCurrentThreadId();
-        bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
-        try { BringWindowToTop(hwnd); SetForegroundWindow(hwnd); SetFocus(hwnd); }
+        IntPtr fg = User32.GetForegroundWindow();
+        uint fgThread = fg != IntPtr.Zero ? User32.GetWindowThreadProcessId(fg, out _) : 0, me = Kernel32.GetCurrentThreadId();
+        bool attached = fgThread != 0 && fgThread != me && User32.AttachThreadInput(me, fgThread, true);
+        try { User32.BringWindowToTop(hwnd); User32.SetForegroundWindow(hwnd); User32.SetFocus(hwnd); }
         finally
         {
-            if (attached) AttachThreadInput(me, fgThread, false);
+            if (attached) User32.AttachThreadInput(me, fgThread, false);
             TimeSpan took = Stopwatch.GetElapsedTime(started);
             if (took > SlowForeground) log?.Warn($"foreground: taking the foreground took {took.TotalMilliseconds:F0} ms{(attached ? " with the foreground app's input attached" : "")}");
         }
+    }
+
+    /// <summary>The tick count (<c>GetTickCount</c>'s clock) of the last keyboard or mouse input anywhere in the session,
+    /// or 0 when Windows would not say.</summary>
+    public static uint LastInputTick()
+    {
+        var info = new User32.LastInputInfo { Size = 8 };
+        return User32.GetLastInputInfo(ref info) ? info.Time : 0;
     }
 
     private static readonly TimeSpan SlowForeground = TimeSpan.FromMilliseconds(200);

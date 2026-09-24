@@ -27,9 +27,12 @@ public interface IOverlayHost
     bool DrawingActive { get; }
     /// <summary>True once an annotation document exists, so the annotated back buffer replaces the frozen frame.</summary>
     bool HasDocument { get; }
+    /// <summary>The colour picker is armed: the pixel loupe follows the cursor in every frame style, over a drawing tool
+    /// too, magnifying the frozen frame the colour is copied from, with the colour under it as its readout.</summary>
+    bool Picking { get; }
 
     /// <summary>The cursor readout for one monitor, or null for none: in the pill (Normal: size and nits; Viewfinder:
-    /// nits) or under the loupe (Guides: coordinates and nits).</summary>
+    /// nits) or under the loupe (Guides: coordinates and nits; the picker: the colour and its nits).</summary>
     string? PillText(IntRect monitor);
     /// <summary>The size chip's text for the current selection (or hover), or null for no chip (nothing selected, or
     /// the Normal frame, whose size is in the pill).</summary>
@@ -38,6 +41,9 @@ public interface IOverlayHost
     FrameStyle FrameStyle { get; }
     /// <summary>The selection brackets' colour, 0xAARRGGBB; read once, when a window is created.</summary>
     uint FrameAccent { get; }
+    /// <summary>The window text, which is the frozen desktop's name for UI Automation (what Narrator reads when it takes
+    /// the keyboard); read once, when a window is created.</summary>
+    string WindowTitle { get; }
 
     void OnMouseMove(int x, int y);
     void OnMouseDown(int x, int y);
@@ -45,8 +51,9 @@ public interface IOverlayHost
     void OnRightClick();
     /// <summary>The mouse capture went to something else mid-drag: the matching button-up will never arrive.</summary>
     void OnCaptureLost();
-    /// <summary>A key went down: a virtual-key code plus the modifier state read from the keyboard, not from a framework.</summary>
-    void OnKey(int vk, bool ctrl, bool shift, bool alt);
+    /// <summary>A key went down: a virtual-key code plus the modifier state read from the keyboard, not from a framework.
+    /// <paramref name="repeat"/> when it was already down (WM_KEYDOWN's auto-repeat).</summary>
+    void OnKey(int vk, bool ctrl, bool shift, bool alt, bool repeat);
     /// <summary>An overlay window took the foreground; <paramref name="hwnd"/> says which, so the host can refocus it later.</summary>
     void OnActivated(IntPtr hwnd);
     /// <summary>The first WM_PAINT of any overlay window: how long the frozen desktop took to appear.</summary>

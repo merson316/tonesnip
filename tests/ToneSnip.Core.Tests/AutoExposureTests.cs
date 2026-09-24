@@ -1,5 +1,6 @@
 using ToneSnip.Core.Color;
 using ToneSnip.Core.Geometry;
+using ToneSnip.Core.Hdr;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Core.Tonemap;
 using Xunit;
@@ -101,5 +102,46 @@ public class AutoExposureTests
         for (int i = 0; i < 200; i++) dark.Data[i * 4 + 1] = Transfer.FloatToHalf(0.25f + i * 0.01f);   // 2 % lit
         Assert.Equal(SortedPercentile99(dark), AutoExposure.Percentile99(dark, new IntRect(0, 0, 100, 100)));
         Assert.Equal(0f, AutoExposure.Percentile99(Gray(100, 100, 0f), new IntRect(0, 0, 100, 100)));
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1400, 1400, 1)]
+    [InlineData(10, 20, 900, 500, 1)]
+    [InlineData(1233, 7, 4, 1300, 1)]
+    [InlineData(0, 0, 2100, 1000, 2)]    // two million pixels: every second one
+    [InlineData(5, 3, 2090, 990, 2)]     // a step that does not divide the width
+    public void Samples_read_from_a_frame_give_the_same_exposure_as_the_frame_itself(int x, int y, int w, int h, int seed)
+    {
+        HalfImage frame = Random(2100, 1400, seed);
+        var rect = new IntRect(x, y, w, h);
+        float[] samples = new HalfFrame(frame).Luminances(rect, AutoExposure.SampleStep(rect));
+        Assert.Equal(AutoExposure.Percentile99(frame, rect), AutoExposure.Percentile99(samples));
+        // Through the interface, as a frame on the graphics card is measured.
+        using var elsewhere = new ElsewhereFrame(new HalfFrame(frame));
+        Assert.Equal(AutoExposure.Compute(frame.Crop(rect), 203f, 1.25f), AutoExposure.Compute(elsewhere, rect, 203f, 1.25f));
+    }
+
+    [Fact]
+    public void No_samples_or_only_dark_ones_give_zero()
+    {
+        Assert.Equal(0f, AutoExposure.Percentile99(Array.Empty<float>()));
+        Assert.Equal(0f, AutoExposure.Percentile99(new[] { 0f, -1f, float.NaN }));
+    }
+
+    /// <summary>An <see cref="IHdrFrame"/> that is not a <see cref="HalfFrame"/>, so auto exposure takes the path a frame
+    /// kept on the graphics card takes: its samples, read through <see cref="IHdrFrame.Luminances"/>.</summary>
+    private sealed class ElsewhereFrame(HalfFrame inner) : IHdrFrame
+    {
+        public int Width => inner.Width;
+        public int Height => inner.Height;
+        public bool Readable => inner.Readable;
+        public bool TrySample(int x, int y, out float r, out float g, out float b) => inner.TrySample(x, y, out r, out g, out b);
+        public bool TryStats(IntRect rect, out float peak, out float mean) => inner.TryStats(rect, out peak, out mean);
+        public void Tonemap(TonemapCurve curve, IntRect source, BgraImage target, int x, int y) => inner.Tonemap(curve, source, target, x, y);
+        public HalfImage Crop(IntRect rect) => throw new InvalidOperationException("auto exposure must not read a crop");
+        public HalfImage Downsample(int step) => inner.Downsample(step);
+        public float[] Luminances(IntRect rect, int step) => inner.Luminances(rect, step);
+        public ZebraMask Zebra(float sdrWhiteScRgb, float exposure) => inner.Zebra(sdrWhiteScRgb, exposure);
+        public void Dispose() => inner.Dispose();
     }
 }

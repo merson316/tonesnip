@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using ToneSnip.Windows.Interop;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
@@ -15,9 +15,6 @@ internal static class Program
     /// 0 for success, 1 for a failed harness run and 2 for <c>HarnessGuard</c> refusing a busy desktop.</summary>
     private const int UsageExit = 64;
 
-    private const int AttachParentProcess = -1;
-    [DllImport("kernel32.dll")] private static extern bool AttachConsole(int pid);
-
     /// <summary>
     /// Prints to the parent process's console, if there is one. A <c>WinExe</c> owns no console; without a parent
     /// console (launched from Explorer) the write silently goes nowhere, which is preferable to <c>AllocConsole</c>
@@ -27,7 +24,7 @@ internal static class Program
     /// </summary>
     private static void Print(string text)
     {
-        AttachConsole(AttachParentProcess);
+        Kernel32.AttachConsole(Kernel32.AttachParentProcess);
         Console.WriteLine(text);
     }
 
@@ -85,6 +82,7 @@ internal static class Program
 
         WinRT.ComWrappersSupport.InitializeComWrappers();
         var log = new Core.Diagnostics.FileLog(AppPaths.LogPath);
+        ExtractionCleanup.Start(log);
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { log.Info("process exit (ProcessExit event)"); } catch { } };
         // XAML's UnhandledException (App.Launch) sees only exceptions on the UI thread's dispatch. These catch the rest:
         // a pool or hook thread that throws kills the process, and each FileLog write is complete on disk when it

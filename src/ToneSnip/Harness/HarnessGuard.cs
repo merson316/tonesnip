@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.App;
 
@@ -21,10 +21,6 @@ internal static class HarnessGuard
     /// <summary>Seconds waited before giving up, polling once a second.</summary>
     private const int WaitSeconds = 300;
 
-    [DllImport("kernel32.dll")] private static extern bool AttachConsole(int pid);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string? className, string? title);
 
     /// <summary>
     /// Blocks while a snip is in flight, for up to five minutes. True when the desktop is clear; false when it never
@@ -34,7 +30,7 @@ internal static class HarnessGuard
     internal static bool WaitForIdleDesktop(string harness)
     {
         if (!SnipInFlight()) return true;
-        AttachConsole(-1);   // WinExe: reattach to the launching console, as the harnesses themselves do
+        Kernel32.AttachConsole(Kernel32.AttachParentProcess);   // WinExe: reattach to the launching console, as the harnesses themselves do
         Log($"{harness}: a snip is in flight, waiting up to {WaitSeconds} s for the overlay to close");
         for (int second = 0; second < WaitSeconds; second++)
         {
@@ -49,8 +45,8 @@ internal static class HarnessGuard
 
     /// <summary>True while the running app has an overlay or a countdown pill on screen.</summary>
     private static bool SnipInFlight()
-        => FindWindowExW(IntPtr.Zero, IntPtr.Zero, OverlayClass, null) != IntPtr.Zero
-        || FindWindowExW(IntPtr.Zero, IntPtr.Zero, null, CountdownTitle) != IntPtr.Zero;
+        => User32.FindWindowExW(IntPtr.Zero, IntPtr.Zero, OverlayClass, null) != IntPtr.Zero
+        || User32.FindWindowExW(IntPtr.Zero, IntPtr.Zero, null, CountdownTitle) != IntPtr.Zero;
 
     /// <summary>To the console and the log. Neither may throw: the guard runs before the app exists, and there may be
     /// no console.</summary>

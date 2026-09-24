@@ -5,6 +5,7 @@ using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Windows.Imaging;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.App;
 
@@ -14,10 +15,8 @@ namespace ToneSnip.App;
 /// rasterizer, WIC round-trips, HDR encoders). The only file written is an 8 x 8 PNG under %TEMP% that the Recycle
 /// Bin check creates and recycles.
 /// </summary>
-public static class SelfTest
+public static partial class SelfTest
 {
-    [DllImport("kernel32.dll")] private static extern bool AttachConsole(int pid);
-
     /// <summary>The pinned rasterizer fingerprints. Re-pin only together with a deliberate rasterizer change.</summary>
     private const string ExpectedAnnotateHash = "D2CC8BB51C078E86", ExpectedChromeHash = "3B0E390B82FD6C83";
 
@@ -35,7 +34,7 @@ public static class SelfTest
     /// will not match). The fingerprints are printed either way.</param>
     public static int Run(bool noCapture = false, bool strictHashes = false)
     {
-        AttachConsole(-1);   // WinExe: reattach to the launching console so Console.WriteLine is visible
+        Kernel32.AttachConsole(Kernel32.AttachParentProcess);   // WinExe: reattach to the launching console so Console.WriteLine is visible
         var log = new FileLog(AppPaths.LogPath);
         var sw = Stopwatch.StartNew();
         int ok = 1;
@@ -57,10 +56,11 @@ public static class SelfTest
                 // back through the GPU path (not the GDI fallback), at its own size, not black, and as a half image
                 // exactly when the monitor is in HDR.
                 grabber = new Capture.FrameGrabber(() => new Core.Config.SnipSettings(), log);
-                Console.WriteLine($"capture: Windows.Graphics.Capture supported={ToneSnip.Windows.Capture.ScreenCapture.Supported}");
+                Console.WriteLine($"capture: Windows.Graphics.Capture supported={ToneSnip.Windows.Capture.ScreenCapture.Supported}, HDR frames on the {(grabber.UseGpu() ? "GPU" : "CPU")}");
                 ok = 0;
                 for (int pass = 1; pass <= 2; pass++)   // the first pass makes the device, the second is a warm snip
                 {
+                    Capture.FrameGrabber.Release(grabbed);
                     sw.Restart();
                     grabbed = grabber.GrabAll();
                     long tPass = sw.ElapsedMilliseconds;
@@ -73,13 +73,15 @@ public static class SelfTest
                     OutputInfo want = described.First(d => d.Index == o.Info.Index);
                     double black = BlackShare(o.Sdr);
                     bool viaGpu = !grabber.LastFallbacks.Contains(want.DeviceName);
-                    bool right = o.Sdr.Width == want.Width && o.Sdr.Height == want.Height && black < 0.98 && viaGpu && (o.Half != null) == want.Hdr;
-                    Console.WriteLine($"{want.DeviceName}: {want.Bounds} hdr={want.Hdr} sdrWhite={want.SdrWhiteNits:F0} peak={want.PeakNits:F0} frame {o.Sdr.Width}x{o.Sdr.Height} {(o.Half != null ? "half" : "bgra8")} black={black:P0} gpu={viaGpu}{(right ? "" : " FAILED")}");
+                    bool right = o.Sdr.Width == want.Width && o.Sdr.Height == want.Height && black < 0.98 && viaGpu && (o.Hdr != null) == want.Hdr;
+                    string kind = o.Hdr switch { null => "bgra8", Core.Hdr.HalfFrame => "half", _ => "hdr on the gpu" };
+                    Console.WriteLine($"{want.DeviceName}: {want.Bounds} hdr={want.Hdr} sdrWhite={want.SdrWhiteNits:F0} peak={want.PeakNits:F0} frame {o.Sdr.Width}x{o.Sdr.Height} {kind} black={black:P0} gpu={viaGpu}{(right ? "" : " FAILED")}");
                     if (!right) ok = 0;
                 }
 
                 // End-to-end through the real snip path (half frames, tonemap, composite, PNG encode), all in memory, and a check
                 // that each HDR output's SDR copy is the tonemap of its half frame.
+                Capture.FrameGrabber.Release(grabbed);
                 sw.Restart();
                 grabbed = grabber.GrabAll();
                 long tGrabAll = sw.ElapsedMilliseconds;
@@ -91,14 +93,10 @@ public static class SelfTest
                 byte[] png = Bitmaps.EncodePng(result.Image);
                 Console.WriteLine($"snip path: grab all {tGrabAll} ms, composite {result.Image.Width}x{result.Image.Height} in {tBuild} ms, png {png.Length / 1024} KB in {sw.ElapsedMilliseconds} ms, hdr={result.AnyHdr}, crops={result.Crops.Count}");
 
-                foreach (Capture.CapturedOutput o in grabbed.Where(o => o.Half != null))
-                {
-                    BgraImage again = grabber.Tonemap(o.Half!, o.Info);
-                    int worst = 0;
-                    for (int i = 0; i < again.Data.Length; i++) worst = Math.Max(worst, Math.Abs(again.Data[i] - o.Sdr.Data[i]));
-                    Console.WriteLine($"{o.Info.DeviceName}: grabbed SDR copy vs a fresh tonemap worst difference {worst} code values");
-                    if (worst > 1) ok = 0;
-                }
+                // The grabbed SDR copy of each HDR output against the CPU tonemap of its pixels, and on the GPU path the
+                // frame's readouts against the same pixels in memory (SelfTest.Gpu.cs).
+                if (!HdrFrameChecks(grabber, grabbed)) ok = 0;
+                if (!WindowCaptureChecks(grabber)) ok = 0;
             }
 
             // WIC: a PNG must round-trip byte-identical and a JPEG at the same size. Without a frame the subject is
@@ -265,8 +263,15 @@ public static class SelfTest
                 if (!hashesMatch) Console.WriteLine(strictHashes ? "annotate: FAILED fingerprints differ (--strict-hashes)" : "annotate: fingerprints differ (not fatal without --strict-hashes; expected on machines without the pinned fonts)");
                 if (!hashesMatch && strictHashes) ok = 0;
             }
+
+            // Last, because it grabs again and so overwrites the pooled frames the checks above read.
+            if (grabber != null && !GpuStressAndContention(grabber, grabbed)) ok = 0;
         }
-        finally { grabber?.Dispose(); }
+        finally
+        {
+            Capture.FrameGrabber.Release(grabbed);
+            grabber?.Dispose();
+        }
 
         // HDR sidecar encoders, in memory: JPEG XR must round-trip bit-for-bit; the PNG and the gain-map JPEG must decode.
         try

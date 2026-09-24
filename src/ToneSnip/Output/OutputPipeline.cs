@@ -37,9 +37,7 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
         (BgraImage img, byte[]? png) = await Task.Run(() => Write(result, s, accent));
         result.Output = img;   // the rendered image; Compact below keeps it as the PNG
         Completed?.Invoke(result);
-#if TONESNIP_HARNESS
-        MemoryProbe.Mark("after toast/viewer");
-#endif
+        DebugHooks.MemoryMark("after toast/viewer");
         if (!KeepAlive(s))
         {
             // Encode on the pool, but compact on this thread, where Completed's listeners read the result.
@@ -60,9 +58,7 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
         if (s.CopyToClipboard && png != null)
         {
             try { ClipboardWriter.Set(img, png, log); result.Copied = true; log.Debug($"clipboard: {img.Width}x{img.Height}"); } catch (Exception e) { log.Error("clipboard: " + e.Message); }
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("after clipboard");
-#endif
+            DebugHooks.MemoryMark("after clipboard");
         }
         if (s.AutoSave)
         {
@@ -76,18 +72,14 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
                 App.Current.Timing("saved", sw);
             }
             catch (Exception e) { log.Error("save: " + e.Message); }
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("after save");
-#endif
+            DebugHooks.MemoryMark("after save");
         }
         if (WritesSidecar(s) && result.SavedPath != null && result.Crops.Count > 0)
         {
             // The HDR sidecar must never take the SDR save, Completed or Compact down with it.
             try { HdrOutput.Write(result, img, result.SavedPath, s.Hdr.File, s, accent, log); }
             catch (Exception e) { log.Error("hdr: " + e.Message); }
-#if TONESNIP_HARNESS
-            MemoryProbe.Mark("after hdr");
-#endif
+            DebugHooks.MemoryMark("after hdr");
         }
         return (img, png);
     }

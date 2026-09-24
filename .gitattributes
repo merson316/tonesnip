@@ -1,0 +1,19 @@
+# Text is stored with LF. Git picks out text itself; the lines below only pin the cases where its guess or the
+# checkout's line ending matters.
+* text=auto
+
+# The PowerShell scripts run on Windows, from a Windows checkout or a copy of one, where Windows tools expect CRLF.
+*.ps1 text eol=crlf
+# Visual Studio rewrites the solution with CRLF.
+*.sln text eol=crlf
+
+# Binaries: never converted, never diffed as text.
+*.png binary
+*.ico binary
+*.cer binary
+*.pfx binary
+*.msix binary
+*.exe binary
+*.dll binary
+# Compiled shader bytecode (src/ToneSnip.Windows/Capture/Shaders).
+*.cso binary

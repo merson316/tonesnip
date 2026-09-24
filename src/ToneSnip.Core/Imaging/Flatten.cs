@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace ToneSnip.Core.Imaging;
 
 /// <summary>Composites a straight-alpha image onto an opaque background, for formats with no alpha.</summary>
@@ -21,11 +23,16 @@ public static class Flatten
         {
             int a = d[i + 3];
             if (a == 255) continue;
-            d[i] = (byte)((d[i] * a + 255 * (255 - a)) / 255);
-            d[i + 1] = (byte)((d[i + 1] * a + 255 * (255 - a)) / 255);
-            d[i + 2] = (byte)((d[i + 2] * a + 255 * (255 - a)) / 255);
+            d[i] = OverWhite(d[i], a);
+            d[i + 1] = OverWhite(d[i + 1], a);
+            d[i + 2] = OverWhite(d[i + 2], a);
             d[i + 3] = 255;
         }
         return o;
     }
+
+    /// <summary>One straight-alpha colour channel composited over white. Shared by <see cref="OnWhite"/> and the SDR
+    /// JPEG encoder, which must agree to the last bit (see <see cref="OnWhite"/>).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static byte OverWhite(byte channel, int alpha) => (byte)((channel * alpha + 255 * (255 - alpha)) / 255);
 }

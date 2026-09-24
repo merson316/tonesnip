@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A measuring tool, not part of the app: compares ToneSnip.Windows' GPU tonemap path with the CPU path on this
+       machine's real captures. See README.md. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>gpu-tonemap-bench</AssemblyName>
+    <RootNamespace>GpuTonemapBench</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ToneSnip.Windows/ToneSnip.Windows.csproj" />
+    <!-- `compile` times a run-time compile of the source the app's bytecode is built from. -->
+    <None Include="../../src/ToneSnip.Windows/Capture/Shaders/Tonemap.hlsl" Link="Tonemap.hlsl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

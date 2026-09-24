@@ -38,20 +38,26 @@ public sealed partial class ToastWindow : PopupWindow
     private readonly ILog _log;
     private readonly Action<CaptureResult> _open;
     private readonly Action<CaptureResult> _edit;
+    private readonly Action<CaptureResult> _pin;
     private readonly DispatcherQueueTimer _dwell;
     private Storyboard? _fade;
     private CaptureResult? _result;
     private bool _dismissing;
     /// <summary>Set once the first placement has happened, so a re-bind re-places instead of fading in again.</summary>
     private bool _placed;
+    /// <summary>The empty thumbnail slot's glyph from the XAML, put back when a notice (which shows its own) gives way
+    /// to a snip.</summary>
+    private readonly string _thumbGlyph;
 
-    internal ToastWindow(ILog log, Action<CaptureResult> open, Action<CaptureResult> edit) : base(activate: false)
+    internal ToastWindow(ILog log, Action<CaptureResult> open, Action<CaptureResult> edit, Action<CaptureResult> pin) : base(activate: false)
     {
         _log = log;
         _open = open;
         _edit = edit;
+        _pin = pin;
         InitializeComponent();
         Theme.ThemeManager.Attach(this);
+        _thumbGlyph = ThumbPlaceholder.Glyph;
 
         _dwell = DispatcherQueue.CreateTimer();
         _dwell.IsRepeating = false;
@@ -100,6 +106,7 @@ public sealed partial class ToastWindow : PopupWindow
 
         // Open and Edit work on the in-memory result; "Show in folder" needs a file.
         FolderLink.Visibility = saved ? Visibility.Visible : Visibility.Collapsed;
+        ShowLinks(true);
         Controls.ThumbnailLoader.Load(thumbPath, ThumbDecodeWidth, ShowThumb, (bmp, ex) =>
         {
             if (ex != null) _log.Warn("toast thumbnail: " + ex.Message);
@@ -110,6 +117,36 @@ public sealed partial class ToastWindow : PopupWindow
         _dismissing = false;
         if (_placed) Place();
         RestartDwell();
+    }
+
+    /// <summary>
+    /// Puts a notice with no snip behind it on the card ("Text copied", "No text found"): the glyph in the picture
+    /// slot, the detail on up to two lines, and no links, since there is nothing to open. Re-binds and re-places like
+    /// <see cref="Bind"/>.
+    /// </summary>
+    internal void BindNotice(string title, string detail, string glyph)
+    {
+        _result = null;
+        TitleText.Text = title;
+        AutomationProperties.SetName(TitleText, title + ", " + detail);
+        Controls.LiveRegion.Announce(TitleText);
+        DetailText.Text = detail;
+        AutomationProperties.SetName(Root, title + ", " + detail);
+        ShowLinks(false);
+        Thumb.Source = null;
+        ThumbPlaceholder.Glyph = glyph;
+        ThumbPlaceholder.Visibility = Visibility.Visible;
+        _dismissing = false;
+        if (_placed) Place();
+        RestartDwell();
+    }
+
+    /// <summary>A snip's card has its links and a one-line detail; a notice has neither links nor the snip glyph.</summary>
+    private void ShowLinks(bool on)
+    {
+        Links.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        DetailText.TextWrapping = on ? TextWrapping.NoWrap : TextWrapping.Wrap;
+        if (on) ThumbPlaceholder.Glyph = _thumbGlyph;
     }
 
     /// <summary>Puts a bitmap in the thumbnail slot, or with none the placeholder glyph.</summary>
@@ -221,6 +258,12 @@ public sealed partial class ToastWindow : PopupWindow
     private void OnEdit(object sender, RoutedEventArgs e)
     {
         if (_result is { } r) _edit(r);
+        Dismiss();
+    }
+
+    private void OnPin(object sender, RoutedEventArgs e)
+    {
+        if (_result is { } r) _pin(r);
         Dismiss();
     }
 

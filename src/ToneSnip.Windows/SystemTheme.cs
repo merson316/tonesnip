@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.Windows;
 
@@ -10,21 +11,6 @@ public static class SystemTheme
 {
     private const uint SpiGetHighContrast = 0x0042;
     private const uint HcfHighContrastOn = 0x01;
-
-    /// <summary>HIGHCONTRASTW. <c>lpszDefaultScheme</c> is left null: SPI_GETHIGHCONTRAST only copies the scheme name
-    /// into a caller-supplied buffer, so the flags come back on their own.</summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private struct HighContrast
-    {
-        public uint Size;
-        public uint Flags;
-        public IntPtr DefaultScheme;
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SystemParametersInfoW(uint action, uint param, ref HighContrast data, uint update);
-
-    [DllImport("user32.dll")] private static extern uint GetSysColor(int index);
 
     /// <summary>
     /// The <c>GetSysColor</c> indices the owner-drawn tray surfaces paint from while <see cref="IsHighContrast"/> is
@@ -46,7 +32,7 @@ public static class SystemTheme
     {
         try
         {
-            uint bgr = GetSysColor(index);
+            uint bgr = User32.GetSysColor(index);
             return 0xFF000000u | ((bgr & 0xFF) << 16) | (bgr & 0xFF00u) | ((bgr >> 16) & 0xFF);
         }
         catch (DllNotFoundException) { return 0xFF000000u; }
@@ -62,10 +48,10 @@ public static class SystemTheme
     /// call fails, so the app keeps its own palette.</summary>
     public static bool IsHighContrast()
     {
-        var data = new HighContrast { Size = (uint)Marshal.SizeOf<HighContrast>() };
+        var data = new User32.HighContrast { Size = (uint)Marshal.SizeOf<User32.HighContrast>() };
         try
         {
-            if (!SystemParametersInfoW(SpiGetHighContrast, data.Size, ref data, 0)) return false;
+            if (!User32.SystemParametersInfoW(SpiGetHighContrast, data.Size, ref data, 0)) return false;
         }
         catch (DllNotFoundException) { return false; }
         catch (EntryPointNotFoundException) { return false; }

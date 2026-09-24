@@ -2,6 +2,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <!-- xunit v3 builds each test project as its own runner executable. -->
+    <OutputType>Exe</OutputType>
     <RootNamespace>ToneSnip.Core.Tests</RootNamespace>
     <!-- The repo-wide Directory.Build.props sets InvariantGlobalization (the app ships English-only, codereview 6.1),
          which also makes `new CultureInfo("th-TH")` throw. The tests are exactly where a real culture has to exist:
@@ -9,11 +11,16 @@
          Tests only — the app's own setting is untouched. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <PredefinedCulturesOnly>false</PredefinedCulturesOnly>
+    <!-- ShaderCompiler (linked below) calls d3dcompiler_47 through function pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <ProjectReference Include="../../src/ToneSnip.Core/ToneSnip.Core.csproj" />
+    <!-- The shader bytecode check compiles Tonemap.hlsl with the app's own compiler settings. Linked rather than a
+         reference to ToneSnip.Windows, which targets Windows only and would take the Linux CI leg with it. -->
+    <Compile Include="../../src/ToneSnip.Windows/Capture/ShaderCompiler.cs" Link="Hdr/ShaderCompiler.cs" />
   </ItemGroup>
 </Project>

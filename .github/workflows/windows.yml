@@ -14,19 +14,30 @@ permissions:
 # cancels the branch run still going for its commit, but is never cancelled itself, since it is the one that
 # releases. A branch run that starts after its tag's run waits for it instead. A newer push to a pull request
 # cancels the build of the push it replaces.
+# cancel-in-progress is read from the run that arrives, and decides whether that run cancels the one already going
+# in its group: so it is true for a tag and a pull request, and false for a branch push. (Until 1.0.4 it was the
+# other way round, and a tag's run sat pending behind the branch run for its commit, doubling the release time.)
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'pull_request' }}
 
 jobs:
   build:
     # The WinUI 3 app and the MSIX need the Windows .NET SDK. ci.yml covers the cross-platform checks.
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           global-json-file: global.json
+      # The NuGet cache, keyed on everything that names a package version. Not setup-dotnet's `cache: true`, which
+      # needs committed packages.lock.json files: the app's lock file would pin Microsoft.NET.ILLink.Tasks, whose version
+      # follows the SDK patch, so every SDK update on the runner or locally would break a locked restore.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Core tests
         run: dotnet test tests/ToneSnip.Core.Tests -c Release
@@ -133,11 +144,11 @@ jobs:
         shell: pwsh
         run: Remove-Item -Force -ErrorAction SilentlyContinue "$PWD\cert.pfx"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tonesnip-exe
           path: dist/tonesnip/tonesnip.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tonesnip-msix
           path: dist/msix/tonesnip-x64.msix
@@ -152,7 +163,7 @@ jobs:
     steps:
       # packaging/tonesnip.cer exists only once packaging/make-cert.ps1 has been run and its output committed;
       # fail_on_unmatched_files: false lets a release go out without it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # <Version> in the csproj is the only version number: it names the MSIX and stamps its manifest. A tag that
       # says otherwise would publish a release whose files carry a different version from its name.
       - name: Check the tag matches the version
@@ -168,14 +179,26 @@ jobs:
             exit 1
           fi
           echo "tag $GITHUB_REF_NAME matches <Version>$versions</Version>"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
+      # One line per released file, in `sha256sum -c` format, so a download can be checked against the release.
+      - name: Checksums
+        shell: bash
+        run: |
+          files=(dist/tonesnip-msix/tonesnip-x64.msix dist/tonesnip-exe/tonesnip.exe)
+          if [ -f packaging/tonesnip.cer ]; then files+=(packaging/tonesnip.cer); fi
+          for f in "${files[@]}"; do (cd "$(dirname "$f")" && sha256sum "$(basename "$f")"); done > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      # A draft: the release goes public only once its notes are written, with
+      #   gh release edit vX.Y.Z --notes-file notes.md --draft=false
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
+          draft: true
           fail_on_unmatched_files: false
           files: |
             dist/tonesnip-msix/tonesnip-x64.msix
             dist/tonesnip-exe/tonesnip.exe
             packaging/tonesnip.cer
+            SHA256SUMS.txt

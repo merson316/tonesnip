@@ -1,0 +1,66 @@
+<interop:PopupWindow x:Class="ToneSnip.App.Output.PinWindow"
+                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:interop="using:ToneSnip.App.Interop">
+  <!--
+    A snip pinned to the screen: the picture at its own pixel size, borderless, topmost and draggable. The only chrome
+    is the 1 px Stroke outline (the DWM border is off on popups) and a close button that appears while the pointer is
+    over the pin. Everything else is on the context menu (Shift+F10 or the Menu key from the close button, which has
+    the focus) and the keyboard, so the picture is not covered.
+  -->
+  <Grid x:Name="Root" Background="{ThemeResource SurfaceBase}" AutomationProperties.AutomationId="Pin_Root"
+        KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid.KeyboardAccelerators>
+      <KeyboardAccelerator Key="C" Modifiers="Control" Invoked="OnCopyAccelerator"/>
+      <KeyboardAccelerator Key="T" Modifiers="Control" Invoked="OnCopyTextAccelerator"/>
+      <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="OnSaveAccelerator"/>
+      <KeyboardAccelerator Key="Number0" Modifiers="Control" Invoked="OnActualSizeAccelerator"/>
+    </Grid.KeyboardAccelerators>
+    <Grid.ContextFlyout>
+      <MenuFlyout>
+        <MenuFlyoutItem Text="Copy" Click="OnCopy" KeyboardAcceleratorTextOverride="Ctrl+C" AutomationProperties.AutomationId="Pin_Copy">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopy}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+        <MenuFlyoutItem Text="Copy text" Click="OnCopyText" KeyboardAcceleratorTextOverride="Ctrl+T" AutomationProperties.AutomationId="Pin_CopyText">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopyText}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+        <MenuFlyoutItem Text="Save as…" Click="OnSaveAs" KeyboardAcceleratorTextOverride="Ctrl+S" AutomationProperties.AutomationId="Pin_SaveAs">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSaveAs}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+        <MenuFlyoutItem Text="Open in editor" Click="OnEdit" AutomationProperties.AutomationId="Pin_Edit">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphAnnotate}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+        <MenuFlyoutSeparator/>
+        <MenuFlyoutItem Text="Zoom in" Click="OnZoomIn" KeyboardAcceleratorTextOverride="+" AutomationProperties.AutomationId="Pin_ZoomIn">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZoomIn}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+        <MenuFlyoutItem Text="Zoom out" Click="OnZoomOut" KeyboardAcceleratorTextOverride="-" AutomationProperties.AutomationId="Pin_ZoomOut">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZoomOut}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+        <MenuFlyoutItem x:Name="ActualSizeItem" Text="Actual size" Click="OnActualSize" KeyboardAcceleratorTextOverride="Ctrl+0"
+                        AutomationProperties.AutomationId="Pin_ActualSize"/>
+        <MenuFlyoutItem x:Name="OpaqueItem" Text="Fully opaque" Click="OnOpaque" AutomationProperties.AutomationId="Pin_Opaque"/>
+        <MenuFlyoutSeparator/>
+        <MenuFlyoutItem Text="Close" Click="OnClose" KeyboardAcceleratorTextOverride="Esc" AutomationProperties.AutomationId="Pin_CloseItem">
+          <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCancel}"/></MenuFlyoutItem.Icon>
+        </MenuFlyoutItem>
+      </MenuFlyout>
+    </Grid.ContextFlyout>
+
+    <!-- Raw: the window's name describes the pin, so a screen reader does not also announce an unnamed image. -->
+    <Image x:Name="Picture" Stretch="Fill" AutomationProperties.AccessibilityView="Raw"/>
+    <Border BorderBrush="{ThemeResource Stroke}" BorderThickness="1" IsHitTestVisible="False"
+            AutomationProperties.AccessibilityView="Raw"/>
+
+    <!-- On a SurfaceBase chip so it reads over any picture; fully visible only while the pointer is over the pin or it
+         has keyboard focus. The 4 px inset keeps it off the outline. -->
+    <Button x:Name="CloseBtn" Style="{StaticResource SubtleButton}" Width="28" Height="28" Padding="0" Margin="4"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Background="{ThemeResource SurfaceBase}" Opacity="0"
+            ToolTipService.ToolTip="Close (Esc)" Click="OnClose"
+            AutomationProperties.Name="Close pin" AutomationProperties.AutomationId="Pin_CloseButton"
+            AutomationProperties.AcceleratorKey="Escape">
+      <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphToastClose}" FontSize="12"
+                Foreground="{ThemeResource TextSecondary}"/>
+    </Button>
+  </Grid>
+</interop:PopupWindow>

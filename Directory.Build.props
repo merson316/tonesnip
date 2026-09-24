@@ -5,6 +5,15 @@
     <LangVersion>latest</LangVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- The IDE style rules run in the build too, so a rule raised to warning in .editorconfig is enforced there;
+         today every rule is at suggestion and the build prints none. AnalysisLevel stays at the SDK default:
+         latest-minimum would add 68 warnings and latest-recommended 389 (299 of them CA1707, the underscores in test
+         names). -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- CI fails on any compiler or analyzer warning; locally they stay warnings. GitHub Actions sets CI=true. The
+         warnings the Windows App SDK's targets print about single-file, and the MSIX tooling's missing mspdbcmf.exe,
+         are MSBuild messages rather than compiler warnings, so they are not affected. -->
+    <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <!-- The switch between the production app and the debug build. Off by default. `-p:ToneSnipHarness=true`

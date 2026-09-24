@@ -4,6 +4,7 @@ using ToneSnip.Core.Capture;
 using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.Windows.Overlay;
 
@@ -30,10 +31,10 @@ public sealed class OverlayWindow : IDisposable
     private static readonly object Gate = new();
     private static bool _registered;
 
-    private static readonly IntPtr CursorCross = Win32.LoadCursorW(IntPtr.Zero, (IntPtr)Win32.IdcCross);
-    private static readonly IntPtr CursorArrow = Win32.LoadCursorW(IntPtr.Zero, (IntPtr)Win32.IdcArrow);
-    private static readonly IntPtr CursorIBeam = Win32.LoadCursorW(IntPtr.Zero, (IntPtr)Win32.IdcIBeam);
-    private static readonly IntPtr NullPen = Gdi.GetStockObject(Gdi.NullPen);
+    private static readonly IntPtr CursorCross = User32.LoadCursorW(IntPtr.Zero, (IntPtr)Win32.IdcCross);
+    private static readonly IntPtr CursorArrow = User32.LoadCursorW(IntPtr.Zero, (IntPtr)Win32.IdcArrow);
+    private static readonly IntPtr CursorIBeam = User32.LoadCursorW(IntPtr.Zero, (IntPtr)Win32.IdcIBeam);
+    private static readonly IntPtr NullPen = Gdi32.GetStockObject(Gdi.NullPen);
 
     private readonly IntRect _bounds;
     private readonly BgraImage _frame;
@@ -71,7 +72,7 @@ public sealed class OverlayWindow : IDisposable
     private IntRect[] _lastRegions = new IntRect[MaxRegions], _nowRegions = new IntRect[MaxRegions];
     private int _lastRegionCount;
     private bool _lastHadSelection;
-    private Gdi.Point[] _points = new Gdi.Point[256];   // the lasso's screen-to-client buffer, grown on demand
+    private User32.Point[] _points = new User32.Point[256];   // the lasso's screen-to-client buffer, grown on demand
     private OverlayCursor _cursor = OverlayCursor.Cross;
     private bool _painted, _disposed;
     /// <summary>True only while this window releases the capture itself, so its own WM_CAPTURECHANGED is not a loss.</summary>
@@ -88,30 +89,30 @@ public sealed class OverlayWindow : IDisposable
         _bounds = bounds; _frame = frame; _host = host; _log = log; _backBuffer = backBuffer;
         _framePin = GCHandle.Alloc(frame.Data, GCHandleType.Pinned);
 
-        IntPtr screen = Win32.GetDC(IntPtr.Zero);
+        IntPtr screen = User32.GetDC(IntPtr.Zero);
         try
         {
-            _memDc = Gdi.CreateCompatibleDC(screen);
+            _memDc = Gdi32.CreateCompatibleDC(screen);
             _dib = Gdi.CreateDib(screen, bounds.Width, bounds.Height, out _bits);
         }
-        finally { Win32.ReleaseDC(IntPtr.Zero, screen); }
+        finally { User32.ReleaseDC(IntPtr.Zero, screen); }
         if (_memDc == IntPtr.Zero || _dib == IntPtr.Zero) { Release(); throw new InvalidOperationException("overlay: could not create the double buffer"); }
-        _oldBitmap = Gdi.SelectObject(_memDc, _dib);
+        _oldBitmap = Gdi32.SelectObject(_memDc, _dib);
 
-        _penLasso = Gdi.CreatePen(Gdi.PsSolid, 2, Gdi.Ref(0xFFFFFFFF));
-        _pillBrush = Gdi.CreateSolidBrush(Gdi.Ref(0xFF202020));
-        _accentBrush = Gdi.CreateSolidBrush(Gdi.Ref(host.FrameAccent));
-        _keylineBrush = Gdi.CreateSolidBrush(Gdi.Ref(0xFF000000));
-        _updateRgn = Gdi.CreateRectRgn(0, 0, 0, 0);
+        _penLasso = Gdi32.CreatePen(Gdi.PsSolid, 2, Gdi.Ref(0xFFFFFFFF));
+        _pillBrush = Gdi32.CreateSolidBrush(Gdi.Ref(0xFF202020));
+        _accentBrush = Gdi32.CreateSolidBrush(Gdi.Ref(host.FrameAccent));
+        _keylineBrush = Gdi32.CreateSolidBrush(Gdi.Ref(0xFF000000));
+        _updateRgn = Gdi32.CreateRectRgn(0, 0, 0, 0);
         _style = host.FrameStyle;
 
-        IntPtr instance = Win32.GetModuleHandleW(null);
+        IntPtr instance = Kernel32.GetModuleHandleW(null);
         try
         {
             lock (Gate)
             {
                 if (!_registered) Register(instance);
-                Hwnd = Win32.CreateWindowExW(Win32.WsExToolWindow | Win32.WsExTopmost, ClassName, string.Empty, Win32.WsPopup,
+                Hwnd = User32.CreateWindowExW(Win32.WsExToolWindow | Win32.WsExTopmost, ClassName, host.WindowTitle, Win32.WsPopup,
                                              bounds.Left, bounds.Top, bounds.Width, bounds.Height, IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
                 if (Hwnd == IntPtr.Zero)
                 {
@@ -126,24 +127,24 @@ public sealed class OverlayWindow : IDisposable
 
         // The window covers exactly one monitor, so its DPI is that monitor's. The overlay lives for one snip, so a
         // scaling change while it is up (WM_DPICHANGED) is not followed.
-        uint dpi = Win32.GetDpiForWindow(Hwnd);
+        uint dpi = User32.GetDpiForWindow(Hwnd);
         double scale = dpi > 0 ? dpi / 96.0 : 1.0;
         _pill = CursorPillLayout.For(scale);
         _viewfinder = ViewfinderLayout.For(scale);
         _guides = GuidesLayout.For(scale);
-        _font = Gdi.CreateFontW(-_pill.FontPx, 0, 0, 0, Gdi.FwNormal, 0, 0, 0, Gdi.DefaultCharSet, 0, 0, Gdi.ClearTypeQuality, 0, "Segoe UI");
+        _font = Gdi32.CreateFontW(-_pill.FontPx, 0, 0, 0, Gdi.FwNormal, 0, 0, 0, Gdi.DefaultCharSet, 0, 0, Gdi.ClearTypeQuality, 0, "Segoe UI");
         // One chip font for both frames that have a chip: their sizes are the same 12 effective pixels.
-        _chipFont = Gdi.CreateFontW(-_viewfinder.ChipFontPx, 0, 0, 0, Gdi.FwSemibold, 0, 0, 0, Gdi.DefaultCharSet, 0, 0, Gdi.ClearTypeQuality, 0, "Segoe UI");
+        _chipFont = Gdi32.CreateFontW(-_viewfinder.ChipFontPx, 0, 0, 0, Gdi.FwSemibold, 0, 0, 0, Gdi.DefaultCharSet, 0, 0, Gdi.ClearTypeQuality, 0, "Segoe UI");
     }
 
     /// <summary>Puts the window on screen without taking the foreground; <see cref="Activate"/> hands it the keyboard.</summary>
-    public void Show() => Win32.ShowWindow(Hwnd, Win32.SwShowNoActivate);
+    public void Show() => User32.ShowWindow(Hwnd, Win32.SwShowNoActivate);
 
     /// <summary>Paints any pending update now (UpdateWindow sends WM_PAINT straight to the window procedure), rather
     /// than when the message queue gets round to it.</summary>
     public void PaintNow()
     {
-        if (!_disposed && Hwnd != IntPtr.Zero) Win32.UpdateWindow(Hwnd);
+        if (!_disposed && Hwnd != IntPtr.Zero) User32.UpdateWindow(Hwnd);
     }
 
     /// <summary>Foreground plus keyboard focus, even when the snip came from a hotkey while another app was active.</summary>
@@ -154,7 +155,7 @@ public sealed class OverlayWindow : IDisposable
     {
         if (_cursor == cursor) return;
         _cursor = cursor;
-        Win32.SetCursor(Handle(cursor));
+        User32.SetCursor(Handle(cursor));
     }
 
     private static IntPtr Handle(OverlayCursor c) => c switch { OverlayCursor.Arrow => CursorArrow, OverlayCursor.IBeam => CursorIBeam, _ => CursorCross };
@@ -189,7 +190,7 @@ public sealed class OverlayWindow : IDisposable
         _lastRegionCount = DynamicRegions(sel, _lastRegions);
         _lastHadSelection = !sel.IsEmpty;
         if (_disposed || Hwnd == IntPtr.Zero) return;
-        Win32.InvalidateRect(Hwnd, IntPtr.Zero, false);
+        User32.InvalidateRect(Hwnd, IntPtr.Zero, false);
     }
 
     /// <summary>Writes the monitor-local areas the current state paints over the frozen frame, and returns how many.</summary>
@@ -202,7 +203,7 @@ public sealed class OverlayWindow : IDisposable
         if (_host.Path.Count > 1) Add(Pad(FreeformMask.BoundingBox(_host.Path).Offset(-_bounds.Left, -_bounds.Top), 3));
         (int cx, int cy) = _host.Cursor;
         bool readout = Readout(cx, cy);
-        if (readout) Add(_style == FrameStyle.Guides ? _guides.LoupeReach(cx - _bounds.Left, cy - _bounds.Top) : _pill.Reach(cx - _bounds.Left, cy - _bounds.Top));
+        if (readout) Add(LoupeShown ? _guides.LoupeReach(cx - _bounds.Left, cy - _bounds.Top) : _pill.Reach(cx - _bounds.Left, cy - _bounds.Top));
         if (_style == FrameStyle.Guides)
         {
             int lines = GuideLines(r, cx - _bounds.Left, cy - _bounds.Top, readout);
@@ -223,9 +224,14 @@ public sealed class OverlayWindow : IDisposable
 
     /// <summary>
     /// Whether the cursor readout (pill or loupe) is shown on this monitor. A drawing tool repaints only its dirty
-    /// rectangle, so a cursor-following readout would smear; it is also useless there.
+    /// rectangle, so a cursor-following readout would smear; it is also useless there. The armed picker owns the mouse
+    /// over a drawing tool, so its loupe shows (and its reach is invalidated like any readout's).
     /// </summary>
-    private bool Readout(int cx, int cy) => !_host.DrawingActive && _bounds.Contains(cx, cy);
+    private bool Readout(int cx, int cy) => (!_host.DrawingActive || _host.Picking) && _bounds.Contains(cx, cy);
+
+    /// <summary>The cursor readout is the pixel loupe rather than the pill: always in Guides, and in any frame while the
+    /// colour picker is armed.</summary>
+    private bool LoupeShown => _style == FrameStyle.Guides || _host.Picking;
 
     /// <summary>Fills <see cref="_lines"/> with the guide lines for a monitor-local selection, or with nothing selected
     /// a crosshair through the monitor-local cursor when the readout is shown; returns how many.</summary>
@@ -271,8 +277,8 @@ public sealed class OverlayWindow : IDisposable
     private void Invalidate(IntRect r)
     {
         if (_disposed || Hwnd == IntPtr.Zero || r.IsEmpty) return;
-        var rect = new Win32.Rect { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
-        Win32.InvalidateRect(Hwnd, ref rect, false);
+        var rect = new User32.Rect { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
+        User32.InvalidateRect(Hwnd, ref rect, false);
     }
 
     // ----- paint -----
@@ -280,7 +286,7 @@ public sealed class OverlayWindow : IDisposable
     private void OnPaint()
     {
         int rects = UpdateRects();   // before BeginPaint, which validates the region
-        IntPtr dc = Win32.BeginPaint(Hwnd, out Win32.PaintStruct ps);
+        IntPtr dc = User32.BeginPaint(Hwnd, out User32.PaintStruct ps);
         if (dc == IntPtr.Zero) return;   // no DC, no paint — and EndPaint is only owed after a BeginPaint that worked
         bool drew = false;
         try
@@ -302,7 +308,7 @@ public sealed class OverlayWindow : IDisposable
                 {
                     // Clipped to the update region itself when it was read, so the chrome lands only where the second
                     // pass blits; otherwise to the one rectangle there is.
-                    if (region) Gdi.SelectClipRgn(_memDc, _updateRgn);
+                    if (region) Gdi32.SelectClipRgn(_memDc, _updateRgn);
                     else ClipTo(_paintRects[0]);
                     _host.DrawChrome(_memDc, _bounds);
                 }
@@ -310,7 +316,7 @@ public sealed class OverlayWindow : IDisposable
                 drew = true;
             }
         }
-        finally { Win32.EndPaint(Hwnd, ref ps); }
+        finally { User32.EndPaint(Hwnd, ref ps); }
         // "Overlay shown" means pixels reached the screen, so an empty update rectangle does not count as the first paint.
         if (!drew || _painted) return;
         _painted = true;
@@ -325,10 +331,10 @@ public sealed class OverlayWindow : IDisposable
     private unsafe int UpdateRects()
     {
         const int complexRegion = 3;
-        if (Win32.GetUpdateRgn(Hwnd, _updateRgn, false) != complexRegion) return 0;
+        if (User32.GetUpdateRgn(Hwnd, _updateRgn, false) != complexRegion) return 0;
         fixed (byte* data = _regionData)
         {
-            if (Gdi.GetRegionData(_updateRgn, (uint)_regionData.Length, data) == 0) return 0;   // more rectangles than fit
+            if (Gdi32.GetRegionData(_updateRgn, (uint)_regionData.Length, data) == 0) return 0;   // more rectangles than fit
             int count = *(int*)(data + 8);   // RGNDATAHEADER.nCount
             if (count <= 0 || count > MaxRegionRects) return 0;
             for (int i = 0; i < count; i++)
@@ -343,8 +349,8 @@ public sealed class OverlayWindow : IDisposable
     /// <summary>Clips the double buffer's GDI and GDI+ drawing to one rectangle.</summary>
     private void ClipTo(IntRect clip)
     {
-        Gdi.SelectClipRgn(_memDc, IntPtr.Zero);
-        Gdi.IntersectClipRect(_memDc, clip.Left, clip.Top, clip.Right, clip.Bottom);
+        Gdi32.SelectClipRgn(_memDc, IntPtr.Zero);
+        Gdi32.IntersectClipRect(_memDc, clip.Left, clip.Top, clip.Right, clip.Bottom);
     }
 
     /// <summary>The annotated buffer replaces the frozen frame as soon as a document exists, so turning the tool row off
@@ -357,7 +363,7 @@ public sealed class OverlayWindow : IDisposable
         int w = _bounds.Width, h = _bounds.Height;
 
         // GDI batches its drawing, so the previous paint's outline or pill could otherwise land on top of these bytes.
-        Gdi.GdiFlush();
+        Gdi32.GdiFlush();
         byte* bits = (byte*)_bits;
         bool annotating = _host.Annotating && _host.HasDocument;
         Gdi.CopyRows(Source, bits, w, clip);
@@ -415,20 +421,22 @@ public sealed class OverlayWindow : IDisposable
         IReadOnlyList<(int X, int Y)> path = _host.Path;
         if (path.Count > 1)
         {
-            if (_points.Length < path.Count) _points = new Gdi.Point[Math.Max(path.Count, _points.Length * 2)];
+            if (_points.Length < path.Count) _points = new User32.Point[Math.Max(path.Count, _points.Length * 2)];
             for (int i = 0; i < path.Count; i++) { _points[i].X = path[i].X - _bounds.Left; _points[i].Y = path[i].Y - _bounds.Top; }
-            IntPtr oldPen = Gdi.SelectObject(_memDc, _penLasso);
-            Gdi.Polyline(_memDc, _points, path.Count);
-            Gdi.SelectObject(_memDc, oldPen);
+            IntPtr oldPen = Gdi32.SelectObject(_memDc, _penLasso);
+            Gdi32.Polyline(_memDc, _points, path.Count);
+            Gdi32.SelectObject(_memDc, oldPen);
         }
 
         if (readout)
         {
-            if (_style == FrameStyle.Guides) Loupe(bits, Source, clip, lx, ly);
+            // The picker magnifies the frozen frame, which is what it copies from; Guides shows what is on screen.
+            if (_host.Picking) Loupe(bits, (byte*)_framePin.AddrOfPinnedObject(), clip, lx, ly);
+            else if (_style == FrameStyle.Guides) Loupe(bits, Source, clip, lx, ly);
             else if (_host.PillText(_bounds) is string text) Pill(text, lx, ly);
         }
 
-        Gdi.BitBlt(dc, clip.Left, clip.Top, clip.Width, clip.Height, _memDc, clip.Left, clip.Top, Gdi.SrcCopy);
+        Gdi32.BitBlt(dc, clip.Left, clip.Top, clip.Width, clip.Height, _memDc, clip.Left, clip.Top, Gdi.SrcCopy);
     }
 
     /// <summary>How far the Viewfinder hairline and the guide lines lift the pixels under them towards white, of 255.</summary>
@@ -458,10 +466,10 @@ public sealed class OverlayWindow : IDisposable
         for (int i = 0; i < arms; i++) Fill(_arms[i], _accentBrush);
 
         if (!Local.Contains(r.Left, r.Top) || _host.SelectionLabel is not string label) return;
-        IntPtr oldFont = Gdi.SelectObject(_memDc, _chipFont);
-        Gdi.GetTextExtentPoint32W(_memDc, label, label.Length, out Gdi.Size size);
+        IntPtr oldFont = Gdi32.SelectObject(_memDc, _chipFont);
+        Gdi32.GetTextExtentPoint32W(_memDc, label, label.Length, out Gdi32.Size size);
         Bubble(_viewfinder.Chip(r, size.Cx, size.Cy, Local), _viewfinder.ChipRadius, _viewfinder.ChipPadX, _viewfinder.ChipPadY, label);
-        Gdi.SelectObject(_memDc, oldFont);
+        Gdi32.SelectObject(_memDc, oldFont);
     }
 
     /// <summary>Guides and loupe: a white hairline on the edge and the size chip below the bottom-right corner, on the
@@ -470,10 +478,10 @@ public sealed class OverlayWindow : IDisposable
     {
         TintRing(bits, clip, r, _guides.Edge, amount: 255);
         if (!Local.Contains(r.Right - 1, r.Bottom - 1) || _host.SelectionLabel is not string label) return;
-        IntPtr oldFont = Gdi.SelectObject(_memDc, _chipFont);
-        Gdi.GetTextExtentPoint32W(_memDc, label, label.Length, out Gdi.Size size);
+        IntPtr oldFont = Gdi32.SelectObject(_memDc, _chipFont);
+        Gdi32.GetTextExtentPoint32W(_memDc, label, label.Length, out Gdi32.Size size);
         Bubble(_guides.Chip(r, size.Cx, size.Cy, Local), _guides.ChipRadius, _guides.ChipPadX, _guides.ChipPadY, label);
-        Gdi.SelectObject(_memDc, oldFont);
+        Gdi32.SelectObject(_memDc, oldFont);
     }
 
     /// <summary>
@@ -486,11 +494,11 @@ public sealed class OverlayWindow : IDisposable
     {
         GuidesLayout g = _guides;
         string label = _host.PillText(_bounds) ?? "";
-        IntPtr oldFont = Gdi.SelectObject(_memDc, _font);
-        Gdi.GetTextExtentPoint32W(_memDc, label, label.Length, out Gdi.Size size);
+        IntPtr oldFont = Gdi32.SelectObject(_memDc, _font);
+        Gdi32.GetTextExtentPoint32W(_memDc, label, label.Length, out Gdi32.Size size);
         (IntRect loupe, IntRect box) = g.Loupe(lx, ly, size.Cx + 2 * g.LabelPadX, size.Cy + 2 * g.LabelPadY, Local);
 
-        Gdi.GdiFlush();   // the chip, chrome and lasso are batched GDI drawing, and these are byte writes
+        Gdi32.GdiFlush();   // the chip, chrome and lasso are batched GDI drawing, and these are byte writes
         int w = _bounds.Width, h = _bounds.Height, cell = g.Cell, half = g.Source / 2, border = g.Ring / 2;
         ShadeRing(bits, clip, Pad(loupe, g.Ring), g.Ring - border, keep: 0);
         TintRing(bits, clip, Pad(loupe, border), border, amount: 255);
@@ -516,7 +524,7 @@ public sealed class OverlayWindow : IDisposable
         ShadeRing(bits, clip, Pad(centre, g.Edge), g.Edge, keep: 0);
 
         if (label.Length > 0) Bubble(box, g.LabelRadius, g.LabelPadX, g.LabelPadY, label);
-        Gdi.SelectObject(_memDc, oldFont);
+        Gdi32.SelectObject(_memDc, oldFont);
     }
 
     /// <summary>Lifts a ring <paramref name="thickness"/> wide just inside <paramref name="outer"/> towards white.</summary>
@@ -544,32 +552,32 @@ public sealed class OverlayWindow : IDisposable
 
     private void Fill(IntRect r, IntPtr brush)
     {
-        var rect = new Win32.Rect { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
-        Gdi.FillRect(_memDc, ref rect, brush);
+        var rect = new User32.Rect { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
+        User32.FillRect(_memDc, ref rect, brush);
     }
 
     /// <summary>The cursor pill: the host's readout (Normal: size and nits; Viewfinder: nits).</summary>
     private void Pill(string text, int cx, int cy)
     {
-        IntPtr oldFont = Gdi.SelectObject(_memDc, _font);
-        Gdi.GetTextExtentPoint32W(_memDc, text, text.Length, out Gdi.Size size);
+        IntPtr oldFont = Gdi32.SelectObject(_memDc, _font);
+        Gdi32.GetTextExtentPoint32W(_memDc, text, text.Length, out Gdi32.Size size);
         IntRect p = _pill.Place(cx, cy, size.Cx, size.Cy, _bounds.Width, _bounds.Height);
         Bubble(p, _pill.Radius, _pill.PadX, _pill.PadY, text);
-        Gdi.SelectObject(_memDc, oldFont);
+        Gdi32.SelectObject(_memDc, oldFont);
     }
 
     /// <summary>White text on a dark rounded rectangle, in the font already selected: the cursor pill and the size chip.</summary>
     private void Bubble(IntRect box, int radius, int padX, int padY, string text)
     {
-        IntPtr oldBrush = Gdi.SelectObject(_memDc, _pillBrush);
-        IntPtr oldPen = Gdi.SelectObject(_memDc, NullPen);
-        Gdi.RoundRect(_memDc, box.Left, box.Top, box.Right, box.Bottom, radius * 2, radius * 2);
-        Gdi.SelectObject(_memDc, oldPen);
-        Gdi.SelectObject(_memDc, oldBrush);
-        Gdi.SetBkMode(_memDc, Gdi.TransparentBk);
-        Gdi.SetTextColor(_memDc, Gdi.Ref(0xFFFFFFFF));
-        var area = new Win32.Rect { Left = box.Left + padX, Top = box.Top + padY, Right = box.Right, Bottom = box.Bottom };
-        Gdi.DrawTextW(_memDc, text, text.Length, ref area, Gdi.DtLeft | Gdi.DtTop | Gdi.DtSingleLine | Gdi.DtNoPrefix);
+        IntPtr oldBrush = Gdi32.SelectObject(_memDc, _pillBrush);
+        IntPtr oldPen = Gdi32.SelectObject(_memDc, NullPen);
+        Gdi32.RoundRect(_memDc, box.Left, box.Top, box.Right, box.Bottom, radius * 2, radius * 2);
+        Gdi32.SelectObject(_memDc, oldPen);
+        Gdi32.SelectObject(_memDc, oldBrush);
+        Gdi32.SetBkMode(_memDc, Gdi.TransparentBk);
+        Gdi32.SetTextColor(_memDc, Gdi.Ref(0xFFFFFFFF));
+        var area = new User32.Rect { Left = box.Left + padX, Top = box.Top + padY, Right = box.Right, Bottom = box.Bottom };
+        User32.DrawTextW(_memDc, text, text.Length, ref area, Gdi.DtLeft | Gdi.DtTop | Gdi.DtSingleLine | Gdi.DtNoPrefix);
     }
 
     // ----- window procedure -----
@@ -579,7 +587,7 @@ public sealed class OverlayWindow : IDisposable
         OverlayWindow? self;
         lock (Gate) Live.TryGetValue(hwnd, out self);
         // Messages that arrive before CreateWindowExW returns (WM_NCCREATE, WM_CREATE) have no instance yet.
-        return self != null ? self.Dispatch(hwnd, msg, wParam, lParam) : Win32.DefWindowProcW(hwnd, msg, wParam, lParam);
+        return self != null ? self.Dispatch(hwnd, msg, wParam, lParam) : User32.DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     /// <summary>
@@ -604,15 +612,15 @@ public sealed class OverlayWindow : IDisposable
         {
             case Win32.WmPaint: OnPaint(); return IntPtr.Zero;
             case Win32.WmEraseBkgnd: return (IntPtr)1;                       // every pixel comes from the double buffer
-            case Win32.WmSetCursor: Win32.SetCursor(Handle(_cursor)); return (IntPtr)1;
+            case Win32.WmSetCursor: User32.SetCursor(Handle(_cursor)); return (IntPtr)1;
             case Win32.WmMouseMove: _host.OnMouseMove(ScreenX(lParam), ScreenY(lParam)); return IntPtr.Zero;
             case Win32.WmLButtonDown:
-                Win32.SetCapture(hwnd);                                      // a drag continues onto the next monitor
+                User32.SetCapture(hwnd);                                      // a drag continues onto the next monitor
                 _host.OnMouseDown(ScreenX(lParam), ScreenY(lParam));
                 return IntPtr.Zero;
             case Win32.WmLButtonUp:
                 _releasingCapture = true;
-                Win32.ReleaseCapture();                                      // sends WM_CAPTURECHANGED to us, synchronously
+                User32.ReleaseCapture();                                      // sends WM_CAPTURECHANGED to us, synchronously
                 _releasingCapture = false;
                 _host.OnMouseUp(ScreenX(lParam), ScreenY(lParam));
                 return IntPtr.Zero;
@@ -622,7 +630,8 @@ public sealed class OverlayWindow : IDisposable
                 return IntPtr.Zero;
             case Win32.WmRButtonUp: _host.OnRightClick(); return IntPtr.Zero;
             case Win32.WmKeyDown or Win32.WmSysKeyDown:
-                _host.OnKey((int)wParam, Win32.KeyDown(Win32.VkControl), Win32.KeyDown(Win32.VkShift), Win32.KeyDown(Win32.VkMenu));
+                // Bit 30 of lParam: the key was already down, so this is an auto-repeat.
+                _host.OnKey((int)wParam, Win32.KeyDown(Win32.VkControl), Win32.KeyDown(Win32.VkShift), Win32.KeyDown(Win32.VkMenu), ((long)lParam & (1L << 30)) != 0);
                 return IntPtr.Zero;                                          // handled: Alt must not open a system menu
             case Win32.WmActivate:
                 if (Win32.LoWord(wParam) != 0) _host.OnActivated(hwnd);      // the host tracks which window has the keyboard
@@ -630,7 +639,7 @@ public sealed class OverlayWindow : IDisposable
             case Win32.WmDestroy:
                 lock (Gate) Live.Remove(hwnd);
                 return IntPtr.Zero;
-            default: return Win32.DefWindowProcW(hwnd, msg, wParam, lParam);
+            default: return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
         }
     }
 
@@ -643,16 +652,16 @@ public sealed class OverlayWindow : IDisposable
         IntPtr className = Marshal.StringToHGlobalUni(ClassName);
         try
         {
-            var wc = new Win32.WndClassEx
+            var wc = new User32.WndClassEx
             {
-                Size = (uint)Marshal.SizeOf<Win32.WndClassEx>(),
+                Size = (uint)Marshal.SizeOf<User32.WndClassEx>(),
                 Style = Win32.CsOwnDc,          // one DC per window: the paint path asks for it thousands of times
                 WndProc = Marshal.GetFunctionPointerForDelegate(StaticProc),
                 Instance = instance,
                 Cursor = IntPtr.Zero,           // no class cursor, so WM_SETCURSOR is ours to answer
                 ClassName = className,
             };
-            if (Win32.RegisterClassExW(ref wc) == 0) throw new InvalidOperationException("RegisterClassExW failed: " + Marshal.GetLastWin32Error());
+            if (User32.RegisterClassExW(ref wc) == 0) throw new InvalidOperationException("RegisterClassExW failed: " + Marshal.GetLastWin32Error());
         }
         finally { Marshal.FreeHGlobal(className); }
         _registered = true;
@@ -664,7 +673,7 @@ public sealed class OverlayWindow : IDisposable
     /// </summary>
     private void Unregister(IntPtr instance)
     {
-        _registered = !Win32.UnregisterClassW(ClassName, instance);
+        _registered = !User32.UnregisterClassW(ClassName, instance);
         if (_registered) _log?.Warn($"overlay: UnregisterClassW({ClassName}) failed: {Marshal.GetLastWin32Error()}");
     }
 
@@ -672,12 +681,12 @@ public sealed class OverlayWindow : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        if (Hwnd != IntPtr.Zero) Win32.DestroyWindow(Hwnd);   // WM_DESTROY takes this window out of the instance map
+        if (Hwnd != IntPtr.Zero) User32.DestroyWindow(Hwnd);   // WM_DESTROY takes this window out of the instance map
         lock (Gate)
         {
             Live.Remove(Hwnd);
             // The last window unregisters the class; the next snip registers it again.
-            if (Live.Count == 0 && _registered) Unregister(Win32.GetModuleHandleW(null));
+            if (Live.Count == 0 && _registered) Unregister(Kernel32.GetModuleHandleW(null));
         }
         Release();
     }
@@ -685,10 +694,10 @@ public sealed class OverlayWindow : IDisposable
     /// <summary>Frees the GDI objects and the pins; safe to call from a half-built constructor and from Dispose.</summary>
     private void Release()
     {
-        if (_memDc != IntPtr.Zero && _oldBitmap != IntPtr.Zero) Gdi.SelectObject(_memDc, _oldBitmap);
+        if (_memDc != IntPtr.Zero && _oldBitmap != IntPtr.Zero) Gdi32.SelectObject(_memDc, _oldBitmap);
         foreach (IntPtr h in new[] { _dib, _penLasso, _pillBrush, _accentBrush, _keylineBrush, _updateRgn, _font, _chipFont })
-            if (h != IntPtr.Zero) Gdi.DeleteObject(h);
-        if (_memDc != IntPtr.Zero) Gdi.DeleteDC(_memDc);
+            if (h != IntPtr.Zero) Gdi32.DeleteObject(h);
+        if (_memDc != IntPtr.Zero) Gdi32.DeleteDC(_memDc);
         if (_framePin.IsAllocated) _framePin.Free();
         if (_backPin.IsAllocated) _backPin.Free();
         _back = null;

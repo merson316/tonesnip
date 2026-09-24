@@ -87,17 +87,21 @@
         <TextBlock x:Name="TitleText" Style="{StaticResource BodyStrong}" Margin="0,0,28,0"
                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                    AutomationProperties.LiveSetting="Polite"/>
-        <!-- Line 2: the file name and the pixel size, or "Copied to clipboard" when nothing was saved. -->
-        <TextBlock x:Name="DetailText" Grid.Row="1" Style="{StaticResource Caption}"
+        <!-- Line 2: the file name and the pixel size, or "Copied to clipboard" when nothing was saved. A notice
+             (BindNotice) has no links, so its detail may take two lines instead. -->
+        <TextBlock x:Name="DetailText" Grid.Row="1" Style="{StaticResource Caption}" MaxLines="2"
                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
         <!-- The negative left margin cancels the first link's inset so it aligns with the lines above. -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="4" Margin="-4,2,0,0">
+        <StackPanel x:Name="Links" Grid.Row="2" Orientation="Horizontal" Spacing="4" Margin="-4,2,0,0">
           <HyperlinkButton x:Name="OpenLink" Style="{StaticResource ToastLink}" Content="Open" Click="OnOpen"
                            AutomationProperties.Name="Open" AutomationProperties.AutomationId="Toast_Open"/>
           <HyperlinkButton x:Name="FolderLink" Style="{StaticResource ToastLink}" Content="Show in folder" Click="OnFolder"
                            AutomationProperties.Name="Show in folder" AutomationProperties.AutomationId="Toast_Folder"/>
           <HyperlinkButton x:Name="EditLink" Style="{StaticResource ToastLink}" Content="Edit" Click="OnEdit"
                            AutomationProperties.Name="Edit" AutomationProperties.AutomationId="Toast_Edit"/>
+          <HyperlinkButton x:Name="PinLink" Style="{StaticResource ToastLink}" Content="Pin" Click="OnPin"
+                           ToolTipService.ToolTip="Pin to the screen"
+                           AutomationProperties.Name="Pin to screen" AutomationProperties.AutomationId="Toast_Pin"/>
         </StackPanel>
       </Grid>
 

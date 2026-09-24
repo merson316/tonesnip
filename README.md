@@ -24,13 +24,21 @@ highlights are compressed. What you paste looks like what you saw.
 - **Privacy mode** (on by default): blur and pixelate paint a generated pattern in the region's overall tone instead
   of filtering the real pixels, so a redaction cannot be reversed with tools like Depix.
 - **Output:** copies to the clipboard (DIB and PNG), saves to `Pictures\Screenshots` as PNG or JPEG, and shows a
-  notification with a thumbnail and Open, Edit and Show in folder. The notification is ToneSnip's own card by
+  notification with a thumbnail and Open, Edit, Pin and Show in folder. The notification is ToneSnip's own card by
   default, or a Windows notification.
 - **Optional HDR copy** next to every snip: JPEG XR for Windows Photos, a 16-bit PNG with cICP for browsers, or a
   gain-map JPEG that is SDR everywhere and HDR in Chrome, Android and Apple Photos. It carries the same crop,
   annotations and redactions as the SDR file.
+- **Copy text:** reads the text in a selection, an area dragged on an open snip (or all of it), a pin or a Recent snip with the in-box Windows OCR in
+  your languages, and copies it as plain text.
+- **Pin to screen:** keeps a snip on top of everything as a borderless picture you can move, zoom and fade.
+- **Colour picker:** in the overlay and the editor, a pixel loupe shows the colour under the cursor, and a click copies
+  it as `#RRGGBB` or `rgb()`, with the nits on HDR monitors.
+- **Keyboard-only snips and Narrator:** the overlay can be driven entirely from the keyboard, and it names itself and
+  announces mode changes to screen readers.
 - **Recent snips:** left-click the tray icon for new-snip buttons and the last 20 snips, as a list or a grid, with
-  copy, open, edit, show in folder and delete (to the Recycle Bin by default).
+  copy, open, edit, show in folder and delete (to the Recycle Bin by default); right-click a row to pin it or copy
+  its text.
 - **Hotkeys** recorded in Settings, including PrintScreen itself and, optionally, `Win+Shift+S` in place of Snipping
   Tool.
 - **Settings** with a live tonemap preview. Follows the Windows theme, accent colour and contrast themes, and is
@@ -45,7 +53,8 @@ highlights are compressed. What you paste looks like what you saw.
 
 ## Install
 
-Both files are on the [latest release](https://github.com/merson316/tonesnip/releases/latest).
+Both files are on the [latest release](https://github.com/merson316/tonesnip/releases/latest), with their SHA-256
+hashes in `SHA256SUMS.txt`.
 
 ### MSIX (recommended)
 
@@ -79,11 +88,27 @@ Either way, a tray icon appears. To start with Windows, turn on **Start with Win
 | `Ctrl+Shift+PrintScreen` | Recent snips |
 | `Win+Shift+S` | Off by default; turn on "Also use Win + Shift + S for region snips" in Settings > Hotkeys |
 
-**Overlay:** `R` rectangle, `W` window, `F` full screen, `L` freeform; arrow keys nudge the selection (`Shift` for
-10 px); `Enter` accepts; `Esc` or right-click cancels; `A` toggles annotating.
+**Overlay:** `R` rectangle, `W` window, `F` full screen, `L` freeform; `T` copies the text of the next selection
+and `P` pins it (press again to turn off; with the tool row open, use the toolbar buttons, since `T` and `P` are
+tools there); `C` picks a colour: a pixel loupe follows the cursor, and a click or a second `C` copies the colour
+under it (`Shift` adds the nits on an HDR monitor); `Enter` accepts; `Esc` or right-click cancels; `A` toggles
+annotating.
 
-**Editor:** `Ctrl+C` copy, `Ctrl+S` save, `Ctrl+Shift+S` save as, `Ctrl+0` fit to window, mouse wheel zooms,
-`Space`+drag or middle-drag pans, `A` toggles annotating, `Esc` closes.
+**Overlay without a mouse:** arrow keys move the pointer (`Shift` for 10 px); in rectangle mode `Space` or `Enter`
+starts a selection at the pointer and a second press finishes it. With a selection made, arrow keys move it and
+`Alt`+arrow keys resize it from the bottom-right corner (`Shift` for 10 px). In window and full-screen modes `Tab` and
+`Shift+Tab` step through the windows or monitors, and `Space` or `Enter` takes the highlighted one. With the colour
+picker armed, `Space` or `Enter` copies the colour under the pointer.
+
+**Editor:** `Ctrl+C` copy, `Ctrl+T` copies the text in an area you drag on the picture (`Ctrl+Shift+T` all of it),
+`Ctrl+S` save, `Ctrl+Shift+S` save as, `K` picks a colour with a pixel loupe (`Shift`+click adds the nits), `A` toggles
+annotating, `Esc` closes. `+` / `-` zoom in and out (10 % to 3200 %), `Ctrl+0` fits to the window and `Ctrl+1` is
+actual size; the mouse wheel and a touchpad pinch zoom about the pointer, while a touchpad's two-finger scroll,
+`Shift`+wheel, `Space`+drag and middle-drag pan. Pin to screen is in the More menu.
+
+**Pins:** drag or arrow keys to move (`Shift` for 10 px), wheel or `+` / `-` to zoom, `Ctrl`+wheel or `Ctrl` with
+`+` / `-` to fade, `Ctrl+C` copy, `Ctrl+T` copy text, `Ctrl+S` save as, `Ctrl+0` actual size; `Esc`, a double-click
+or the close button unpins. Right-click or `Shift+F10` for the rest.
 
 **Annotating:** `V` select, `P` pen, `H` highlighter, `I` line, `O` arrow, `Ctrl+R` rectangle, `E` ellipse, `T` text,
 `N` counter, `B` blur, `X` pixelate, `C` crop (editor), `Ctrl+Z` / `Ctrl+Y` undo and redo, `Delete` removes the
@@ -128,6 +153,7 @@ is kept as `settings.json.bad-<time>` and defaults are used.
 | `recentFlyoutLayout` | `row` | `row` or `grid` |
 | `deleteToRecycleBin` | `true` | Deleting from Recent snips moves the file and its HDR copy to the Recycle Bin |
 | `showNitsReadout` | `true` | |
+| `colorFormat` | `hex` | `hex` (`#RRGGBB`) or `rgb` (`rgb(r, g, b)`): what the colour picker copies |
 | `startWithWindows` | `false` | A per-user Run key; the MSIX uses its startup task instead |
 
 ## How it works
@@ -191,7 +217,8 @@ in `assets/` are generated from `assets/icon.svg` with `python3 tools/gen-assets
 ### Releases and signing
 
 Pushing a `v*` tag runs `.github/workflows/windows.yml`, which tests, builds and smoke-tests the exe and the MSIX and
-attaches them to a GitHub release.
+attaches them, with `SHA256SUMS.txt`, to a draft GitHub release. The release goes public once its notes are written:
+`gh release edit vX.Y.Z --notes-file notes.md --draft=false`.
 
 `packaging/make-cert.ps1` creates the sideload certificate once. It writes `tonesnip.pfx` (the private key) and
 `tonesnip.cer` (the public certificate) into `packaging/`.

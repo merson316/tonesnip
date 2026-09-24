@@ -4,25 +4,61 @@ using ToneSnip.Core.Imaging;
 namespace ToneSnip.App.Output;
 
 /// <summary>Puts CF_DIBV5 (32-bit BGRA with alpha) and the registered "PNG" format on the clipboard in one transaction.</summary>
-public static class ClipboardWriter
+public static partial class ClipboardWriter
 {
-    [DllImport("user32.dll")] private static extern bool OpenClipboard(IntPtr owner);
-    [DllImport("user32.dll")] private static extern bool CloseClipboard();
-    [DllImport("user32.dll")] private static extern bool EmptyClipboard();
-    [DllImport("user32.dll")] private static extern IntPtr SetClipboardData(uint format, IntPtr data);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterClipboardFormatW(string name);
-    [DllImport("kernel32.dll")] private static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
-    [DllImport("kernel32.dll")] private static extern IntPtr GlobalLock(IntPtr h);
-    [DllImport("kernel32.dll")] private static extern bool GlobalUnlock(IntPtr h);
-    [DllImport("kernel32.dll")] private static extern IntPtr GlobalFree(IntPtr h);
-    [DllImport("kernel32.dll")] private static extern UIntPtr GlobalSize(IntPtr h);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool OpenClipboard(IntPtr owner);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool CloseClipboard();
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool EmptyClipboard();
+    [LibraryImport("user32.dll")] private static partial IntPtr SetClipboardData(uint format, IntPtr data);
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial uint RegisterClipboardFormatW(string name);
+    [LibraryImport("kernel32.dll")] private static partial IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+    [LibraryImport("kernel32.dll")] private static partial IntPtr GlobalLock(IntPtr h);
+    [LibraryImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GlobalUnlock(IntPtr h);
+    [LibraryImport("kernel32.dll")] private static partial IntPtr GlobalFree(IntPtr h);
+    [LibraryImport("kernel32.dll")] private static partial UIntPtr GlobalSize(IntPtr h);
     private const uint GmemMoveable = 0x0002, CfDibV5 = 17;
+
+    private static readonly object QueueGate = new();
+    /// <summary>Held for one whole open-to-close transaction, so a write made directly (the snip's own copy, the
+    /// editor's save) waits for one in flight rather than failing to open the clipboard it holds.</summary>
+    private static readonly object WriteGate = new();
+    /// <summary>The last write queued by <see cref="Enqueue"/>; the next one runs after it. Under
+    /// <see cref="QueueGate"/>.</summary>
+    private static Task _tail = Task.CompletedTask;
+
+    /// <summary>
+    /// Runs <paramref name="write"/> on the thread pool after every write queued before it has finished, so writes
+    /// started in one order land on the clipboard in that order. Each write waits up to half a second for a clipboard
+    /// another app holds, so two started close together on separate tasks could otherwise land the wrong way round,
+    /// leaving the older text or picture on the clipboard. The returned task carries this write's own failure; one
+    /// write failing does not stop the next.
+    /// </summary>
+    public static Task Enqueue(Action write)
+    {
+        lock (QueueGate)
+        {
+            Task next = _tail.ContinueWith(_ => write(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            _tail = next;
+            return next;
+        }
+    }
+
+    /// <summary><see cref="Set"/> through <see cref="Enqueue"/>.</summary>
+    public static Task SetQueued(BgraImage image, byte[] png, Core.Diagnostics.ILog? log = null) => Enqueue(() => Set(image, png, log));
+
+    /// <summary><see cref="SetText"/> through <see cref="Enqueue"/>.</summary>
+    public static Task SetTextQueued(string text, Core.Diagnostics.ILog? log = null) => Enqueue(() => SetText(text, log));
 
     /// <summary>
     /// Writes both formats. Callable from any thread: the Win32 clipboard needs only its open/close pair on one thread.
     /// If the PNG format fails after the DIB succeeded, that is logged rather than thrown.
     /// </summary>
     public static void Set(BgraImage image, byte[] png, Core.Diagnostics.ILog? log = null)
+    {
+        lock (WriteGate) SetLocked(image, png, log);
+    }
+
+    private static void SetLocked(BgraImage image, byte[] png, Core.Diagnostics.ILog? log)
     {
         bool open = false;
         for (int i = 0; i < 10 && !(open = OpenClipboard(IntPtr.Zero)); i++) Thread.Sleep(50);
@@ -39,6 +75,34 @@ public static class ClipboardWriter
         finally { CloseClipboard(); }
         _ = ReleaseLocalCopiesAsync(handed, log);
     }
+
+    /// <summary>Puts plain text (CF_UNICODETEXT) on the clipboard: "Copy text" and the colour picker. Any thread.</summary>
+    public static void SetText(string text, Core.Diagnostics.ILog? log = null)
+    {
+        lock (WriteGate) SetTextLocked(text, log);
+    }
+
+    private static void SetTextLocked(string text, Core.Diagnostics.ILog? log)
+    {
+        bool open = false;
+        for (int i = 0; i < 10 && !(open = OpenClipboard(IntPtr.Zero)); i++) Thread.Sleep(50);
+        if (!open) throw new InvalidOperationException("clipboard is busy");
+        var handed = new List<IntPtr>(1);
+        try
+        {
+            EmptyClipboard();
+            // UTF-16 with its terminating null, as CF_UNICODETEXT requires.
+            handed.Add(Put(CfUnicodeText, (text.Length + 1) * 2L, dest =>
+            {
+                System.Runtime.InteropServices.MemoryMarshal.AsBytes(text.AsSpan()).CopyTo(dest);
+                dest[^2..].Clear();
+            }));
+        }
+        finally { CloseClipboard(); }
+        _ = ReleaseLocalCopiesAsync(handed, log);
+    }
+
+    private const uint CfUnicodeText = 13;
 
     /// <summary>
     /// Memory handed to SetClipboardData stays in this process until it opens and closes the clipboard again after

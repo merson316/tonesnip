@@ -21,6 +21,13 @@
            save, an accelerator on a collapsed element is unreachable, and on a never-saved snip Ctrl+S falls through
            to Save as. The button still advertises the chord through AutomationProperties.AcceleratorKey. -->
       <KeyboardAccelerator Key="S" Modifiers="Control" Invoked="OnSaveAccelerator"/>
+      <!-- The More menu's commands, whose items are not in the tree while the menu is closed. -->
+      <KeyboardAccelerator Key="T" Modifiers="Control" Invoked="OnCopyTextAccelerator"/>
+      <KeyboardAccelerator Key="T" Modifiers="Control,Shift" Invoked="OnCopyAllTextAccelerator"/>
+      <!-- Actual size, beside the Fit button's Ctrl+0. + and − are decoded in OnKeyDown: the OEM plus and minus keys
+           have no VirtualKey name to write here. -->
+      <KeyboardAccelerator Key="Number1" Modifiers="Control" Invoked="OnActualSizeAccelerator"/>
+      <KeyboardAccelerator Key="NumberPad1" Modifiers="Control" Invoked="OnActualSizeAccelerator"/>
     </Grid.KeyboardAccelerators>
 
     <!-- The system title bar, as in the settings window: content extended into the title bar leaked GDI handles on
@@ -90,14 +97,49 @@
               <TextBlock Text="Annotate" VerticalAlignment="Center" Margin="8,0,0,0"/>
             </StackPanel>
           </ToggleButton>
+          <!-- An eyedropper for one click: the canvas reports the pixel under the next click and the button pops back
+               out. A view toggle rather than Annotate's accent fill, since it changes no document. -->
+          <ToggleButton AllowFocusOnInteraction="False" x:Name="PickBtn" Style="{StaticResource ViewToggle}" Width="36" Height="36" Padding="0"
+                        Click="OnPick" ToolTipService.ToolTip="Pick colour (K); Shift+click adds the nits"
+                        AutomationProperties.AutomationId="Editor_PickColourToggle" AutomationProperties.Name="Pick colour"
+                        AutomationProperties.AcceleratorKey="K">
+            <ToggleButton.KeyboardAccelerators>
+              <KeyboardAccelerator Key="K" Invoked="OnPickAccelerator"/>
+            </ToggleButton.KeyboardAccelerators>
+            <ToggleButton.Resources>
+              <ResourceDictionary>
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+                </ResourceDictionary.MergedDictionaries>
+              </ResourceDictionary>
+            </ToggleButton.Resources>
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPickColour}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
+          </ToggleButton>
+          <!-- Copy text from an area: armed, the next drag on the picture marks the area to read. A view toggle like the
+               picker beside it, since it changes no document; the two are mutually exclusive. The accelerator is on
+               RootGrid with Copy all text's, since Ctrl+T must also reach the window while this has no focus. -->
+          <ToggleButton AllowFocusOnInteraction="False" x:Name="CopyTextBtn" Style="{StaticResource ViewToggle}" Width="36" Height="36" Padding="0"
+                        Click="OnCopyTextToggle" ToolTipService.ToolTip="Copy text: drag over an area (Ctrl+T); Ctrl+Shift+T copies all the text"
+                        AutomationProperties.AutomationId="Editor_CopyTextToggle" AutomationProperties.Name="Copy text"
+                        AutomationProperties.AcceleratorKey="Ctrl+T">
+            <ToggleButton.Resources>
+              <ResourceDictionary>
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+                </ResourceDictionary.MergedDictionaries>
+              </ResourceDictionary>
+            </ToggleButton.Resources>
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopyText}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
+          </ToggleButton>
           <Rectangle Style="{StaticResource ToolDivider}"/>
           <Button AllowFocusOnInteraction="False" Style="{StaticResource ToolButton}" Width="36" Height="36" AutomationProperties.Name="Zoom out"
-                  AutomationProperties.AutomationId="Editor_ZoomOutButton" ToolTipService.ToolTip="Zoom out" Click="OnZoomOut">
+                  AutomationProperties.AutomationId="Editor_ZoomOutButton" AutomationProperties.AcceleratorKey="Minus"
+                  ToolTipService.ToolTip="Zoom out (−)" Click="OnZoomOut">
             <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZoomOut}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
           </Button>
           <!-- The zoom readout is the Fit button; it needs a Name, or UIA reports the command as "83 %". -->
           <Button x:Name="FitButton" AllowFocusOnInteraction="False" Style="{StaticResource SubtleButton}" Height="36" MinWidth="56" Click="OnFit"
-                  ToolTipService.ToolTip="Fit to window (Ctrl+0)"
+                  ToolTipService.ToolTip="Fit to window (Ctrl+0); Ctrl+1 for actual size"
                   AutomationProperties.AutomationId="Editor_FitButton" AutomationProperties.Name="Fit to window"
                   AutomationProperties.AcceleratorKey="Ctrl+0">
             <Button.KeyboardAccelerators>
@@ -107,7 +149,8 @@
             <TextBlock x:Name="ZoomText" Style="{StaticResource Caption}" TextAlignment="Center"/>
           </Button>
           <Button AllowFocusOnInteraction="False" Style="{StaticResource ToolButton}" Width="36" Height="36" AutomationProperties.Name="Zoom in"
-                  AutomationProperties.AutomationId="Editor_ZoomInButton" ToolTipService.ToolTip="Zoom in" Click="OnZoomIn">
+                  AutomationProperties.AutomationId="Editor_ZoomInButton" AutomationProperties.AcceleratorKey="Plus"
+                  ToolTipService.ToolTip="Zoom in (+)" Click="OnZoomIn">
             <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphZoomIn}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
           </Button>
           <!-- MenuButton is a plain Button with UIA's ExpandCollapse pattern, so the overflow announces itself as a menu
@@ -117,6 +160,14 @@
             <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphMore}" FontSize="16" AutomationProperties.AccessibilityView="Raw"/>
             <Button.Flyout>
               <MenuFlyout>
+                <MenuFlyoutItem Text="Copy all text" Click="OnCopyAllText" KeyboardAcceleratorTextOverride="Ctrl+Shift+T"
+                                AutomationProperties.AutomationId="Editor_CopyAllText" AutomationProperties.AcceleratorKey="Ctrl+Shift+T">
+                  <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopyText}"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="Pin to screen" Click="OnPin" AutomationProperties.AutomationId="Editor_Pin">
+                  <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPin}"/></MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
                 <MenuFlyoutItem x:Name="OpenFolder" Text="Open folder" Click="OnOpenFolder"
                                 AutomationProperties.AutomationId="Editor_OpenFolder">
                   <MenuFlyoutItem.Icon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphFolder}"/></MenuFlyoutItem.Icon>
@@ -169,13 +220,19 @@
     </StackPanel>
 
     <!-- ZoomMode is Disabled: zoom is the surface's own render scale rather than a transform over rendered pixels,
-         which keeps a magnified view sharp. The wheel zooms, but the scrollbars still show the scrolled view. -->
+         which keeps a magnified view sharp. The mouse wheel zooms (as in Windows Photos) and a touchpad's two-finger
+         scroll pans; the scrollbars still show the scrolled view. -->
     <ScrollViewer x:Name="Scroll" Grid.Row="1" Background="{ThemeResource SurfaceBase}"
                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollMode="Auto" VerticalScrollMode="Auto" ZoomMode="Disabled" SizeChanged="OnViewportSize">
       <viewer:EditorSurface x:Name="Surface" HorizontalAlignment="Center" VerticalAlignment="Center"
                             AutomationProperties.AutomationId="Editor_Canvas" AutomationProperties.Name="Snip canvas"/>
     </ScrollViewer>
+    <!-- The colour picker's loupe floats over the viewport, not the picture, so it can flip at the window's edges
+         however small the picture is. Empty until the picker is first armed: the loupe is built in code then and
+         thrown away when the picker is put away (x:Load does not work in a Window-rooted file). Decoration: the
+         picker's button and the status strip carry what a screen reader needs. -->
+    <Canvas x:Name="LoupeLayer" Grid.Row="1" IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw"/>
 
     <Grid Grid.Row="2" Height="28" Padding="12,0">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -207,6 +264,20 @@
       <!-- The HDR notes are live regions so their appearance is announced. "HDR copy failed" is Assertive because it is
            a failure the user must hear (closing is refused once on it); the others are Polite progress. -->
       <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+        <!-- The nits under the pointer, from the snip's HDR data; shown only while the pointer is over it. Not a live
+             region: it changes on every pointer move, and announcing each value would drown everything else. The
+             minimum width keeps the notes beside it from shifting as the digits change. -->
+        <TextBlock x:Name="NitsReadout" Style="{StaticResource Caption}" Foreground="{ThemeResource TextSecondary}"
+                   MinWidth="72" TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"
+                   Visibility="Collapsed" TextWrapping="NoWrap"
+                   AutomationProperties.AutomationId="Editor_NitsReadout"
+                   AutomationProperties.Name="Luminance under the pointer"
+                   ToolTipService.ToolTip="Luminance under the pointer, from the snip's HDR data, before exposure"/>
+        <!-- What the colour picker copied (shown for two seconds), or what an armed Copy text is waiting for (shown
+             until it is used or cancelled); announced as it appears. -->
+        <TextBlock x:Name="StatusNote" Style="{StaticResource Caption}" Foreground="{ThemeResource TextPrimary}"
+                   VerticalAlignment="Center" Margin="0,0,12,0" Visibility="Collapsed" TextWrapping="NoWrap"
+                   AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="Editor_StatusNote"/>
         <TextBlock x:Name="HdrNote" Text="HDR copy not updated" Style="{StaticResource Caption}" Foreground="{ThemeResource Error}"
                    VerticalAlignment="Center" Visibility="Collapsed" TextWrapping="NoWrap"
                    AutomationProperties.LiveSetting="Polite"

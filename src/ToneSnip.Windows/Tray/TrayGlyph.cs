@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Windows.Imaging;
+using ToneSnip.Windows.Interop;
 using Microsoft.Win32;
 
 namespace ToneSnip.Windows.Tray;
@@ -12,36 +13,6 @@ namespace ToneSnip.Windows.Tray;
 public static class TrayGlyph
 {
     private const int SmCxSmIcon = 49;
-
-    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
-    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr CreateIconIndirect(ref IconInfo info);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateBitmap(int width, int height, uint planes, uint bitsPerPixel, byte[] bits);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateDIBSection(IntPtr dc, ref BitmapInfoHeader header, uint usage, out IntPtr bits, IntPtr section, uint offset);
-    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
-    [DllImport("user32.dll")] private static extern bool GetIconInfo(IntPtr icon, out IconInfo info);
-    [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
-    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
-    [DllImport("gdi32.dll")] private static extern int GetDIBits(IntPtr dc, IntPtr bitmap, uint startLine, uint lines, byte[] bits, ref BitmapInfoHeader header, uint usage);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct IconInfo
-    {
-        public int IsIcon;              // BOOL: an icon, not a cursor, so the hotspot fields are ignored
-        public int HotspotX, HotspotY;
-        public IntPtr Mask, Color;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BitmapInfoHeader
-    {
-        public uint Size;
-        public int Width, Height;
-        public ushort Planes, BitCount;
-        public uint Compression, SizeImage;
-        public int XPelsPerMeter, YPelsPerMeter;
-        public uint ClrUsed, ClrImportant;
-    }
 
     /// <summary>The two squares at one icon size, in whole pixels. 16, 20 and 24 (the taskbar at 100 %, 125 % and 150 %)
     /// are hand-laid rather than scaled so no edge lands between pixels; the outline is a filled box with its inside
@@ -71,7 +42,7 @@ public static class TrayGlyph
     /// <summary>The notification area's icon size for the taskbar's DPI: 16 at 100 %, 20 at 125 %, 24 at 150 %.</summary>
     public static int TraySize()
     {
-        int s = GetSystemMetrics(SmCxSmIcon);
+        int s = User32.GetSystemMetrics(SmCxSmIcon);
         return s >= 8 && s <= 256 ? s : 16;
     }
 
@@ -118,21 +89,21 @@ public static class TrayGlyph
         if (icon == IntPtr.Zero) return null;
         try
         {
-            if (!GetIconInfo(icon, out IconInfo info)) return null;
+            if (!User32.GetIconInfo(icon, out User32.IconInfo info)) return null;
             try
             {
                 // GetDIBits wants a BITMAPINFO; for a 32-bit BI_RGB read the header alone is the whole structure.
-                var header = new BitmapInfoHeader
+                var header = new Gdi32.BitmapInfoHeader
                 {
-                    Size = (uint)Marshal.SizeOf<BitmapInfoHeader>(),
+                    Size = (uint)Marshal.SizeOf<Gdi32.BitmapInfoHeader>(),
                     Width = size, Height = -size,   // top-down, the order BgraImage keeps its rows in
                     Planes = 1, BitCount = 32,
                 };
                 byte[] bits = new byte[size * size * 4];
-                IntPtr dc = GetDC(IntPtr.Zero);
+                IntPtr dc = User32.GetDC(IntPtr.Zero);
                 int lines;
-                try { lines = GetDIBits(dc, info.Color, 0, (uint)size, bits, ref header, 0 /*DIB_RGB_COLORS*/); }
-                finally { ReleaseDC(IntPtr.Zero, dc); }
+                try { lines = Gdi32.GetDIBits(dc, info.Color, 0, (uint)size, bits, ref header, 0 /*DIB_RGB_COLORS*/); }
+                finally { User32.ReleaseDC(IntPtr.Zero, dc); }
                 if (lines != size) return null;
                 // The icon's colour bitmap is PARGB (CreateIcon draws it that way for the shell); BgraImage is straight.
                 for (int i = 0; i < bits.Length; i += 4)
@@ -148,11 +119,11 @@ public static class TrayGlyph
             finally
             {
                 // GetIconInfo hands out copies of both bitmaps, and they are the caller's to delete.
-                if (info.Color != IntPtr.Zero) DeleteObject(info.Color);
-                if (info.Mask != IntPtr.Zero) DeleteObject(info.Mask);
+                if (info.Color != IntPtr.Zero) Gdi32.DeleteObject(info.Color);
+                if (info.Mask != IntPtr.Zero) Gdi32.DeleteObject(info.Mask);
             }
         }
-        finally { DestroyIcon(icon); }
+        finally { User32.DestroyIcon(icon); }
     }
 #endif
 
@@ -161,16 +132,16 @@ public static class TrayGlyph
     public static IntPtr CreateIcon(int size, uint argb)
     {
         size = Math.Clamp(size, 8, 256);
-        var header = new BitmapInfoHeader
+        var header = new Gdi32.BitmapInfoHeader
         {
-            Size = (uint)Marshal.SizeOf<BitmapInfoHeader>(),
+            Size = (uint)Marshal.SizeOf<Gdi32.BitmapInfoHeader>(),
             Width = size, Height = -size,   // negative: top-down, which is how GDI+ draws into it
             Planes = 1, BitCount = 32,
         };
-        IntPtr colour = CreateDIBSection(IntPtr.Zero, ref header, 0 /*DIB_RGB_COLORS*/, out IntPtr bits, IntPtr.Zero, 0);
+        IntPtr colour = Gdi32.CreateDIBSection(IntPtr.Zero, ref header, 0 /*DIB_RGB_COLORS*/, out IntPtr bits, IntPtr.Zero, 0);
         if (colour == IntPtr.Zero) return IntPtr.Zero;
         // An all-zero AND mask means "take every pixel from the colour bitmap"; the alpha channel does the shaping.
-        IntPtr mask = CreateBitmap(size, size, 1, 1, new byte[((size + 31) / 32) * 4 * size]);
+        IntPtr mask = Gdi32.CreateBitmap(size, size, 1, 1, new byte[((size + 31) / 32) * 4 * size]);
         IntPtr icon = IntPtr.Zero;
         try
         {
@@ -179,14 +150,14 @@ public static class TrayGlyph
             using (GdiPlus.Graphics g = bmp.CreateGraphics())
                 Draw(g, size, argb);
             if (mask == IntPtr.Zero) return IntPtr.Zero;
-            var info = new IconInfo { IsIcon = 1, Mask = mask, Color = colour };
-            icon = CreateIconIndirect(ref info);
+            var info = new User32.IconInfo { IsIcon = 1, Mask = mask, Color = colour };
+            icon = User32.CreateIconIndirect(ref info);
         }
         finally
         {
             // CreateIconIndirect copies both bitmaps, so they go either way.
-            DeleteObject(colour);
-            if (mask != IntPtr.Zero) DeleteObject(mask);
+            Gdi32.DeleteObject(colour);
+            if (mask != IntPtr.Zero) Gdi32.DeleteObject(mask);
         }
         return icon;
     }

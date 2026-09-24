@@ -13,7 +13,7 @@ namespace ToneSnip.Windows.Tray;
 /// text rendering are unchanged.
 /// </para>
 /// </summary>
-public sealed class TrayMenu
+public sealed partial class TrayMenu
 {
     private enum Kind { Item, Header, Separator, Spacer }
 
@@ -51,13 +51,12 @@ public sealed class TrayMenu
 
     #region interop
 
-    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct MeasureItem { public uint CtlType, CtlId, ItemId, ItemWidth, ItemHeight; public IntPtr ItemData; }
-    [StructLayout(LayoutKind.Sequential)] private struct DrawItem { public uint CtlType, CtlId, ItemId, ItemAction, ItemState; public IntPtr HwndItem, Dc; public Rect Item; public IntPtr ItemData; }
+    [StructLayout(LayoutKind.Sequential)] private struct DrawItem { public uint CtlType, CtlId, ItemId, ItemAction, ItemState; public IntPtr HwndItem, Dc; public User32.Rect Item; public IntPtr ItemData; }
     [StructLayout(LayoutKind.Sequential)] private struct MenuInfo { public int CbSize, Mask, Style, CyMax; public IntPtr Background; public int ContextHelpId; public IntPtr MenuData; }
 
-    [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
-    [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
+    [LibraryImport("user32.dll")] private static partial IntPtr CreatePopupMenu();
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool DestroyMenu(IntPtr menu);
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct MenuItemInfo
     {
@@ -69,24 +68,8 @@ public sealed class TrayMenu
         public IntPtr BmpItem;
     }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool InsertMenuItemW(IntPtr menu, uint position, bool byPosition, ref MenuItemInfo item);
-    [DllImport("user32.dll")] private static extern bool SetMenuInfo(IntPtr menu, ref MenuInfo info);
-    [DllImport("user32.dll")] private static extern int TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr owner, IntPtr parameters);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowW(string className, string? windowName);
-    [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(long point, uint flags);
-    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
-    [DllImport("user32.dll")] private static extern uint GetDpiForSystem();
-    [DllImport("user32.dll")] private static extern bool SystemParametersInfoW(uint action, uint param, out int value, uint winIni);
-    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
-    [DllImport("user32.dll")] private static extern int FillRect(IntPtr dc, ref Rect rect, IntPtr brush);
-    [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateSolidBrush(uint color);
-    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
-    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
-    [DllImport("gdi32.dll")] private static extern IntPtr GetStockObject(int index);
-    [DllImport("gdi32.dll")] private static extern bool RoundRect(IntPtr dc, int left, int top, int right, int bottom, int width, int height);
+    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool SetMenuInfo(IntPtr menu, ref MenuInfo info);
+    [LibraryImport("user32.dll")] private static partial int TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr owner, IntPtr parameters);
 
     private const uint MiimState = 0x1, MiimId = 0x2, MiimData = 0x20, MiimString = 0x40, MiimFType = 0x100;
     private const uint MftOwnerDraw = 0x100, MfsGrayed = 0x3, MfsChecked = 0x8;
@@ -136,9 +119,9 @@ public sealed class TrayMenu
             SetMenuInfo(menu, ref info);
             // The menu only dismisses on an outside click and takes the keyboard when its owner is the foreground
             // window; the trailing WM_NULL is the documented companion to that call.
-            if (!SetForegroundWindow(_window.Handle)) _log.Warn("tray menu: SetForegroundWindow failed; the menu may not dismiss on an outside click");
+            if (!User32.SetForegroundWindow(_window.Handle)) _log.Warn("tray menu: SetForegroundWindow failed; the menu may not dismiss on an outside click");
             chosen = TrackPopupMenuEx(menu, TpmLeftAlign | TpmBottomAlign | TpmRightButton | TpmReturnCmd, x, y, _window.Handle, IntPtr.Zero);
-            PostMessageW(_window.Handle, MessageWindow.WmNull, IntPtr.Zero, IntPtr.Zero);
+            User32.PostMessageW(_window.Handle, MessageWindow.WmNull, IntPtr.Zero, IntPtr.Zero);
         }
         finally
         {
@@ -243,7 +226,7 @@ public sealed class TrayMenu
                 return OnMenuChar(wParam);
             case MessageWindow.WmInitMenuPopup:
                 // Ask DWM to round the popup window. #32768 is the menu window class.
-                Dwm.RoundCorners(FindWindowW("#32768", null));
+                Dwm.RoundCorners(User32.FindWindowW("#32768", null));
                 return null;
             default: return null;
         }
@@ -318,8 +301,8 @@ public sealed class TrayMenu
     {
         try
         {
-            if (!SystemParametersInfoW(SpiGetFontSmoothing, 0, out int on, 0) || on == 0) return false;
-            return !SystemParametersInfoW(SpiGetFontSmoothingType, 0, out int type, 0) || type == FeFontSmoothingClearType;
+            if (!User32.SystemParametersInfoW(SpiGetFontSmoothing, 0, out int on, 0) || on == 0) return false;
+            return !User32.SystemParametersInfoW(SpiGetFontSmoothingType, 0, out int type, 0) || type == FeFontSmoothingClearType;
         }
         catch (EntryPointNotFoundException) { return true; }
     }
@@ -334,14 +317,14 @@ public sealed class TrayMenu
     private void Draw(DrawItem d)
     {
         Entry e = EntryFor((int)d.ItemData);
-        Rect r = d.Item;
-        FillRect(d.Dc, ref r, _surfaceBrush);
+        User32.Rect r = d.Item;
+        User32.FillRect(d.Dc, ref r, _surfaceBrush);
         if (e.Kind == Kind.Spacer) return;
         if (e.Kind == Kind.Separator)
         {
             int y = (r.Top + r.Bottom) / 2;
-            var line = new Rect { Left = r.Left + Scale(8), Top = y, Right = r.Right - Scale(8), Bottom = y + 1 };
-            FillRect(d.Dc, ref line, _separatorBrush);
+            var line = new User32.Rect { Left = r.Left + Scale(8), Top = y, Right = r.Right - Scale(8), Bottom = y + 1 };
+            User32.FillRect(d.Dc, ref line, _separatorBrush);
             return;
         }
         bool enabled = e.Kind == Kind.Item;
@@ -351,12 +334,12 @@ public sealed class TrayMenu
         if (hot) _highlighted = (int)d.ItemData;
         if (hot)
         {
-            IntPtr oldBrush = SelectObject(d.Dc, _hoverBrush);
-            IntPtr oldPen = SelectObject(d.Dc, GetStockObject(NullPen));
+            IntPtr oldBrush = Gdi32.SelectObject(d.Dc, _hoverBrush);
+            IntPtr oldPen = Gdi32.SelectObject(d.Dc, Gdi32.GetStockObject(NullPen));
             int radius = Scale(CornerRadius) * 2;
-            RoundRect(d.Dc, r.Left + Scale(HoverInsetX), r.Top + Scale(HoverInsetY), r.Right - Scale(HoverInsetX), r.Bottom - Scale(HoverInsetY), radius, radius);
-            SelectObject(d.Dc, oldPen);
-            SelectObject(d.Dc, oldBrush);
+            Gdi32.RoundRect(d.Dc, r.Left + Scale(HoverInsetX), r.Top + Scale(HoverInsetY), r.Right - Scale(HoverInsetX), r.Bottom - Scale(HoverInsetY), radius, radius);
+            Gdi32.SelectObject(d.Dc, oldPen);
+            Gdi32.SelectObject(d.Dc, oldBrush);
         }
         // Normally built by BuildTheme; the ??= is only a fallback.
         Ink ink = _fonts ??= NewInk();
@@ -381,7 +364,7 @@ public sealed class TrayMenu
     /// </summary>
     private void MeasureItems()
     {
-        IntPtr screen = GetDC(IntPtr.Zero);
+        IntPtr screen = User32.GetDC(IntPtr.Zero);
         int widest = 0;
         try
         {
@@ -401,7 +384,7 @@ public sealed class TrayMenu
                 widest = Math.Max(widest, rowWidth + Scale(RightPad));
             }
         }
-        finally { ReleaseDC(IntPtr.Zero, screen); }
+        finally { User32.ReleaseDC(IntPtr.Zero, screen); }
         // The menu manager adds a check gutter to every owner-drawn item's reported width, so subtract it (from the
         // minimum too).
         int gutter = CheckGutter();
@@ -410,7 +393,7 @@ public sealed class TrayMenu
 
     /// <summary>The width the menu manager adds to every owner-drawn item's rectangle, in this monitor's pixels.
     /// SM_CXMENUCHECK is at the system DPI, so it is normalised to 96 and rescaled.</summary>
-    private int CheckGutter() => Scale(GetSystemMetrics(SmCxMenuCheck) * 96 / Math.Max(96, (int)GetDpiForSystem()));
+    private int CheckGutter() => Scale(User32.GetSystemMetrics(SmCxMenuCheck) * 96 / Math.Max(96, (int)User32.GetDpiForSystem()));
 
     /// <summary>
     /// Every row drawn once, top to bottom, into a device context the caller owns, through the same code as the live
@@ -442,7 +425,7 @@ public sealed class TrayMenu
                     CtlType = OdtMenu,
                     ItemState = id == hoveredId ? OdsSelected : 0,
                     Dc = dc,
-                    Item = new Rect { Left = 0, Top = y, Right = width, Bottom = y + height },
+                    Item = new User32.Rect { Left = 0, Top = y, Right = width, Bottom = y + height },
                     ItemData = (IntPtr)id,
                 });
                 y += height;
@@ -515,15 +498,15 @@ public sealed class TrayMenu
         _ink = highContrast ? Palette.HighContrast() : Palette.App(IsDark());
         _fonts?.Dispose();
         _fonts = NewInk();          // one set for the whole pass, at this pass's DPI
-        _surfaceBrush = CreateSolidBrush(Ref(_ink.Surface));
-        _hoverBrush = CreateSolidBrush(Ref(_ink.Hover));
-        _separatorBrush = CreateSolidBrush(Ref(_ink.Separator));
+        _surfaceBrush = Gdi32.CreateSolidBrush(Ref(_ink.Surface));
+        _hoverBrush = Gdi32.CreateSolidBrush(Ref(_ink.Hover));
+        _separatorBrush = Gdi32.CreateSolidBrush(Ref(_ink.Separator));
     }
 
     private void ReleaseTheme()
     {
         foreach (IntPtr h in new[] { _surfaceBrush, _hoverBrush, _separatorBrush })
-            if (h != IntPtr.Zero) DeleteObject(h);
+            if (h != IntPtr.Zero) Gdi32.DeleteObject(h);
         _surfaceBrush = _hoverBrush = _separatorBrush = IntPtr.Zero;
         _fonts?.Dispose();
         _fonts = null;
@@ -545,8 +528,8 @@ public sealed class TrayMenu
     {
         try
         {
-            IntPtr monitor = MonitorFromPoint(((long)(uint)y << 32) | (uint)x, MonitorDefaultToNearest);
-            if (GetDpiForMonitor(monitor, 0 /*MDT_EFFECTIVE_DPI*/, out uint dpiX, out _) == 0 && dpiX > 0) return (int)dpiX;
+            IntPtr monitor = User32.MonitorFromPoint(((long)(uint)y << 32) | (uint)x, MonitorDefaultToNearest);
+            if (Shcore.GetDpiForMonitor(monitor, 0 /*MDT_EFFECTIVE_DPI*/, out uint dpiX, out _) == 0 && dpiX > 0) return (int)dpiX;
         }
         catch (DllNotFoundException) { }
         catch (EntryPointNotFoundException) { }

@@ -135,6 +135,16 @@ public class FlattenOnWhiteTests
     }
 
     [Fact]
+    public void The_shared_channel_blend_leaves_opaque_alone_and_turns_transparent_white()
+    {
+        // The JPEG encoder blends every pixel, opaque ones included, so an opaque channel must come back unchanged.
+        for (int c = 0; c <= 255; c++) Assert.Equal(c, Flatten.OverWhite((byte)c, 255));
+        Assert.Equal(255, Flatten.OverWhite(0, 0));
+        Assert.Equal(127, Flatten.OverWhite(0, 128));
+        Assert.Equal(Flatten.OverWhite(40, 77), Flatten.OnWhite(new BgraImage(1, 1, new byte[] { 40, 40, 40, 77 })).Data[1]);
+    }
+
+    [Fact]
     public void Opacity_is_detected_from_alpha_alone()
     {
         Assert.True(Flatten.IsOpaque(new BgraImage(2, 1, new byte[] { 0, 0, 0, 255, 9, 9, 9, 255 })));

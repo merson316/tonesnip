@@ -16,7 +16,7 @@ namespace ToneSnip.App;
 /// <para>Compiled out of the debug build: the Run value and the task are shared by every ToneSnip on the machine,
 /// so a debug build must not be able to change them.</para>
 /// </summary>
-public static class Autostart
+public static partial class Autostart
 {
 #if !TONESNIP_HARNESS
     private const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run", Name = "ToneSnip";
@@ -186,8 +186,8 @@ public static class Autostart
     private const int AppmodelErrorNoPackage = 15700;
     private const int ErrorInsufficientBuffer = 122;
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetCurrentPackageFullName(ref int packageFullNameLength, char[]? packageFullName);
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int GetCurrentPackageFullName(ref int packageFullNameLength, [Out] char[]? packageFullName);
 
     private static bool ProbePackaged()
     {
@@ -198,9 +198,9 @@ public static class Autostart
     }
 
 #if !TONESNIP_HARNESS
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetPackagesByPackageFamily(string packageFamilyName, ref int count,
-                                                         IntPtr[]? packageFullNames, ref int bufferLength, char[]? buffer);
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int GetPackagesByPackageFamily(string packageFamilyName, ref int count,
+                                                          [Out] IntPtr[]? packageFullNames, ref int bufferLength, [Out] char[]? buffer);
 
     /// <summary>
     /// True when the MSIX is registered for this user, asked the same zero-length-buffer way as

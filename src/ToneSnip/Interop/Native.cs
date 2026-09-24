@@ -1,37 +1,16 @@
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Geometry;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.App.Interop;
 
 public static class Native
 {
-    [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
-    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
-    [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point p);
-    [DllImport("user32.dll")] private static extern bool SystemParametersInfoW(uint action, uint param, out Rect value, uint winIni);
     private const uint SpiGetWorkArea = 0x0030;
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
-    [DllImport("user32.dll")] private static extern int GetWindowLongW(IntPtr hwnd, int index);
-    [DllImport("user32.dll")] private static extern int SetWindowLongW(IntPtr hwnd, int index, int value);
-    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref Point p);
-    [DllImport("user32.dll")] private static extern IntPtr MonitorFromRect(ref Rect rect, uint flags);
-    [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
     private const uint MonitorDefaultToNearest = 2;
     public const int WsExNoActivate = 0x08000000, WsExToolWindow = 0x00000080, GwlExStyle = -20, GwlpHwndParent = -8;
 
-    public static (int X, int Y) CursorPos() { GetCursorPos(out Point p); return (p.X, p.Y); }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct MonitorInfoEx
-    {
-        public uint Size; public Rect Monitor; public Rect Work; public uint Flags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Device;
-    }
-    private delegate bool MonitorEnumProc(IntPtr monitor, IntPtr hdc, IntPtr rect, IntPtr data);
-    [DllImport("user32.dll")] private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc proc, IntPtr data);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool GetMonitorInfoW(IntPtr monitor, ref MonitorInfoEx info);
+    public static (int X, int Y) CursorPos() { User32.GetCursorPos(out User32.Point p); return (p.X, p.Y); }
 
     /// <summary>Every monitor's GDI device name and physical bounds, without the graphics stack the frame grabber's
     /// enumeration brings up.</summary>
@@ -40,12 +19,12 @@ public static class Native
         var found = new List<(string, IntRect)>();
         bool Add(IntPtr h, IntPtr hdc, IntPtr rect, IntPtr data)
         {
-            var info = new MonitorInfoEx { Size = (uint)Marshal.SizeOf<MonitorInfoEx>() };
-            if (GetMonitorInfoW(h, ref info)) found.Add((info.Device, IntRect.FromLtrb(info.Monitor.Left, info.Monitor.Top, info.Monitor.Right, info.Monitor.Bottom)));
+            var info = new User32.MonitorInfoEx { Size = (uint)Marshal.SizeOf<User32.MonitorInfoEx>() };
+            if (User32.GetMonitorInfoW(h, ref info)) found.Add((info.Device, IntRect.FromLtrb(info.Monitor.Left, info.Monitor.Top, info.Monitor.Right, info.Monitor.Bottom)));
             return true;
         }
-        MonitorEnumProc proc = Add;   // kept alive for the duration of the native call
-        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, proc, IntPtr.Zero);
+        User32.MonitorEnumProc proc = Add;   // kept alive for the duration of the native call
+        User32.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, proc, IntPtr.Zero);
         GC.KeepAlive(proc);
         return found;
     }
@@ -53,10 +32,10 @@ public static class Native
     /// <summary>The primary monitor's work area (excluding the taskbar) in physical pixels, or empty on
     /// failure.</summary>
     public static IntRect PrimaryWorkArea()
-        => SystemParametersInfoW(SpiGetWorkArea, 0, out Rect r, 0) ? IntRect.FromLtrb(r.Left, r.Top, r.Right, r.Bottom) : IntRect.Empty;
+        => User32.SystemParametersInfoW(SpiGetWorkArea, 0, out User32.Rect r, 0) ? IntRect.FromLtrb(r.Left, r.Top, r.Right, r.Bottom) : IntRect.Empty;
 
     /// <summary>Physical pixels per effective pixel for the monitor a window's HWND is currently on.</summary>
-    public static double Scale(IntPtr hwnd) => GetDpiForWindow(hwnd) / 96.0;
+    public static double Scale(IntPtr hwnd) => User32.GetDpiForWindow(hwnd) / 96.0;
 
     /// <summary>
     /// Physical pixels per effective pixel for the monitor holding a physical-pixel rectangle. Popups need this before
@@ -66,9 +45,9 @@ public static class Native
     {
         try
         {
-            var r = new Rect { Left = area.Left, Top = area.Top, Right = area.Right, Bottom = area.Bottom };
-            IntPtr monitor = MonitorFromRect(ref r, MonitorDefaultToNearest);
-            if (GetDpiForMonitor(monitor, 0 /*MDT_EFFECTIVE_DPI*/, out uint dpiX, out _) == 0 && dpiX > 0) return dpiX / 96.0;
+            var r = new User32.Rect { Left = area.Left, Top = area.Top, Right = area.Right, Bottom = area.Bottom };
+            IntPtr monitor = User32.MonitorFromRect(ref r, MonitorDefaultToNearest);
+            if (Shcore.GetDpiForMonitor(monitor, 0 /*MDT_EFFECTIVE_DPI*/, out uint dpiX, out _) == 0 && dpiX > 0) return dpiX / 96.0;
         }
         catch (DllNotFoundException) { }
         catch (EntryPointNotFoundException) { }
@@ -77,14 +56,14 @@ public static class Native
 
     /// <summary>Where a window's client area starts on the desktop, in physical pixels. WinUI has no PointToScreen,
     /// so an element's own offset (in effective pixels, scaled) is added to this instead.</summary>
-    public static (int X, int Y) ClientOrigin(IntPtr hwnd) { Point p = default; ClientToScreen(hwnd, ref p); return (p.X, p.Y); }
+    public static (int X, int Y) ClientOrigin(IntPtr hwnd) { User32.Point p = default; User32.ClientToScreen(hwnd, ref p); return (p.X, p.Y); }
 
     /// <summary>
     /// Sets a window's owner (zero for none). An owned window stays above its owner, even when the owner is activated.
     /// <para>GWLP_HWNDPARENT sets the owner, not the parent. Destroying a window destroys the windows it owns, so a
     /// popup that outlives its owner must be disowned first.</para>
     /// </summary>
-    public static void SetOwner(IntPtr hwnd, IntPtr owner) => SetWindowLongPtr(hwnd, GwlpHwndParent, owner);
+    public static void SetOwner(IntPtr hwnd, IntPtr owner) => User32.SetWindowLongPtr(hwnd, GwlpHwndParent, owner);
 
-    public static void AddExStyle(IntPtr hwnd, int style) => SetWindowLongW(hwnd, GwlExStyle, GetWindowLongW(hwnd, GwlExStyle) | style);
+    public static void AddExStyle(IntPtr hwnd, int style) => User32.SetWindowLongW(hwnd, GwlExStyle, User32.GetWindowLongW(hwnd, GwlExStyle) | style);
 }

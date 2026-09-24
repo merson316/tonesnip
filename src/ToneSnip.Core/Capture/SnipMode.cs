@@ -27,3 +27,7 @@ public static class SnipModes
     /// <summary>Instant modes capture without showing the overlay.</summary>
     public static bool IsInstant(SnipMode mode) => mode is SnipMode.FullScreenAll or SnipMode.ActiveWindow;
 }
+
+/// <summary>What a finished selection is for: an ordinary snip (clipboard, save, notification), its text copied, or
+/// the snip pinned to the screen. The last two leave the clipboard's image, the save folder and Recent alone.</summary>
+public enum SnipAction { Snip, CopyText, Pin }

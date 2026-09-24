@@ -41,16 +41,16 @@ SVG_PATH = REPO_ROOT / "assets" / "icon.svg"
 # 16 px at 100% DPI, 20 px at 125%, 24 px at 150%.
 ICO_SIZES = [16, 20, 24, 32, 48, 64, 256]
 
-# MSIX scale-NNN suffixes, as percentages of each logo's base size.
-SCALES = [100, 125, 150, 200, 400]
+# MSIX scale-NNN suffixes, as percentages of each logo's base size. Windows picks
+# the nearest scale and resizes it, so 125 and 150 would only duplicate 200.
+SCALES = [100, 200, 400]
 
-# Base (unscaled) sizes for the plain Square/Wide logos, keyed by manifest name.
+# Base (unscaled) sizes for the square logos, keyed by manifest name. Windows 11
+# has no live tiles, so the Wide310x150, Square71x71 and Square310x310 logos are
+# never shown and are not generated.
 TILE_BASES: dict[str, tuple[int, int]] = {
     "Square44x44Logo": (44, 44),
-    "Square71x71Logo": (71, 71),
     "Square150x150Logo": (150, 150),
-    "Wide310x150Logo": (310, 150),
-    "Square310x310Logo": (310, 310),
 }
 STORE_LOGO_BASE = (50, 50)
 
@@ -112,16 +112,6 @@ def render_inset(size: int, inset: int, *, unplated: bool = False) -> Image.Imag
     return canvas
 
 
-def render_on_canvas(canvas_size: tuple[int, int], icon_size: int) -> Image.Image:
-    """Render the square icon at `icon_size`, centred on a transparent canvas
-    of `canvas_size` (used for the wide tile, which isn't 1:1)."""
-    cw, ch = canvas_size
-    icon = render_svg(icon_size, icon_size)
-    canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-    canvas.paste(icon, ((cw - icon_size) // 2, (ch - icon_size) // 2), icon)
-    return canvas
-
-
 def _save_png(img: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, format="PNG", optimize=True)
@@ -170,11 +160,7 @@ def build(out_root: Path) -> list[Path]:
     for name, base_size in TILE_BASES.items():
         for pct in SCALES:
             w, h = _scaled(base_size, pct)
-            if name == "Wide310x150Logo":
-                img = render_on_canvas((w, h), round(h * 0.8))
-            else:
-                img = render_svg(w, h)
-            emit(img, f"tiles/{name}.scale-{pct}.png")
+            emit(render_svg(w, h), f"tiles/{name}.scale-{pct}.png")
 
     # Square44x44Logo fixed target sizes, plain and unplated.
     for s in TARGET_SIZES:
@@ -204,6 +190,12 @@ def check() -> int:
                 mismatches.append(f"missing: {rel}")
             elif not filecmp.cmp(committed, generated, shallow=False):
                 mismatches.append(f"stale:   {rel}")
+        # The csproj packages every PNG in assets/tiles, so one this script no
+        # longer writes would still ship.
+        expected = {REPO_ROOT / rel for rel in written}
+        for extra in sorted((REPO_ROOT / "assets" / "tiles").glob("*.png")):
+            if extra not in expected:
+                mismatches.append(f"extra:   {extra.relative_to(REPO_ROOT)}")
         if mismatches:
             print(f"gen-assets --check: {len(mismatches)} file(s) out of date:")
             for m in sorted(mismatches):

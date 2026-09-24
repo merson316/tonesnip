@@ -28,10 +28,6 @@ public sealed class TrayIcon : IDisposable
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool Shell_NotifyIconW(int message, ref NotifyIconData data);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr LoadImageW(IntPtr instance, string name, uint type, int cx, int cy, uint load);
-    [DllImport("user32.dll")] private static extern IntPtr LoadIconW(IntPtr instance, IntPtr name);
-    [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
-    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
 
     private const int NimAdd = 0, NimModify = 1, NimDelete = 2, NimSetVersion = 4;
     private const int NifMessage = 0x01, NifIcon = 0x02, NifTip = 0x04, NifInfo = 0x10, NifShowTip = 0x80;
@@ -58,10 +54,10 @@ public sealed class TrayIcon : IDisposable
 
     /// <summary>Loads an .ico file at the notification area's icon size. Returns IntPtr.Zero when the file cannot be read.</summary>
     public static IntPtr LoadIconFile(string path)
-        => LoadImageW(IntPtr.Zero, path, ImageIcon, GetSystemMetrics(SmCxSmIcon), GetSystemMetrics(SmCySmIcon), LrLoadFromFile);
+        => User32.LoadImageW(IntPtr.Zero, path, ImageIcon, User32.GetSystemMetrics(SmCxSmIcon), User32.GetSystemMetrics(SmCySmIcon), LrLoadFromFile);
 
     /// <summary>IDI_APPLICATION: the shared system icon to fall back on. It belongs to the system — never destroy it, so pass ownsIcon: false.</summary>
-    public static IntPtr DefaultIcon() => LoadIconW(IntPtr.Zero, (IntPtr)32512);
+    public static IntPtr DefaultIcon() => User32.LoadIconW(IntPtr.Zero, (IntPtr)32512);
 
     public TrayIcon(MessageWindow window, IntPtr icon, string tooltip, ILog log, bool ownsIcon = true)
     {
@@ -133,7 +129,7 @@ public sealed class TrayIcon : IDisposable
             if (!Shell_NotifyIconW(NimModify, ref d)) _log.Warn($"tray icon: NIM_MODIFY(NIF_ICON) failed, error {Marshal.GetLastWin32Error()}");
         }
         // Destroyed only after the shell has the new icon, so there is no moment with nothing to draw.
-        if (ownedOld && old != IntPtr.Zero) DestroyIcon(old);
+        if (ownedOld && old != IntPtr.Zero) User32.DestroyIcon(old);
     }
 
     public void SetTooltip(string tooltip)
@@ -164,6 +160,6 @@ public sealed class TrayIcon : IDisposable
         _window.TrayMessage -= OnTrayMessage;
         _window.TaskbarCreated -= Add;
         if (_added) { NotifyIconData d = Data(0); Shell_NotifyIconW(NimDelete, ref d); }
-        if (_ownsIcon && _icon != IntPtr.Zero) DestroyIcon(_icon);
+        if (_ownsIcon && _icon != IntPtr.Zero) User32.DestroyIcon(_icon);
     }
 }

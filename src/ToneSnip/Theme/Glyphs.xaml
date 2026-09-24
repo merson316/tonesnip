@@ -40,6 +40,12 @@
   <x:String x:Key="GlyphMore">&#xE712;</x:String>
   <x:String x:Key="GlyphFolder">&#xE8B7;</x:String>
 
+  <!-- Reference and extract: the overlay bar, the editor, the pin and the notices. Rename (a text cursor over a text
+       box) reads as text taken from the picture, distinct from the text tool's letter. -->
+  <x:String x:Key="GlyphCopyText">&#xE8AC;</x:String>
+  <x:String x:Key="GlyphPin">&#xE718;</x:String>
+  <x:String x:Key="GlyphPickColour">&#xEF3C;</x:String>
+
   <!-- The Recent flyout -->
   <x:String x:Key="GlyphSettings">&#xE713;</x:String>
   <x:String x:Key="GlyphOpenInViewer">&#xE8A7;</x:String>
@@ -60,6 +66,7 @@
   <x:String x:Key="GlyphHistory">&#xE81C;</x:String>
   <x:String x:Key="GlyphStartWithWindows">&#xE7E8;</x:String>
   <x:String x:Key="GlyphNitsReadout">&#xE793;</x:String>
+  <x:String x:Key="GlyphCaptureCursor">&#xE8B0;</x:String>
   <x:String x:Key="GlyphAfterSelect">&#xE8FF;</x:String>
   <x:String x:Key="GlyphSelectionFrame">&#xF407;</x:String>
   <x:String x:Key="GlyphPrivacyMode">&#xEA18;</x:String>

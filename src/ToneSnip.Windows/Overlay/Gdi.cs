@@ -1,12 +1,14 @@
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
+using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.Windows.Overlay;
 
 /// <summary>
 /// The overlay's GDI plumbing: a top-down 32-bpp DIB section as the double buffer, the row copy out of the frozen
-/// frame's pinned BGRA buffer, the software dim, and the pens, brushes and font the paint path reuses.
+/// frame's pinned BGRA buffer, the software dim, and the constants for the pens, brushes and font the paint path
+/// reuses. The imports themselves are in <see cref="Gdi32"/>.
 /// <para>
 /// The double buffer is a DIB section so the dim can be applied to its bytes in place (GDI has no alpha blend for
 /// FillRect, and a translucent GDI+ fill per mouse move is expensive), and so dirty rows can be copied straight in.
@@ -14,47 +16,6 @@ namespace ToneSnip.Windows.Overlay;
 /// </summary>
 internal static class Gdi
 {
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BitmapInfoHeader
-    {
-        public uint Size;
-        public int Width, Height;
-        public ushort Planes, BitCount;
-        public uint Compression, SizeImage;
-        public int XPelsPerMeter, YPelsPerMeter;
-        public uint ClrUsed, ClrImportant;
-    }
-
-    [StructLayout(LayoutKind.Sequential)] internal struct Size { public int Cx, Cy; }
-
-    [DllImport("gdi32.dll")] internal static extern IntPtr CreateCompatibleDC(IntPtr dc);
-    [DllImport("gdi32.dll")] internal static extern bool DeleteDC(IntPtr dc);
-    [DllImport("gdi32.dll")] private static extern IntPtr CreateDIBSection(IntPtr dc, ref BitmapInfoHeader header, uint usage, out IntPtr bits, IntPtr section, uint offset);
-    [DllImport("gdi32.dll")] internal static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
-    [DllImport("gdi32.dll")] internal static extern bool DeleteObject(IntPtr obj);
-    [DllImport("gdi32.dll")] internal static extern IntPtr GetStockObject(int index);
-    [DllImport("gdi32.dll")] internal static extern bool BitBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int srcX, int srcY, uint rop);
-    [DllImport("gdi32.dll")] internal static extern IntPtr CreatePen(int style, int width, uint color);
-    [DllImport("gdi32.dll")] internal static extern IntPtr CreateSolidBrush(uint color);
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr CreateFontW(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline, uint strikeOut, uint charSet, uint outPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
-    [DllImport("gdi32.dll")] internal static extern bool Rectangle(IntPtr dc, int left, int top, int right, int bottom);
-    [DllImport("gdi32.dll")] internal static extern bool RoundRect(IntPtr dc, int left, int top, int right, int bottom, int ellipseW, int ellipseH);
-    [DllImport("gdi32.dll")] internal static extern bool Polyline(IntPtr dc, [In] Point[] points, int count);
-    [DllImport("gdi32.dll")] internal static extern int SetBkMode(IntPtr dc, int mode);
-    [DllImport("gdi32.dll")] internal static extern uint SetTextColor(IntPtr dc, uint color);
-    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] internal static extern bool GetTextExtentPoint32W(IntPtr dc, string text, int length, out Size size);
-    [DllImport("gdi32.dll")] internal static extern bool SelectClipRgn(IntPtr dc, IntPtr region);
-    [DllImport("gdi32.dll")] internal static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
-    /// <summary>The region as an RGNDATA header plus RECTs; 0 when <paramref name="size"/> bytes are too few.</summary>
-    [DllImport("gdi32.dll")] internal static extern unsafe uint GetRegionData(IntPtr region, uint size, byte* data);
-    [DllImport("gdi32.dll")] internal static extern int IntersectClipRect(IntPtr dc, int left, int top, int right, int bottom);
-    /// <summary>Completes GDI's batched drawing before the DIB section's bytes are touched directly (and after).</summary>
-    [DllImport("gdi32.dll")] internal static extern bool GdiFlush();
-    [DllImport("user32.dll")] internal static extern int FillRect(IntPtr dc, ref Win32.Rect rect, IntPtr brush);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int DrawTextW(IntPtr dc, string text, int length, ref Win32.Rect rect, uint format);
-
-    [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; }
-
     internal const uint SrcCopy = 0x00CC0020;
     internal const int PsSolid = 0, NullBrush = 5, NullPen = 8, TransparentBk = 1, DefaultCharSet = 1, ClearTypeQuality = 5;
     internal const uint DtLeft = 0x0000, DtTop = 0x0000, DtSingleLine = 0x0020, DtNoPrefix = 0x0800;
@@ -63,13 +24,13 @@ internal static class Gdi
     /// <summary>A top-down 32-bpp BI_RGB DIB section and the pointer to its pixels; the stride is always width * 4.</summary>
     internal static IntPtr CreateDib(IntPtr referenceDc, int width, int height, out IntPtr bits)
     {
-        var header = new BitmapInfoHeader
+        var header = new Gdi32.BitmapInfoHeader
         {
-            Size = (uint)Marshal.SizeOf<BitmapInfoHeader>(),
+            Size = (uint)Marshal.SizeOf<Gdi32.BitmapInfoHeader>(),
             Width = width, Height = -height,   // negative: top-down, so its rows line up with BgraImage's
             Planes = 1, BitCount = 32,
         };
-        return CreateDIBSection(referenceDc, ref header, 0 /*DIB_RGB_COLORS*/, out bits, IntPtr.Zero, 0);
+        return Gdi32.CreateDIBSection(referenceDc, ref header, 0 /*DIB_RGB_COLORS*/, out bits, IntPtr.Zero, 0);
     }
 
     /// <summary>0xAARRGGBB to a GDI COLORREF (0x00BBGGRR).</summary>

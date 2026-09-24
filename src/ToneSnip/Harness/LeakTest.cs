@@ -1,11 +1,11 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
 using ToneSnip.App.Theme;
 using ToneSnip.Core.Capture;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
+using ToneSnip.Windows.Interop;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Windows.Graphics;
@@ -26,8 +26,6 @@ internal static class LeakTest
     /// <summary>Create/close cycles per window type.</summary>
     private const int Rounds = 5;
 
-    [DllImport("kernel32.dll")] private static extern bool AttachConsole(int pid);
-
     /// <summary>Objects that outlived their close, summed over every type; the process exit code.</summary>
     private static int _survivors;
     private static IntRect _monitor;
@@ -35,7 +33,7 @@ internal static class LeakTest
     /// <summary>Starts the XAML application for this mode, as <see cref="Screenshots.Start"/> does: no mutex.</summary>
     internal static int Start(StartupCommand command)
     {
-        AttachConsole(-1);   // WinExe: reattach to the launching console so Console.WriteLine is visible
+        Kernel32.AttachConsole(Kernel32.AttachParentProcess);   // WinExe: reattach to the launching console so Console.WriteLine is visible
         WinRT.ComWrappersSupport.InitializeComWrappers();
         Application.Start(p =>   // not `_`: the discard below would bind to the parameter instead
         {
@@ -64,6 +62,7 @@ internal static class LeakTest
             await Cycle("HistoryFlyout", Flyout);
             await Cycle("SettingsWindow", SettingsWin);
             await Cycle("ViewerWindow", Viewer);
+            await Cycle("PinWindow", Pin);
             Line(_survivors == 0 ? "leaktest: PASS, nothing survived its close" : $"leaktest: FAIL, {_survivors} objects survived their close");
         }
         catch (Exception ex)
@@ -108,13 +107,11 @@ internal static class LeakTest
              + $"; native: private WS {privBefore / 1_048_576} -> {privAfter / 1_048_576} MB ({(privAfter - privBefore) / (double)Rounds / 1_048_576:+0.0;-0.0} MB a cycle), gdi {gdiBefore} -> {gdiAfter}, user {userBefore} -> {userAfter}; handles: {handlesMoved}");
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetGuiResources(IntPtr process, uint flags);
-
     /// <summary>Private working set and GDI/USER handle counts: native leaks the survivor count cannot see.</summary>
     private static (long Private, uint Gdi, uint User) NativeCounters()
     {
         using var me = System.Diagnostics.Process.GetCurrentProcess();
-        return (Interop.ProcessMemory.PrivateWorkingSet(), GetGuiResources(me.Handle, 0), GetGuiResources(me.Handle, 1));
+        return (Interop.ProcessMemory.PrivateWorkingSet(), User32.GetGuiResources(me.Handle, 0), User32.GetGuiResources(me.Handle, 1));
     }
 
     /// <summary>A bare window, opened and closed, to displace WinUI's reference to the last closed window.</summary>
@@ -182,9 +179,11 @@ internal static class LeakTest
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task Toast(List<WeakReference<object>> tracked)
     {
-        var card = new Output.ToastWindow(App.Current.Log, _ => { }, _ => { });
+        var card = new Output.ToastWindow(App.Current.Log, _ => { }, _ => { }, _ => { });
         tracked.Add(new WeakReference<object>(card));
         card.Bind(Screenshots.SyntheticResult(hdr: false), "");
+        await Settle();
+        card.BindNotice("Text copied", "“leak test”", "");   // the text-only notice re-binds the same card
         await Settle();
         card.Dismiss();
         await Settle();
@@ -230,7 +229,26 @@ internal static class LeakTest
         // Shows the HDR-done note so its dwell timer is running when the window closes.
         win.ShowHdrDoneForHarness();
         await Settle();
+        // Closed mid-way through a zoom animation, with the picker's loupe up.
+        win.ExerciseViewForHarness();
         win.Close();
+        await Settle();
+    }
+
+    /// <summary>A pin, zoomed and faded (the layered-window path), then unpinned as Escape does. The PNG and the picture
+    /// decoded from it must go with the window.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task Pin(List<WeakReference<object>> tracked)
+    {
+        BgraImage img = Screenshots.SyntheticResult(hdr: false).Image;
+        byte[] png = Windows.Imaging.Bitmaps.EncodePng(img);
+        var pin = new Output.PinWindow(png, img.Width, img.Height, DateTime.Now, (_monitor.Left + 48, _monitor.Top + 48));
+        tracked.Add(new WeakReference<object>(pin));
+        tracked.Add(new WeakReference<object>(png));
+        await Settle();
+        pin.ExerciseForHarness();
+        await Settle();
+        pin.Close();
         await Settle();
     }
 

@@ -290,6 +290,36 @@ public static class ShapeRenderer
         }
     }
 
+    /// <summary>
+    /// <see cref="Zebra(BgraImage, IntRect, ReadOnlySpan{ValueTuple{IntRect, HalfImage}}, float, float, IntRect?)"/> from
+    /// a precomputed <see cref="ZebraMask"/> of the monitor at <paramref name="bounds"/>: the overlay's form, whose
+    /// frame may be on the graphics card, where the mask is computed once per exposure rather than per paint.
+    /// </summary>
+    public static void Zebra(BgraImage target, IntRect viewport, IntRect bounds, ZebraMask mask, IntRect? dirty = null)
+    {
+        IntRect hit = bounds.Intersect(viewport);
+        if (dirty is IntRect d) hit = hit.Intersect(d.Offset(viewport.Left, viewport.Top));
+        if (hit.IsEmpty) return;
+        if ((long)hit.Width * hit.Height < ZebraParallelPixels)
+            for (int y = hit.Top; y < hit.Bottom; y++) ZebraRow(target, viewport, bounds, mask, hit, y);
+        else
+            Parallel.For(hit.Top, hit.Bottom, y => ZebraRow(target, viewport, bounds, mask, hit, y));
+    }
+
+    private static void ZebraRow(BgraImage target, IntRect viewport, IntRect bounds, ZebraMask mask, IntRect hit, int y)
+    {
+        for (int x = hit.Left; x < hit.Right; x++)
+            if (mask.Over(x - bounds.Left, y - bounds.Top)) Stripe(target, viewport, x, y);
+    }
+
+    /// <summary>One zebra pixel: magenta or black by diagonal band.</summary>
+    private static void Stripe(BgraImage target, IntRect viewport, int x, int y)
+    {
+        int i = ((y - viewport.Top) * target.Width + (x - viewport.Left)) * 4;
+        bool on = (((x + y) >> 2) & 1) == 0;
+        target.Data[i] = on ? (byte)255 : (byte)0; target.Data[i + 1] = 0; target.Data[i + 2] = on ? (byte)255 : (byte)0;
+    }
+
     /// <summary>Below this many pixels the zebra pass runs on the calling thread.</summary>
     private const int ZebraParallelPixels = 64 * 1024;
 
@@ -298,10 +328,7 @@ public static class ShapeRenderer
         for (int x = hit.Left; x < hit.Right; x++)
         {
             (float r, float g, float b) = half.Sample(x - bounds.Left, y - bounds.Top);
-            if (Transfer.Luminance709(r, g, b) * exposure <= sdrWhiteScRgb) continue;
-            int i = ((y - viewport.Top) * target.Width + (x - viewport.Left)) * 4;
-            bool on = (((x + y) >> 2) & 1) == 0;
-            target.Data[i] = on ? (byte)255 : (byte)0; target.Data[i + 1] = 0; target.Data[i + 2] = on ? (byte)255 : (byte)0;
+            if (ZebraMask.Exceeds(r, g, b, sdrWhiteScRgb, exposure)) Stripe(target, viewport, x, y);
         }
     }
 

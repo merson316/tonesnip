@@ -29,6 +29,19 @@ public class SnipSettingsTests
         Assert.Equal("desktop", s.Tonemap); Assert.False(s.AutoExposure);
         // Monochrome is the Windows 11 convention for a notification-area glyph, so it is what a fresh install gets.
         Assert.Equal("mono", s.TrayIcon);
+        // Off, as in Snipping Tool: the pointer is rarely what a snip is for.
+        Assert.False(s.CaptureCursor);
+    }
+
+    [Fact]
+    public void Capture_cursor_round_trips_under_its_json_name()
+    {
+        string p = Temp("{ \"version\": 2, \"captureCursor\": true }");
+        (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
+        Assert.Null(err);
+        Assert.True(s.CaptureCursor);
+        SnipSettingsFile.Save(p, s with { CaptureCursor = false });
+        Assert.Contains("\"captureCursor\": false", File.ReadAllText(p));
     }
 
     [Fact]
@@ -285,6 +298,25 @@ public class SnipSettingsTests
         Assert.Equal("jxr", f.Hdr.File); Assert.Equal(100, f.Hdr.JxrQuality);
         Assert.Equal("none", new SnipSettings { Hdr = new HdrSettings { File = "avif" } }.Sanitized(out fixes).Hdr.File);
         Assert.Contains(fixes, x => x.Contains("hdr.file"));
+    }
+
+    /// <summary>The GPU tonemap's kill switch is on by default and survives a round trip through the file.</summary>
+    [Fact]
+    public void Gpu_tonemap_switch_defaults_on_and_can_be_turned_off_in_the_file()
+    {
+        Assert.True(new SnipSettings().Hdr.GpuTonemap);
+        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string path = Path.Combine(dir, "settings.json");
+            File.WriteAllText(path, "{ \"version\": 2, \"hdr\": { \"gpuTonemap\": false } }");
+            (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
+            Assert.Null(err);
+            Assert.False(s.Hdr.GpuTonemap);
+            Assert.Equal("none", s.Hdr.File);
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     /// <summary>SaveFolder reaches explorer.exe and the output pipeline as a raw path, so Sanitized validates it.</summary>

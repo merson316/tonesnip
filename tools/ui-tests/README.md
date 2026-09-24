@@ -26,12 +26,24 @@ cd /mnt/c && /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoPr
 ```
 
 Results land in `%LOCALAPPDATA%\Temp\tonesnip-shots\ui\`: `test-results.json`, `a11y-<window>.txt` per
-window, `screenshots\`, `overlay-mode-switch.mp4`. Exit code is 0 only when nothing failed.
+window, `screenshots\`, `overlay-mode-switch.mp4`. Each result is `PASS`, `FAIL` or `BLOCKED`; the exit code is
+0 when everything passed, 1 when anything failed and 2 when nothing failed but some input was blocked.
 
 `-Sections settings,editor` runs a subset (`settings`, `editor`, `editor-hdr`, `flyout`, `flyout-grid`,
-`toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `gallery`);
+`toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `toast-notice`, `pin`, `gallery`);
 `-Theme light` drives the holds in the light theme; `-SkipGallery` drops the stock-control probe, which
 is the only section that opens an app other than ToneSnip.
+
+**Input guard.** Raw input goes to the foreground window, whichever app owns it. So before every verb that
+injects input (`click`, `drag`, `hover`, `send-keys`, `scroll --wheel`, `touch`, `pen`) and before its own
+pointer moves, the script checks that the foreground window belongs to the hold it is driving (`-a <pid>` or
+`-w <hwnd>`; a named app such as `-a tonesnip` is refused outright). The bars and the toast card are no-activate windows and never take the foreground by
+themselves, so before a pointer verb the guard first gives the element UIA focus, which activates its window. If
+the target is still not in the foreground, nothing is sent and the test
+is recorded as `BLOCKED` with the foreground pid, counted apart from pass and fail in the summary and in
+`test-results.json` (`blocked`). The pointer move that clears a hover is skipped with a note instead, so the section's UIA checks still run. UIA verbs
+(`invoke`, `focus`, `set-value`, `wait-for`, `inspect`) act on the element itself and are not guarded. Blocked
+tests mean the run is incomplete: keep the desktop idle and rerun those sections.
 
 The script refuses to start while a `tonesnip-overlay` window is up, never sends Ctrl+S at the editor and
 never confirms a history row's delete prompt — all three could touch the user's own files.

@@ -21,4 +21,22 @@ public sealed class AcesLut
     }
 
     public byte Map(float linear) => Table[BitConverter.HalfToUInt16Bits((Half)linear)];
+
+    private static readonly object CacheGate = new();
+    private static AcesLut? _cached;
+    private static TonemapParams? _cachedFor;
+
+    /// <summary>
+    /// The table for <paramref name="p"/>, kept until different parameters are asked for: building one costs 65,536 curve
+    /// evaluations, and the overlay's exposure preview asks again on every slider step. Locked, because the preview and
+    /// the snip's build can ask from different threads.
+    /// </summary>
+    public static AcesLut For(TonemapParams p)
+    {
+        lock (CacheGate)
+        {
+            if (_cached == null || _cachedFor != p) { _cached = new AcesLut(p); _cachedFor = p; }
+            return _cached;
+        }
+    }
 }

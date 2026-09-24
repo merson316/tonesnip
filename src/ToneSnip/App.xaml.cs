@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Runtime;
+using System.Runtime.InteropServices;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
 using ToneSnip.App.Output;
@@ -12,6 +12,7 @@ using ToneSnip.Windows.Hotkeys;
 using ToneSnip.Windows.Imaging;
 using ToneSnip.Windows.Interop;
 using ToneSnip.Windows.Tray;
+using Win32 = ToneSnip.Windows.Overlay.Win32;
 using Shell = ToneSnip.Windows.Shell;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -49,13 +50,6 @@ public partial class App : Application
     /// <summary>The save folder's last known image count and size, shown by the history flyout until its own scan
     /// completes.</summary>
     public (int Count, long Bytes)? FolderTotals { get; set; }
-#if TONESNIP_HARNESS
-    /// <summary>True under `--screenshots` and `--hold`: <see cref="ApplySettings"/> updates memory only and skips the
-    /// live theme apply, so a held window cannot be observed changing theme.</summary>
-    public bool ScreenshotMode { get; private set; }
-    /// <summary>True in any harness side mode: nothing writes settings.json.</summary>
-    public bool SideMode { get; private set; }
-#endif
 
     /// <summary>The UI thread's dispatcher queue.</summary>
     public DispatcherQueue Ui { get; } = DispatcherQueue.GetForCurrentThread();
@@ -71,6 +65,7 @@ public partial class App : Application
     private DispatcherQueueTimer? _snipDelay;
     private (SnipMode Mode, int Delay)? _pendingSnip;
     private bool _paused;
+    private readonly MemoryReclaimer _memory;
     public bool Paused { get => _paused; set { _paused = value; Hook.Paused = value; _tray?.SetTooltip(value ? "ToneSnip (hotkeys paused)" : "ToneSnip"); Log.Info(value ? "hotkeys paused" : "hotkeys resumed"); } }
 
     public App()
@@ -79,6 +74,12 @@ public partial class App : Application
         // A tray app has no main window: otherwise the process exits when the last XAML window closes. Quit() calls
         // Exit() explicitly.
         DispatcherShutdownMode = DispatcherShutdownMode.OnExplicitShutdown;
+        _memory = new MemoryReclaimer(Log, () => Grabber, () => Session, () => Hook, () =>
+        {
+            // An open Settings window is showing the preview and would only decode the frame again at its next render;
+            // its close packs it instead.
+            if (Volatile.Read(ref _settingsWindow) == null) PackPreviewFrame();
+        });
     }
 
     /// <summary>
@@ -109,57 +110,27 @@ public partial class App : Application
         UnhandledException += (_, ex) => { Log.Error("unhandled: " + ex.Exception); ex.Handled = true; };
 
 #if TONESNIP_HARNESS
-        // Harness side modes start only what they need (no hook, tray, host pipe or autostart), so they never claim
-        // anything the running app owns.
-        if (Command?.ScreenshotDir is { } screenshotDir)
-        {
-            ScreenshotMode = SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);   // read-only here
-            _ = Screenshots.Run(screenshotDir, Command.ScreenshotTheme);
-            return;
-        }
-
-        if (Command?.HoldWindow is { } holdWindow)
-        {
-            ScreenshotMode = SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
-            _ = Screenshots.Hold(holdWindow, Command.HoldSeconds, Command.ScreenshotTheme, Command.HoldFlipTheme);
-            return;
-        }
-
-        if (Command?.LeakTest == true)
-        {
-            SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
-            _ = LeakTest.Run();
-            return;
-        }
+        if (StartSideMode()) return;   // App.SideModes.cs
 #endif
 
-#if TONESNIP_HARNESS
-        MemoryProbe.Log = Log;
-#endif
+        DebugHooks.AttachMemoryProbe(Log);
         Grabber = new FrameGrabber(() => Settings, Log);
         Grabber.Grabbed += o =>
         {
             KnownOutputs = o.Select(x => x.Info).ToList();
-            CapturedOutput? hdr = o.FirstOrDefault(x => x.Half != null);
-            if (hdr?.Half != null)
+            CapturedOutput? hdr = o.FirstOrDefault(x => x.ReadableHdr != null);
+            if (hdr?.ReadableHdr is { } frame)
             {
                 // The Settings preview is 860 DIP wide, so aim for about 1290 physical pixels (150 % scale).
-                int step = Math.Max(1, (int)Math.Round(hdr.Half.Width / 1290.0));
-                PreviewFrame = new Settings.PreviewSnapshot(hdr.Half.Downsample(step), hdr.Info);
+                int step = Math.Max(1, (int)Math.Round(frame.Width / 1290.0));
+                try { PreviewFrame = new Settings.PreviewSnapshot(frame.Downsample(step), hdr.Info); }
+                catch (Core.Hdr.HdrFrameLostException) { }   // logged where it was found; the last preview stays
+                // Anything else (the device busy past its budget, out of memory) costs only the preview, not the snip.
+                catch (Exception e) { Log.Warn("settings preview: the HDR frame was not downsampled: " + e.Message); }
             }
         };
 #if TONESNIP_HARNESS
-        // The memory harness needs the grabber and its Grabbed handler, but nothing below.
-        if (Command?.MemTest == true)
-        {
-            SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);   // read-only here
-            _ = MemTest.Run();
-            return;
-        }
+        if (StartMemTest()) return;   // the memory harness needs the grabber and its Grabbed handler, but nothing below
 #endif
         Output = new OutputPipeline(() => Settings, Log);
         Output.KeepAlive = s => s.AfterSelect == "edit";
@@ -167,9 +138,11 @@ public partial class App : Application
         CaptureResult.Encode = Bitmaps.EncodePng;
         CaptureResult.ClipToLassoSetting = () => Settings.Annotate.ClipToLasso;
         CaptureResult.Decode = Bitmaps.Decode;
+        CaptureResult.Log = Log;
         Toasts = new ToastService(Log);
         Toasts.Opened += r => OpenViewer(r);
         Toasts.Edited += r => OpenViewer(r, annotate: true);
+        Toasts.Pinned += r => _ = PinAsync(r);
         Toasts.Lookup = FindSnipAsync;
         History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
         History.SweepOrphanThumbs();
@@ -182,9 +155,9 @@ public partial class App : Application
             if (Settings.AfterSelect == "edit") OpenViewer(r, annotate: true);
             else if (Settings.ShowToast) _ = ShowToastWhenThumbnailed(r, thumb);
         };
-        Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip };
+        Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip, Divert = DivertSnip };
         // On Idle rather than Output.Completed, so a cancelled snip also releases its frames.
-        Session.Idle += () => { ReclaimMemory("memory after snip"); ReleaseFramesWhenIdle(); };
+        Session.Idle += () => { ReclaimMemory("memory after snip"); _memory.ReleaseFramesWhenIdle(); };
         // Escape (cancelCountdown) is a hotkey only while a countdown runs.
         Hook = new KeyboardHook(Log) { Swallow = true, IsActive = b => b.Action != "cancelCountdown" || Session.CountingDown };
         Hook.Pressed += b => DispatchHotkey(b.Action);
@@ -292,110 +265,6 @@ public partial class App : Application
         });
     }
 
-    /// <summary>The tray icon and its menu: plain Win32 in the Windows library, so no XAML loads at startup.</summary>
-    private void BuildTray()
-    {
-        // An empty chord means "unbound"; the Funcs read Settings.Hotkeys live so a rebinding shows on the menu's
-        // next open without rebuilding it.
-        static Func<string?> Accelerator(Func<string> chord) => () => { string c = chord(); return string.IsNullOrEmpty(c) ? null : c; };
-        // The owner-drawn Win32 menu cannot read XAML brushes, so it gets the theme state directly. High contrast
-        // overrides dark/light: the menu then paints from GetSysColor.
-        var menu = new TrayMenu(_messages!, Log)
-        {
-            IsDark = () => Theme.ThemeManager.IsDark,
-            IsHighContrast = () => Theme.ThemeManager.IsHighContrast,
-        };
-        menu.AddHeader("New snip");
-        foreach ((string label, SnipMode mode, Func<string?>? accelerator) in new (string, SnipMode, Func<string?>?)[]
-        {
-            ("Rectangle", SnipMode.Rectangle, Accelerator(() => Settings.Hotkeys.Region)),
-            ("Window", SnipMode.Window, Accelerator(() => Settings.Hotkeys.Window)),
-            ("Full screen", SnipMode.FullScreen, null),
-            ("Freeform", SnipMode.Freeform, null),
-            ("All monitors", SnipMode.FullScreenAll, Accelerator(() => Settings.Hotkeys.FullScreenAll)),
-            ("Active window", SnipMode.ActiveWindow, Accelerator(() => Settings.Hotkeys.ActiveWindow)),
-        })
-            menu.Add(label, () => Snip(mode), accelerator: accelerator);
-        menu.AddSeparator();
-        menu.AddHeader("Delay");
-        foreach (int delay in SnipSettings.Delays)
-            menu.Add(delay == 0 ? "None" : $"{delay} seconds", () => ApplySettings(Settings with { DefaultDelay = delay }), () => Settings.DefaultDelay == delay);
-        menu.AddSeparator();
-        menu.Add("Recent snips", ToggleFlyout, accelerator: Accelerator(() => Settings.Hotkeys.History));
-        menu.Add("Open last snip", OpenLastSnip);
-        menu.Add("Open Screenshots folder", OpenSaveFolder);
-        menu.AddSeparator();
-        menu.Add("Settings…", ShowSettings);
-        menu.Add("Pause hotkeys", () => Paused = !Paused, () => Paused);
-        menu.AddSeparator();
-        menu.Add("Quit ToneSnip", Quit);
-
-        (IntPtr icon, bool ownsIcon) = TrayImage();
-        _tray = new TrayIcon(_messages!, icon, "ToneSnip", Log, ownsIcon);
-        _tray.LeftClick += ToggleFlyout;
-        _tray.RightClick += (x, y) => menu.Show(x, y);
-        // The glyph is drawn in one colour, so it is redrawn when the accent, light/dark mode or its settings change.
-        Theme.ThemeManager.Changed += () => RunOnUi(RefreshTrayIcon);
-        // A high-contrast switch arrives through the message window; it raises ThemeManager.Changed, which redraws.
-        // Posted rather than run inline, to get off the window procedure's stack before touching XAML.
-        _messages!.ThemeChanged += () => RunOnUi(Theme.ThemeManager.SystemThemeChanged);
-        string trayApplied = Settings.TrayIcon, themeApplied = Settings.Theme;
-        // SettingsChanged fires on every settings edit, so redraw only when these values change.
-        SettingsChanged += () =>
-        {
-            if (Settings.TrayIcon == trayApplied && Settings.Theme == themeApplied) return;
-            trayApplied = Settings.TrayIcon; themeApplied = Settings.Theme;
-            RefreshTrayIcon();
-        };
-        // The constructor already added the icon, so Shown has fired by now; log directly when it has.
-        void TrayShown() => Log.Debug($"tray shown in {Program.Started.ElapsedMilliseconds} ms since process start");
-        if (_tray.IsShown) TrayShown(); else _tray.Shown += TrayShown;
-    }
-
-    /// <summary>
-    /// The tray icon for the current setting: the full-colour .ico, or the glyph drawn at tray size in one colour
-    /// (monochrome to match the taskbar, the accent, or COLOR_WINDOWTEXT in high contrast).
-    /// </summary>
-    private (IntPtr Icon, bool Owns) TrayImage()
-    {
-        if (Settings.TrayIcon is "mono" or "accent")
-        {
-            uint argb = TrayGlyph.GlyphArgb(Settings.TrayIcon, Settings.Theme, Theme.ThemeManager.SystemAccentArgb, Theme.ThemeManager.IsHighContrast);
-            IntPtr glyph = TrayGlyph.CreateIcon(TrayGlyph.TraySize(), argb);
-            if (glyph != IntPtr.Zero) return (glyph, true);
-            Log.Warn("tray icon: could not draw the glyph; falling back to icon.ico");
-        }
-        IntPtr icon = TrayIcon.LoadIconFile(IconFile());
-        if (icon != IntPtr.Zero) return (icon, true);
-        Log.Warn("tray icon: could not load icon.ico; using the system application icon");
-        return (TrayIcon.DefaultIcon(), false);
-    }
-
-    /// <summary>Redraws the tray icon; TrayIcon destroys the icon it previously owned.</summary>
-    private void RefreshTrayIcon()
-    {
-        if (_tray == null) return;
-        (IntPtr icon, bool owns) = TrayImage();
-        _tray.SetIcon(icon, owns);
-    }
-
-    /// <summary>The embedded .ico, unpacked into the data folder because LoadImage reads icons from disk.</summary>
-    internal string IconFile()
-    {
-        string path = Path.Combine(AppPaths.Dir, "icon.ico");
-        try
-        {
-            using Stream? s = typeof(App).Assembly.GetManifestResourceStream("tonesnip.icon.ico");
-            if (s != null && (!File.Exists(path) || new FileInfo(path).Length != s.Length))
-            {
-                using FileStream f = File.Create(path);
-                s.CopyTo(f);
-            }
-        }
-        catch (Exception e) { Log.Warn("tray icon: " + e.Message); }
-        return path;
-    }
-
     private void RunCommand(StartupCommand c)
     {
         if (c.OpenSettings) ShowSettings();
@@ -445,76 +314,9 @@ public partial class App : Application
         _pendingSnip = null;
     }
 
-    /// <summary>
-    /// A blocking, compacting gen 2 collection (including the LOH), then a re-arm of the keyboard hook: a blocking GC
-    /// also stalls the hook callback, and Windows silently removes a hook that overruns LowLevelHooksTimeout.
-    /// </summary>
-    /// <returns>The GC pause, for logging.</returns>
-    private TimeSpan CompactingCollect()
-    {
-        TimeSpan before = GC.GetTotalPauseDuration();
-        GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
-        GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-        TimeSpan pause = GC.GetTotalPauseDuration() - before;
-        if (pause > TimeSpan.FromMilliseconds(250)) Log.Warn($"memory: the compacting collection paused the process for {pause.TotalMilliseconds:F0} ms; the keyboard hook is re-armed after it");
-        Hook?.Rearm();
-        return pause;
-    }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern uint GetGuiResources(IntPtr hProcess, uint flags);
-    [System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
-    /// <summary>GDI (0) or USER (1) handle count of this process, for spotting leaked bitmaps or DCs. Asked with the
-    /// pseudo-handle, which needs no closing; Process.GetCurrentProcess().Handle opened a real one per call that was only
-    /// closed by a finalizer.</summary>
-    private static uint GuiResources(uint flags) => GetGuiResources(GetCurrentProcess(), flags);
-
     /// <summary>Logs one timed operation (hotkey to overlay, window open, save) at Debug level. Not for per-frame
     /// use.</summary>
     public void Timing(string label, Stopwatch sw) => Log.Debug($"{label} in {sw.ElapsedMilliseconds} ms");
-
-    /// <summary>Set while a reclaim is in flight, so a second snip finishing on top of the first does not queue another.</summary>
-    private int _reclaiming;
-
-    /// <summary>How long without a snip before the pooled frame buffers are released. Long enough to cover
-    /// "Escape, then try again"; a grab into fresh buffers is not noticeably slower than into pooled ones.</summary>
-    private static readonly TimeSpan FrameIdleRelease = TimeSpan.FromMinutes(1);
-    /// <summary>Incremented by every <c>Idle</c>; a pending release acts only if the ticket is still the one it was
-    /// armed with.</summary>
-    private int _idleTicket;
-
-    /// <summary>
-    /// After <see cref="FrameIdleRelease"/> with no snip, drops the pooled frame buffers and collects, so an idle tray
-    /// app returns to its startup footprint.
-    /// <para>Dropping the buffers is safe even mid-snip (a grab holding one keeps it). The blocking collect is skipped
-    /// if a snip has started; that snip's own <c>Idle</c> reclaims later. A snip starting during the collect is delayed
-    /// by the rest of it, which is accepted.</para>
-    /// </summary>
-    private void ReleaseFramesWhenIdle()
-    {
-        int ticket = Interlocked.Increment(ref _idleTicket);
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(FrameIdleRelease);
-                if (Volatile.Read(ref _idleTicket) != ticket || Session?.Busy == true) return;   // a newer idle period owns the release
-                // An open Settings window is showing the preview and would only decode the frame again at its next
-                // render; its close packs it instead.
-                if (Volatile.Read(ref _settingsWindow) == null) PackPreviewFrame();
-                long held = Grabber.PooledBytes;
-                if (held == 0) return;
-                Grabber.ReleaseBuffers();
-                if (Session?.Busy == true) { Log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers; a snip started, so the collect is left to its own reclaim"); return; }
-                TimeSpan pause = CompactingCollect();
-                using var me = Process.GetCurrentProcess();
-                Log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers, managed now {GC.GetTotalMemory(false) / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB, gc pause {pause.TotalMilliseconds:F0} ms");
-#if TONESNIP_HARNESS
-                MemoryProbe.Mark("after frames released");
-#endif
-            }
-            catch (Exception e) { Log.Warn("frame release: " + e.Message); }
-        });
-    }
 
     /// <summary>
     /// Swaps the Settings preview's frame for its compressed copy, with the idle frame release and when Settings
@@ -531,39 +333,9 @@ public partial class App : Application
         catch (Exception e) { Log.Warn("settings preview frame not packed: " + e.Message); }
     }
 
-    /// <summary>
-    /// Reclaims memory on a background thread a second after a snip ends or an editor closes, then logs where memory
-    /// landed under <paramref name="label"/>. The snip's intermediates (the composite, the encoded PNG) are garbage by
-    /// then, and an idle tray app may not allocate again for hours, so without this they would sit in the private
-    /// working set until the frame release a minute later.
-    /// <para>One compacting collection, not the separate collect and finalizer wait that used to precede it: each
-    /// blocking pause also stalls the keyboard hook's callback. Finalizers queued by this collection still run straight
-    /// after it and free their native memory; only their small managed shells wait for a later collection.</para>
-    /// <para>The collection is blocking because the LOH is compacted only by a blocking gen 2 once
-    /// <c>CompactOnce</c> is set. Busy is checked after the sleep, since a new snip may have started meanwhile; if so
-    /// this gives up, and that snip's own <c>Idle</c> re-arms it.</para>
-    /// </summary>
-    public void ReclaimMemory(string label)
-    {
-        if (Interlocked.Exchange(ref _reclaiming, 1) == 1) return;
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                Thread.Sleep(1000);
-                if (Session?.Busy == true) return;   // a snip started meanwhile; its Idle re-arms this
-                TimeSpan pause = CompactingCollect();
-                using var me = Process.GetCurrentProcess();
-                GCMemoryInfo gc = GC.GetGCMemoryInfo();
-                Log.Info($"{label}: managed {GC.GetTotalMemory(false) / 1_048_576} MB, gc committed {gc.TotalCommittedBytes / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB, pooled frames {Grabber?.PooledBytes / 1_048_576 ?? 0} MB, gdi {GuiResources(0)}, user {GuiResources(1)}, gc pause {pause.TotalMilliseconds:F0} ms");
-#if TONESNIP_HARNESS
-                MemoryProbe.Mark("after reclaim");   // only when TONESNIP_MEMPROBE is set
-#endif
-            }
-            catch (Exception e) { Log.Warn("reclaim: " + e.Message); }
-            finally { Volatile.Write(ref _reclaiming, 0); }
-        });
-    }
+    /// <summary>Reclaims memory a second after a snip ends or an editor closes (<see cref="MemoryReclaimer.Reclaim"/>),
+    /// logging where it landed under <paramref name="label"/>.</summary>
+    public void ReclaimMemory(string label) => _memory.Reclaim(label);
 
     /// <summary>Tray "Open last snip": the newest history row, which survives a restart and reflects saved edits,
     /// falling back to the last in-memory result.</summary>
@@ -624,7 +396,14 @@ public partial class App : Application
     public void OpenViewer(CaptureResult r, bool annotate = false)
     {
         // One editor per snip, so two cannot save over each other.
-        if (_viewers.FirstOrDefault(v => v.Shows(r)) is { } open) { open.Activate(); return; }
+        if (_viewers.FirstOrDefault(v => v.Shows(r)) is { } open)
+        {
+            // Activate shows a minimized window but leaves it minimized.
+            if (open.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized } p) p.Restore();
+            open.Activate();
+            BringToFront(WinRT.Interop.WindowNative.GetWindowHandle(open), "editor");
+            return;
+        }
         var sw = Stopwatch.StartNew();
         var win = new Viewer.ViewerWindow(r, annotate);
         _viewers.Add(win);
@@ -638,6 +417,45 @@ public partial class App : Application
         // the window keeps it alive (WindowLifetime).
         win.WhenClosed(() => { win.Activated -= OnActivated; _viewers.Remove(win); });
         win.Activate();
+        BringToFront(WinRT.Interop.WindowNative.GetWindowHandle(win), "editor");
+    }
+
+    /// <summary>How long after a window is brought forward a foreground taken from it without any input is taken
+    /// back.</summary>
+    private static readonly TimeSpan ReclaimForegroundAfter = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>
+    /// Puts a window this process just opened or re-activated on top with the keyboard. <see cref="Window.Activate"/>
+    /// alone is refused by the foreground lock whenever this process does not own the foreground, and it does not
+    /// when the editor is opened from a Windows notification: the click lands in the shell, the activation reaches
+    /// this process on a pool thread and is queued to the UI thread, and by the time the window exists the
+    /// foreground right the activation carried has lapsed, so the editor opened behind the active app.
+    /// <see cref="Win32.ForceForeground"/> takes the foreground regardless. The notification's own flyout can then
+    /// hand the foreground back to the app it came from as it closes, so once, a moment later, a foreground lost
+    /// with no keyboard or mouse input since is taken back; a user who clicked elsewhere meanwhile keeps their choice.
+    /// </summary>
+    private void BringToFront(IntPtr hwnd, string what)
+    {
+        uint inputAt = Win32.LastInputTick();
+        if (User32.GetForegroundWindow() == hwnd) Log.Debug($"{what}: Activate took the foreground");
+        else Log.Debug($"{what}: Activate was refused the foreground; forcing it");
+        Win32.ForceForeground(hwnd, Log);
+        if (User32.GetForegroundWindow() != hwnd) Log.Info($"{what}: not in the foreground after taking it");
+        DispatcherQueueTimer timer = Ui.CreateTimer();
+        timer.IsRepeating = false;
+        timer.Interval = ReclaimForegroundAfter;
+        // Holds only the handle, not the window, so a window closed meanwhile is not kept alive; the handler detaches
+        // itself, since a stopped timer still holds its Tick.
+        void Tick(DispatcherQueueTimer t, object _)
+        {
+            t.Stop();
+            t.Tick -= Tick;
+            if (!User32.IsWindow(hwnd) || User32.GetForegroundWindow() == hwnd || Win32.LastInputTick() != inputAt) return;
+            Log.Info($"{what}: the foreground went elsewhere with no input; taking it back");
+            Win32.ForceForeground(hwnd, Log);
+        }
+        timer.Tick += Tick;
+        timer.Start();
     }
 
     /// <summary>Opens the settings window, or brings the open one to the front.</summary>
@@ -727,115 +545,11 @@ public partial class App : Application
         }
     }
 
-    /// <summary>Saves and applies new settings; listeners (hook, theme, tray, autostart) react through SettingsChanged.</summary>
-    public void ApplySettings(SnipSettings settings)
-    {
-        string previousTheme = Settings.Theme;
-        Settings = settings.Sanitized(out _);
-        // Called on every settings edit: the save is debounced, and the theme is re-applied only when it changed.
-        QueueSettingsSave();
-        if (Settings.Theme != previousTheme)
-        {
-#if TONESNIP_HARNESS
-            // The screenshot harness drives the theme itself; applying it here would change colours mid-capture.
-            if (!ScreenshotMode) Theme.ThemeManager.Apply(Settings.Theme);
-#else
-            Theme.ThemeManager.Apply(Settings.Theme);
-#endif
-        }
-        SettingsChanged?.Invoke();
-    }
-
-    /// <summary>How long settings.json waits after the last change before it is written.</summary>
-    private static readonly TimeSpan SettingsSaveDelay = TimeSpan.FromMilliseconds(400);
-    private DispatcherQueueTimer? _settingsSave;
-
-    /// <summary>Writes settings.json once <see cref="SettingsSaveDelay"/> has passed without another change.
-    /// <see cref="FlushSettings"/> starts a pending save at once (Settings closing), or finishes it (Quit).</summary>
-    private void QueueSettingsSave()
-    {
-        if (!Ui.HasThreadAccess) { RunOnUi(QueueSettingsSave); return; }
-        if (_settingsSave == null)
-        {
-            _settingsSave = Ui.CreateTimer();
-            _settingsSave.Interval = SettingsSaveDelay;
-            _settingsSave.IsRepeating = false;
-            _settingsSave.Tick += (t, _) => { t.Stop(); SaveSettings(); };
-        }
-        _settingsSave.Stop();
-        _settingsSave.Start();
-    }
-
-    /// <summary>
-    /// Starts a queued settings save now, if one is waiting. With <paramref name="wait"/> it also blocks until every
-    /// save has reached the disk, or <see cref="SettingsFlushBudget"/> has passed: for Quit and the end of the Windows
-    /// session, after which the process may be gone. UI thread only.
-    /// </summary>
-    public void FlushSettings(bool wait = false)
-    {
-        if (_settingsSave is { IsRunning: true } timer)
-        {
-            timer.Stop();
-            SaveSettings();
-        }
-        if (!wait) return;
-        // A blocking wait on the UI thread, on purpose: the process may end as soon as this returns. It cannot deadlock,
-        // as the writes run on the pool and never need this thread, and it is capped at SettingsFlushBudget.
-        Task writes;
-        lock (_settingsWriteGate) writes = _settingsWrites;
-        if (!writes.Wait(SettingsFlushBudget)) Log.Warn($"settings save: still writing after {SettingsFlushBudget.TotalSeconds:F0} s; the last change may be lost");
-    }
-
-    /// <summary>How long a waiting <see cref="FlushSettings"/> gives the writes in flight.</summary>
-    private static readonly TimeSpan SettingsFlushBudget = TimeSpan.FromSeconds(2);
-    /// <summary>The settings writes in flight, chained so they reach the disk in the order they were made.</summary>
-    private Task _settingsWrites = Task.CompletedTask;
-    private readonly object _settingsWriteGate = new();
-
-    /// <summary>
-    /// Writes settings.json on a pool thread, except in a harness side mode. The write flushes to disk, which can take
-    /// tens of milliseconds, too long to hold the UI thread (an overlay closing, a hotkey waiting behind it). The
-    /// settings are an immutable record, so the pool thread serializes exactly the state it was handed.
-    /// </summary>
-    private void SaveSettings()
-    {
-#if TONESNIP_HARNESS
-        if (SideMode) return;
-#endif
-        SnipSettings snapshot = Settings;
-        lock (_settingsWriteGate)
-        {
-            _settingsWrites = _settingsWrites.ContinueWith(_ =>
-            {
-                try { SnipSettingsFile.Save(AppPaths.SettingsPath, snapshot); } catch (Exception ex) { Log.Warn("settings save: " + ex.Message); }
-            }, TaskScheduler.Default);
-        }
-    }
-
-    /// <summary>Persists a change no listener needs (such as the last-used annotation style), without raising
-    /// SettingsChanged. Saved through the same debounce as every other change.</summary>
-    public void UpdateSettingsQuiet(Func<SnipSettings, SnipSettings> change)
-    {
-        Settings = change(Settings).Sanitized(out _);
-        QueueSettingsSave();
-    }
-
-    /// <summary>
-    /// Keeps the annotation colour, width and text size last used for the next snip, quietly, unless they are what
-    /// <paramref name="shown"/> already gives. The overlay and the editor call this once, when they close, rather than
-    /// on every palette click. Privacy mode is not part of the style and is left as it is.
-    /// </summary>
-    public void RememberAnnotateStyle(Core.Annotate.Style? style, AnnotateSettings shown, uint accent)
-    {
-        if (style is not Core.Annotate.Style s || s == shown.ToStyle(accent)) return;
-        UpdateSettingsQuiet(cur => cur with { Annotate = AnnotateSettings.FromStyle(s, accent) with { PrivacyMode = cur.Annotate.PrivacyMode } });
-    }
-
     private const int RestartNoCrash = 1, RestartNoHang = 2, RestartNoReboot = 8;
-    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-    private static extern int RegisterApplicationRestart(string commandLine, int flags);
-    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-    private static extern int UnregisterApplicationRestart();
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int RegisterApplicationRestart(string commandLine, int flags);
+    [LibraryImport("kernel32.dll")]
+    private static partial int UnregisterApplicationRestart();
 
     /// <summary>
     /// Asks Windows to start the app again when an installer's Restart Manager closes it for an update, with

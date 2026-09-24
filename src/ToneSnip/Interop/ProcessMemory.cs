@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace ToneSnip.App.Interop;
 
 /// <summary>The memory figure users see: Task Manager's Memory column, the private working set.</summary>
-internal static class ProcessMemory
+internal static partial class ProcessMemory
 {
     /// <summary>This process's private working set in bytes (PROCESS_MEMORY_COUNTERS_EX2), falling back to private
     /// bytes, which also counts non-resident committed pages.</summary>
@@ -22,6 +22,6 @@ internal static class ProcessMemory
         public UIntPtr PeakWorkingSetSize, WorkingSetSize, QuotaPeakPagedPoolUsage, QuotaPagedPoolUsage, QuotaPeakNonPagedPoolUsage, QuotaNonPagedPoolUsage, PagefileUsage, PeakPagefileUsage, PrivateUsage, PrivateWorkingSetSize, SharedCommitUsage;
     }
 
-    [DllImport("psapi.dll", SetLastError = true)]
-    private static extern bool GetProcessMemoryInfo(IntPtr process, ref Counters counters, uint size);
+    [LibraryImport("psapi.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetProcessMemoryInfo(IntPtr process, ref Counters counters, uint size);
 }
