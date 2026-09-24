@@ -33,7 +33,7 @@ jobs:
       # The NuGet cache, keyed on everything that names a package version. Not setup-dotnet's `cache: true`, which
       # needs committed packages.lock.json files: the app's lock file would pin Microsoft.NET.ILLink.Tasks, whose version
       # follows the SDK patch, so every SDK update on the runner or locally would break a locked restore.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props', 'global.json') }}
