@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
@@ -22,6 +23,7 @@ using SettingsWindow = ToneSnip.App.Settings.SettingsWindow;
 
 namespace ToneSnip.App;
 
+[SuppressMessage("Design", "CA1001", Justification = "The application object lives as long as the process; the exit paths dispose what it owns.")]
 public partial class App : Application
 {
     public static new App Current => (App)Application.Current;
@@ -86,7 +88,7 @@ public partial class App : Application
     /// Startup, fenced: a failure is logged and the process exits, releasing the single-instance mutex, rather than
     /// lingering with no tray icon or host pipe.
     /// </summary>
-    protected override void OnLaunched(LaunchActivatedEventArgs e)
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         try { Launch(); }
         catch (Exception ex)

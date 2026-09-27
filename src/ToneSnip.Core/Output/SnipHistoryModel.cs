@@ -26,7 +26,7 @@ public sealed class HistoryList
 
     public HistoryList(IEnumerable<HistoryEntry>? entries = null, int max = DefaultMax)
     {
-        if (max < 1) throw new ArgumentOutOfRangeException(nameof(max));
+        ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
         Max = max;
         // history.json is hand-editable: drop null rows and rows missing an id or thumbnail rather than throwing at startup.
         _entries = (entries ?? Array.Empty<HistoryEntry>())
@@ -60,7 +60,7 @@ public sealed class HistoryList
     /// thumbnails. A higher cap drops nothing and keeps room for more.</summary>
     public List<HistoryEntry> Resize(int max)
     {
-        if (max < 1) throw new ArgumentOutOfRangeException(nameof(max));
+        ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
         Max = max;
         var dropped = _entries.Skip(max).ToList();
         if (dropped.Count > 0) _entries.RemoveRange(max, dropped.Count);

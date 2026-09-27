@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Output;
 using ToneSnip.App.Theme;
@@ -19,6 +20,7 @@ namespace ToneSnip.App.Viewer;
 
 /// <summary>The editor's output side: Save, Save as and Copy behind one gate, the SDR encode and the HDR sidecar off
 /// the UI thread, and the status notes that report them.</summary>
+[SuppressMessage("Design", "CA1001", Justification = "_outputGate: a SemaphoreSlim holds no handle unless AvailableWaitHandle is read, and an output still running when the window closes releases it afterwards.")]
 public sealed partial class ViewerWindow
 {
     /// <summary>How long "HDR copy written" stays up, and the fade that takes it away.</summary>

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Imaging;
 
@@ -150,6 +151,7 @@ public static partial class ClipboardWriter
 
     private delegate void Fill(Span<byte> dest);
 
+    [SuppressMessage("Usage", "CA2201", Justification = "GlobalAlloc fails only for want of memory, which is what the exception says.")]
     private static unsafe IntPtr Put(uint format, long length, Fill fill)
     {
         if (length > int.MaxValue) throw new InvalidOperationException("image too large for the clipboard");

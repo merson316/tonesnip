@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 
@@ -107,6 +108,7 @@ internal static class Wic
         return buf;
     }
 
+    [SuppressMessage("Usage", "CA2201", Justification = "A failed WIC call is a COM error: the exception carries its HRESULT, which the log shows.")]
     public static void Check(int hr, string what) { if (hr < 0) throw new COMException($"{what} failed", hr); }
 
     /// <summary>Sets one named option on an encoder frame's property bag (VT_BOOL for bool, VT_R4 for float).</summary>

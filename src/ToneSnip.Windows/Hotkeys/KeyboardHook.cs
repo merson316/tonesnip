@@ -80,15 +80,17 @@ public sealed partial class KeyboardHook : IDisposable
 
     /// <summary>Raised on the hook thread; handlers must return immediately.</summary>
     public event Action<HotkeyBinding>? Pressed;
-    /// <summary>When true, matching key-downs are swallowed so no other app sees them.</summary>
-    public volatile bool Swallow;
+    /// <summary>When true, matching key-downs are swallowed so no other app sees them. Read on the hook thread.</summary>
+    public bool Swallow { get => _swallow; set => _swallow = value; }
+    private volatile bool _swallow;
     /// <summary>Whether a binding applies right now (<see cref="HotkeyFilter.IsActive"/>); null means every binding does.</summary>
     public Func<HotkeyBinding, bool>? IsActive { get; set; }
     /// <summary>
     /// While set, every non-modifier key-down and key-up is reported here (chord, isDown) and swallowed, and no binding
     /// fires. Used by the settings hotkey recorder so PrintScreen and friends never reach Windows while recording.
     /// </summary>
-    public volatile Action<Chord, bool>? Recorder;
+    public Action<Chord, bool>? Recorder { get => _recorder; set => _recorder = value; }
+    private volatile Action<Chord, bool>? _recorder;
     public bool Paused { get; set; }
 
     public KeyboardHook(ILog log)

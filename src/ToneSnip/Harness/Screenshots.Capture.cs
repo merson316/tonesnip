@@ -126,7 +126,7 @@ internal static partial class Screenshots
 
     /// <summary>A cheap content hash of a shot, for the repeat check alone.</summary>
     private static string Digest(BgraImage image)
-        => Convert.ToHexString(System.Security.Cryptography.MD5.HashData(image.Data));
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(image.Data));
 
     /// <summary>
     /// The window's pixels through PrintWindow, or the rendered XAML content root (no Mica, corners or shadow) when

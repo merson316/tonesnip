@@ -87,7 +87,7 @@ public sealed class HalfFrame(HalfImage image) : IHdrFrame
 
     private void Check()
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(HalfFrame));
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     public void Dispose() => _disposed = true;

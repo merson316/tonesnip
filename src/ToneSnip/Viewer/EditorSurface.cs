@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices.WindowsRuntime;
 using ToneSnip.App.Annotate;
 using ToneSnip.App.Capture;
@@ -36,6 +37,7 @@ namespace ToneSnip.App.Viewer;
 /// <c>CanvasVirtualControl</c> is avoided because it leaked GDI objects and shared GPU resources per editor opened.
 /// </para>
 /// </remarks>
+[SuppressMessage("Design", "CA1001", Justification = "A XAML control is not disposed; Release, called when the editor closes, disposes its Win2D resources.")]
 public sealed class EditorSurface : UserControl
 {
     /// <summary>A paint over this many milliseconds is worth a log line; under it the log stays quiet.</summary>
