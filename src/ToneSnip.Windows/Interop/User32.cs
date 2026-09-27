@@ -138,6 +138,8 @@ public static partial class User32
     [LibraryImport(Dll)] public static partial IntPtr SetCapture(IntPtr hwnd);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool ReleaseCapture();
     [LibraryImport(Dll)] public static partial short GetKeyState(int vk);
+    [LibraryImport(Dll)] public static partial uint MapVirtualKeyW(uint code, uint mapType);
+    [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int ToUnicode(uint vk, uint scan, [In] byte[] keyState, [Out] char[] buffer, int bufferSize, uint flags);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetCursorPos(out Point p);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool SetCursorPos(int x, int y);
 

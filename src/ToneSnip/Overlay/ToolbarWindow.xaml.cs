@@ -43,6 +43,7 @@ public sealed partial class ToolbarWindow : PopupWindow
         Modes.ShowShortcuts = true;   // the overlay bar is the only place the letters mean anything
         ShowDelay(open: false);
         Bar.PanelOpened += CollapseDelayRow;           // one picker open at a time, across both bars
+        Bar.PanelOpened += () => ShowKeys(false);
         // The root Border's SizeChanged does not fire when the tool row resizes inside a window that has not resized
         // yet, so the window follows the bar's SizeChanged instead.
         Bar.SizeChanged += (_, _) => DispatcherQueue.TryEnqueue(Reposition);
@@ -163,6 +164,7 @@ public sealed partial class ToolbarWindow : PopupWindow
     private void OnDelayPicker(object sender, RoutedEventArgs e)
     {
         Bar.ClosePopups();
+        ShowKeys(false);
         bool open = DelayRow.Visibility != Visibility.Visible;
         DelayRow.Seconds = _delay;
         ShowBand(DelayRow, open);
@@ -256,6 +258,32 @@ public sealed partial class ToolbarWindow : PopupWindow
             _session.SetPicking(!_session.Picking);
             if (!IsClosed) { Refresh(); _session.RefocusOverlay(); }
         });
+    }
+
+    /// <summary>Whether the keys band is open.</summary>
+    public bool KeysShown => KeysRow.Visibility == Visibility.Visible;
+
+    /// <summary>Opens or closes the keys band, closing the other bands first: one open at a time.</summary>
+    public void ShowKeys(bool show)
+    {
+        if (IsClosed || show == KeysShown) return;
+        if (show)
+        {
+            Bar.ClosePopups();
+            CollapseDelayRow();
+        }
+        ShowBand(KeysRow, show);
+        BtnKeys.IsChecked = show;
+        Reposition();
+    }
+
+    /// <summary>The toolbar's keys toggle. Handled here rather than by the session, so the band also opens over the
+    /// harness's synthetic session.</summary>
+    private void OnKeys(object sender, RoutedEventArgs e)
+    {
+        ShowKeys(BtnKeys.IsChecked == true);
+        Announce(KeysShown ? "Keyboard shortcuts shown" : "Keyboard shortcuts hidden");
+        _session.RefocusOverlay();
     }
 
     /// <summary>Speaks <paramref name="sentence"/> through the bar's polite live region.</summary>

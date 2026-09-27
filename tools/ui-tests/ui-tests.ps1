@@ -264,6 +264,16 @@ function Get-Rect {
 
 # The app's own top-level window, so an assertion is not answered by a tooltip or a menu popup that
 # happens to be foreground ("Auto-selected HWND ... from 2 windows" is the CLI telling you it guessed).
+# The overlay bar's window width, for the standing check that no band widens it.
+function Get-BarWidth {
+    param([int]$Target)
+    $ws = Get-Json @('list-windows','-a',"$Target",'--json')
+    $w = @($ws | Where-Object { $_.title -ne 'PopupHost' })[0]
+    if ($w.width) { return [int]$w.width }
+    if ($w.rect)  { return [int]($w.rect.right - $w.rect.left) }
+    return 0
+}
+
 function Get-MainHwnd {
     param([int]$TargetPid)
     $ws = @(Get-Json @('list-windows', '-a', "$TargetPid", '--json'))
@@ -1540,6 +1550,37 @@ if (Should-Run 'toolbar') {
             winapp ui invoke 'Overlay_PinToggle' -a $id | Out-Null
             winapp ui wait-for 'Overlay_PinToggle' -a $id -p ToggleState --value 'Off' -t 3000
         }
+        # The keys band: opened from its toggle as F1 opens it from the frozen desktop, and no wider than the bar.
+        $wk0 = Get-BarWidth $id
+        Test-UI "toolbar: the keys toggle names F1 as its shortcut" {
+            $k = Get-Prop $id 'Overlay_KeysToggle' 'AcceleratorKey'
+            if ($k -ne 'F1') { throw "AcceleratorKey is '$k'" }
+        }
+        Test-UI "toolbar: the keys toggle opens the keys band" {
+            winapp ui invoke 'Overlay_KeysToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "no keys band" }
+            winapp ui wait-for 'Overlay_KeysToggle' -a $id -p ToggleState --value 'On' -t 3000
+        }
+        Test-UI "toolbar: the keys band is a named group that lists each key with what it does" {
+            $pr = Get-Prop $id 'Overlay_KeysBand'
+            if (-not $pr -or -not $pr.Name) { throw "Overlay_KeysBand has no name" }
+            foreach ($key in 'Space: Start, finish', 'Esc: Cancel', 'F1: These keys') {
+                winapp ui wait-for $key -a $id -t 2000
+                if ($LASTEXITCODE -ne 0) { throw "no '$key' in the band" }
+            }
+        }
+        Shot $id 'toolbar-keys'
+        $wk1 = Get-BarWidth $id
+        Test-UI "toolbar: the keys band does not widen the bar ($wk0 -> $wk1)" {
+            if ($wk1 -gt $wk0) { throw "the bar grew from $wk0 to $wk1" }
+        }
+        Test-UI "toolbar: the delay band takes over from the keys band" {
+            winapp ui invoke 'Overlay_DelayPill' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id --gone -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "the keys band stayed open" }
+            winapp ui invoke 'Overlay_DelayPill' -a $id | Out-Null
+        }
         Test-A11y $id 'toolbar'
     } catch {
         Add-SectionError "toolbar section" $_
@@ -1547,15 +1588,6 @@ if (Should-Run 'toolbar') {
 }
 
 # ---------------------------------------------------------------- 7. overlay toolbar with the tool row (bands)
-
-function Get-BarWidth {
-    param([int]$Target)
-    $ws = Get-Json @('list-windows','-a',"$Target",'--json')
-    $w = @($ws | Where-Object { $_.title -ne 'PopupHost' })[0]
-    if ($w.width) { return [int]$w.width }
-    if ($w.rect)  { return [int]($w.rect.right - $w.rect.left) }
-    return 0
-}
 
 if (Should-Run 'toolbar-annotate') {
     $p = $null

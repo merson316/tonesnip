@@ -11,6 +11,8 @@
   <x:String x:Key="GlyphDelay">&#xE916;</x:String>
   <x:String x:Key="GlyphAnnotate">&#xE70F;</x:String>
   <x:String x:Key="GlyphCancel">&#xE711;</x:String>
+  <!-- The overlay's keyboard shortcuts band: the keyboard, as the Hotkeys settings page uses it. -->
+  <x:String x:Key="GlyphSnipKeys">&#xE765;</x:String>
 
   <!-- The annotate bar (overlay and editor) -->
   <x:String x:Key="GlyphSelect">&#xE8B0;</x:String>

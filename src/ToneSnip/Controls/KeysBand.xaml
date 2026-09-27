@@ -1,0 +1,17 @@
+<UserControl x:Class="ToneSnip.App.Controls.KeysBand"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The snip screen's keys, as a band under the overlay bar's first row: the bar never activates and is sized to its
+       content, so a teaching tip or flyout would be clipped away. The rows are built in code from Keys, two pairs to a
+       row, in the HotkeyChip keycaps the Hotkeys settings page uses. Not the Band style, whose fixed 40 px height is
+       for one row of chips. -->
+  <Border Margin="4,0" Padding="8,8,8,12" BorderBrush="{ThemeResource Stroke}" BorderThickness="0,1,0,0">
+    <Grid x:Name="Rows" ColumnSpacing="8" RowSpacing="8" HorizontalAlignment="Center">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="16"/>
+        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+    </Grid>
+  </Border>
+</UserControl>

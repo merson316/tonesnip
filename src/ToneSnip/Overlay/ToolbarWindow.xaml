@@ -51,6 +51,20 @@
             <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPickColour}" FontSize="16"/>
           </ToggleButton>
           <Rectangle Style="{StaticResource ToolDivider}"/>
+          <!-- Opens the keys band below, as F1 or ? does from the frozen desktop. A picker toggle: it opens a band
+               rather than arming anything, so it is ringed while open, not accent-filled. -->
+          <ToggleButton x:Name="BtnKeys" Style="{StaticResource PickerToggle}" AutomationProperties.Name="Keyboard shortcuts"
+                        AutomationProperties.AutomationId="Overlay_KeysToggle" AutomationProperties.AcceleratorKey="F1"
+                        ToolTipService.ToolTip="Keyboard shortcuts (F1)" Click="OnKeys">
+            <ToggleButton.Resources>
+              <ResourceDictionary>
+                <ResourceDictionary.MergedDictionaries>
+                  <ResourceDictionary Source="ms-appx:///Theme/PickerToggle.xaml"/>
+                </ResourceDictionary.MergedDictionaries>
+              </ResourceDictionary>
+            </ToggleButton.Resources>
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSnipKeys}" FontSize="16"/>
+          </ToggleButton>
           <Button Style="{StaticResource ToolButton}" AutomationProperties.Name="Close"
                   AutomationProperties.AutomationId="Overlay_CloseButton"
                   ToolTipService.ToolTip="Close (Esc)" Click="OnClose">
@@ -63,6 +77,9 @@
            drop-down's popup would be clipped away. -->
       <controls:DelayBand x:Name="DelayRow" Visibility="Collapsed" AutomationProperties.AutomationId="Overlay_DelayBand"
                           AutomationProperties.Name="Delay"/>
+      <!-- The keys band, opened by the keys toggle, F1 or ?. -->
+      <controls:KeysBand x:Name="KeysRow" Visibility="Collapsed" AutomationProperties.AutomationId="Overlay_KeysBand"
+                         AutomationProperties.Name="Keyboard shortcuts"/>
       <!-- The separator is a Rectangle rather than the Band style: AnnotateBar has its own picker band, and a
            Band-styled wrapper would inset that band's hairline twice. -->
       <StackPanel x:Name="ToolRow" Visibility="Collapsed">

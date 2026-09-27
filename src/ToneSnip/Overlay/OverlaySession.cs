@@ -73,7 +73,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>What Narrator reads when the frozen desktop takes the keyboard: what the screen is for and its keys.
     /// Changes after that are spoken through the toolbar's live region (<see cref="Announce"/>).</summary>
     public string WindowTitle => "ToneSnip: select an area. Arrow keys move the pointer, Space starts and finishes a selection, "
-                               + "Tab picks a window. R W F L switch modes, T copies text, P pins, C picks a colour, A annotates, Escape cancels";
+                               + "Tab picks a window. R W F L switch modes, T copies text, P pins, C picks a colour, A annotates, "
+                               + "F1 lists the keys, Escape cancels";
 
     /// <summary>The mode as the toolbar's live region says it.</summary>
     private static string ModeName(SnipMode m) => m switch
@@ -720,11 +721,21 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     {
         // A held key repeats. The arrows should, but a held T, P, C or A would arm and disarm, copy again and again, or
         // flicker the tool row, and a held Space or Enter would go on from a pick to start or finish a selection.
-        if (repeat && vk is Win32.VkT or Win32.VkP or Win32.VkC or Win32.VkA or Win32.VkSpace or Win32.VkReturn) return;
+        if (repeat && vk is Win32.VkT or Win32.VkP or Win32.VkC or Win32.VkA or Win32.VkSpace or Win32.VkReturn or Win32.VkF1) return;
+        // F1, or whichever key types "?" on this keyboard layout (always one of the OEM keys), shows the keys; neither
+        // is a tool or a mode.
+        if (vk == Win32.VkF1 || (vk >= Win32.VkFirstOem && !ctrl && !alt && Win32.TypedChar(vk, shift) == '?'))
+        {
+            if (repeat || _toolbar is not { } bar) return;
+            bar.ShowKeys(!bar.KeysShown);
+            Announce?.Invoke(bar.KeysShown ? "Keyboard shortcuts shown in the toolbar" : "Keyboard shortcuts hidden");
+            return;
+        }
         if (vk == Win32.VkEscape)
         {
             // Escape peels off annotation state first (pending text, marquee, drag, selection) and cancels the snip last.
             if (_picking) { SetPicking(false); return; }
+            if (_toolbar is { KeysShown: true } keys) { keys.ShowKeys(false); Announce?.Invoke("Keyboard shortcuts hidden"); return; }
             if (_annotating && _edit != null && _edit.Escape()) { RenderAll(); return; }
             if (_keyAnchor != null) { DropAnchor(); Announce?.Invoke("Selection cleared"); RenderAll(); return; }
             Finish(OverlayOutcome.Cancelled); return;

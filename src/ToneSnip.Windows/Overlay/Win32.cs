@@ -14,10 +14,26 @@ public static class Win32
     // ----- virtual keys (the overlay's whole keyboard vocabulary) -----
     public const int VkTab = 0x09, VkReturn = 0x0D, VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkEscape = 0x1B, VkSpace = 0x20,
                      VkLeft = 0x25, VkUp = 0x26, VkRight = 0x27, VkDown = 0x28,
-                     VkA = 0x41, VkC = 0x43, VkF = 0x46, VkL = 0x4C, VkP = 0x50, VkR = 0x52, VkT = 0x54, VkW = 0x57;
+                     VkA = 0x41, VkC = 0x43, VkF = 0x46, VkL = 0x4C, VkP = 0x50, VkR = 0x52, VkT = 0x54, VkW = 0x57,
+                     VkF1 = 0x70, VkFirstOem = 0xBA;
 
     /// <summary>True while <paramref name="vk"/> is held.</summary>
     public static bool KeyDown(int vk) => (User32.GetKeyState(vk) & 0x8000) != 0;
+
+    /// <summary>
+    /// The character <paramref name="vk"/> types on the current keyboard layout, with or without Shift, or '\0' for a
+    /// key that types none (or a dead key). Asked without touching the keyboard's dead-key state (flag 4), so a
+    /// pending accent in another app is not consumed.
+    /// </summary>
+    public static char TypedChar(int vk, bool shift)
+    {
+        var state = new byte[256];
+        if (shift) state[VkShift] = 0x80;
+        var buffer = new char[4];
+        uint scan = User32.MapVirtualKeyW((uint)vk, 0 /*MAPVK_VK_TO_VSC*/);
+        int n = User32.ToUnicode((uint)vk, scan, state, buffer, buffer.Length, 4);
+        return n == 1 ? buffer[0] : '\0';
+    }
 
     // ----- messages -----
     internal const uint WmDestroy = 0x0002, WmActivate = 0x0006, WmPaint = 0x000F, WmEraseBkgnd = 0x0014,
