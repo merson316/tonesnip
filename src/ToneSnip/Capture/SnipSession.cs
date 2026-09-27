@@ -295,7 +295,14 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             }
             outcome = await selecting;
         }
-        finally { watchdog.Cancel(); _stage = null; }
+        finally
+        {
+            // Unhooked before the dispose: a paint arriving after the selection must not cancel a disposed source.
+            overlay.FirstPaint = null;
+            watchdog.Cancel();
+            watchdog.Dispose();
+            _stage = null;
+        }
         if (outcome.RestartWithDelay >= 0)
         {
             // Awaited within the same Run, so Busy stays true across the countdown and the restarted snip. This grab's
