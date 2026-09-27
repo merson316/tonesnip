@@ -84,12 +84,16 @@ internal static partial class Screenshots
             {
                 await HoldOverlayLasso(seconds);
             }
+            else if (what.Equals("drag-bench", StringComparison.OrdinalIgnoreCase))
+            {
+                await HoldDragBench();
+            }
             else if (!what.StartsWith("flyout", StringComparison.OrdinalIgnoreCase))
             {
                 _failures++;
                 app.Log.Warn($"hold: no window called {what}; known: flyout-row, flyout-grid, settings-<page>, editor, " +
                              "editor-hdr, editor-front, toolbar, toolbar-annotate, countdown, textentry, toast-saved, toast-copied, toast-dwell, " +
-                             "toast-notice, pin, tray-menu, overlay-lasso");
+                             "toast-notice, pin, tray-menu, overlay-lasso, drag-bench");
             }
             else
             {

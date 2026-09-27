@@ -188,6 +188,24 @@ public sealed class EditorSurface : UserControl
 #if TONESNIP_HARNESS
     /// <summary>The cursor's shape by name, for the harness log; the property itself is protected.</summary>
     internal string CursorName => ProtectedCursor is InputSystemCursor c ? c.CursorShape.ToString() : "default";
+
+    /// <summary>Drag benchmark: a press (0), move (1) or release (2) at a source pixel, taking the same steps as the
+    /// pointer handlers after they convert the position.</summary>
+    internal void HarnessPointer(int phase, int x, int y)
+    {
+        _pointer = (x, y);
+        if (phase == 0) { Session.Begin(x, y, InputMods.None); return; }
+        if (phase == 2) { if (Session.Busy) Session.End(x, y, InputMods.None); return; }
+        PointerNits?.Invoke(NitsAt(x, y));
+        if (Session.Busy) Session.Move(x, y, InputMods.None);
+        ApplyCursor();
+    }
+
+    /// <summary>Drag benchmark: paints done and their total time, and the frames the Win2D control drew.</summary>
+    internal static int HarnessPaints, HarnessDraws;
+    internal static double HarnessPaintMs;
+    /// <summary>Drag benchmark: called at the start of every Draw, for input-to-frame timing.</summary>
+    internal static Action? HarnessDrawn;
 #endif
     /// <summary>
     /// True while the host is panning the view (space held, or a middle-button drag), so no shape may begin. Set only
@@ -280,25 +298,34 @@ public sealed class EditorSurface : UserControl
             Paint(IntRect.Empty);
             return;
         }
-        // One edit can report several rectangles (a magnifier's source, lens and line), so they are collected and
-        // painted together once the input that caused them is handled: one chrome pass and one frame, not one each.
+        // Painted when the next frame is drawn (OnDraw), not per change: a drag reports a change on every pointer move,
+        // and a mouse sends up to a thousand a second. Painting each one on the UI thread left no time to draw a frame,
+        // so a drag stalled on screen until the button came up. Now any number of moves between two frames cost one
+        // paint of all they touched.
         _pendingDirty.Add(dirty);
-        if (_paintQueued) return;
-        _paintQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.High, PaintPending);
-        if (!_paintQueued) PaintPending();
+        if (_pendingDirty.Count > MaxPendingRects)
+        {
+            IntRect all = IntRect.Empty;
+            foreach (IntRect r in _pendingDirty) all = all.Union(r);
+            _pendingDirty.Clear();
+            _pendingDirty.Add(all);
+        }
+        _canvas.Invalidate();
     }
 
-    /// <summary>Rectangles reported since the last paint, and whether a paint of them is queued.</summary>
+    /// <summary>Rectangles reported since the last paint.</summary>
     private readonly List<IntRect> _pendingDirty = new();
-    private bool _paintQueued;
+    /// <summary>Past this many waiting rectangles (frames not being drawn: the window is hidden), they become the one
+    /// rectangle round them all.</summary>
+    private const int MaxPendingRects = 256;
 
+    /// <summary>Paints the rectangles reported since the last frame, from the Draw handler.</summary>
     private void PaintPending()
     {
-        _paintQueued = false;
         if (_pendingDirty.Count == 0 || _released) return;
         IntRect[] dirty = _pendingDirty.ToArray();
         _pendingDirty.Clear();
-        Paint(dirty);
+        Paint(dirty, invalidate: false);
     }
 
     /// <summary>The crop marquee is drawn over the blit (<see cref="DrawMarquee"/>), never into the picture's buffers,
@@ -306,13 +333,14 @@ public sealed class EditorSurface : UserControl
     private void OnMarqueeChanged() => _canvas.Invalidate();
 
     /// <summary>Renders shapes for a source-frame dirty rect (Empty = all) into the target, draws chrome, and uploads the changed pixels.</summary>
-    private void Paint(IntRect dirty) => Paint(new[] { dirty });
+    private void Paint(IntRect dirty) => Paint(new[] { dirty }, invalidate: true);
 
     /// <summary>
     /// <see cref="Paint(IntRect)"/> for several source-frame rectangles at once: each is rendered, then the chrome is
     /// drawn and the frame invalidated once for all of them.
     /// </summary>
-    private void Paint(IntRect[] dirty)
+    /// <param name="invalidate">False from the Draw handler, which is about to draw the frame the paint is for.</param>
+    private void Paint(IntRect[] dirty, bool invalidate)
     {
         if (_baseView == null || _target == null) return;
         long started = Stopwatch.GetTimestamp();
@@ -333,10 +361,13 @@ public sealed class EditorSurface : UserControl
         if (uploads.Count == 0) return;
         ShapeRenderer.Chrome(Session, View, _target, _accent);   // whole view: chrome is cheap and handles move
         // Chrome stays inside the padded dirty rects, so only those go across.
-        foreach (IntRect r in Core.Annotate.DirtyRegion.Merge(uploads)) Upload(r);
-        _canvas.Invalidate();
+        foreach (IntRect r in DirtyRegion.Merge(uploads)) Upload(r);
+        if (invalidate) _canvas.Invalidate();
         double ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
         if (ms > PaintBudgetMs) App.Current.Log.Debug($"paint {ms:F0} ms");
+#if TONESNIP_HARNESS
+        HarnessPaints++; HarnessPaintMs += ms;
+#endif
         Rendered?.Invoke();
     }
 
@@ -432,6 +463,10 @@ public sealed class EditorSurface : UserControl
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
     {
+        PaintPending();
+#if TONESNIP_HARNESS
+        HarnessDraws++; HarnessDrawn?.Invoke();
+#endif
         if (_bitmap == null) return;
         // The element's rounded size, not View × Zoom, so no sub-pixel strip of backdrop shows at the edges. The control
         // covers only the visible part, so the picture is offset by where that part starts.

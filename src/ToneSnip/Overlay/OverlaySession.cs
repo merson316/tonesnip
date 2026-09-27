@@ -104,6 +104,11 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>The frozen-frame windows, so the memory test can check they are collected after <see cref="Finish"/>.
     /// Empty once the session has finished.</summary>
     internal IReadOnlyList<OverlayWindow> WindowsForHarness => _windows;
+    /// <summary>Drag benchmark: the annotation session, once annotating has begun.</summary>
+    internal EditSession? EditForHarness => _edit;
+    /// <summary>Drag benchmark: called whenever a window paints the chrome, which it does once per WM_PAINT while
+    /// annotating.</summary>
+    internal static Action? HarnessChromePainted;
 #endif
 
     public bool Annotating
@@ -326,6 +331,9 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     {
         if (_edit is not { } edit) return;
         Annotate.ShapeRenderer.Chrome(edit, monitor, hdc, Accent);
+#if TONESNIP_HARNESS
+        HarnessChromePainted?.Invoke();
+#endif
     }
 
     private Action<BgraImage, IntRect, IntRect>? _zebra;

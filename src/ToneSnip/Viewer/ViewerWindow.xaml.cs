@@ -245,6 +245,9 @@ public sealed partial class ViewerWindow : Window
         if (zebra && HdrGroup.Visibility == Visibility.Visible) { ZebraBtn.IsChecked = true; OnZebra(ZebraBtn, new RoutedEventArgs()); }
         if (panel != null) Bar.OpenPanel(panel);
     }
+
+    /// <summary>Drag benchmark: the picture, to drive its session directly.</summary>
+    internal EditorSurface HarnessSurface => Surface;
 #endif
 
     private void OnToolRowSize(object sender, SizeChangedEventArgs e)
