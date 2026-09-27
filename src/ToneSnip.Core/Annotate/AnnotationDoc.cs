@@ -57,12 +57,12 @@ public sealed class AnnotationDoc
         return d;
     }
 
-    public void Add(Shape s) { Commit(_state with { Shapes = Shapes.Append(s).ToArray() }); Changed?.Invoke(s.DirtyBounds); }
+    public void Add(Shape s) { Commit(_state with { Shapes = Shapes.Append(s).ToArray() }); Changed?.Invoke(Dirty(s)); }
 
     public void Replace(Shape s)
     {
         int i = IndexOf(s.Id); if (i < 0) return;
-        IntRect dirty = Shapes[i].DirtyBounds.Union(s.DirtyBounds);
+        IntRect dirty = Shapes[i].AffectsWholeImage || s.AffectsWholeImage ? IntRect.Empty : Shapes[i].DirtyBounds.Union(s.DirtyBounds);
         Shape[] next = Shapes.ToArray(); next[i] = s;
         Commit(_state with { Shapes = next });
         Changed?.Invoke(dirty);
@@ -71,7 +71,7 @@ public sealed class AnnotationDoc
     public void Remove(int id)
     {
         int i = IndexOf(id); if (i < 0) return;
-        IntRect dirty = Shapes[i].DirtyBounds;
+        IntRect dirty = Dirty(Shapes[i]);
         Commit(_state with { Shapes = Shapes.Where(s => s.Id != id).ToArray() });
         if (SelectedId == id) SelectedId = null;
         Changed?.Invoke(dirty);
@@ -105,6 +105,10 @@ public sealed class AnnotationDoc
     }
 
     public Shape? HitTop(int x, int y) { for (int i = Shapes.Count - 1; i >= 0; i--) if (Shapes[i].HitTest(x, y)) return Shapes[i]; return null; }
+
+    /// <summary>What an added or removed shape repaints: its own bounds, or everything for one that dims the rest of
+    /// the picture.</summary>
+    private static IntRect Dirty(Shape s) => s.AffectsWholeImage ? IntRect.Empty : s.DirtyBounds;
 
     private int IndexOf(int id) { for (int i = 0; i < Shapes.Count; i++) if (Shapes[i].Id == id) return i; return -1; }
 

@@ -13,6 +13,9 @@ public abstract record Shape(int Id)
     /// <summary>Null for kinds without handles.</summary>
     public virtual Shape? Resized(Handle h, int dx, int dy) => null;
     public virtual bool IsRedaction => false;
+    /// <summary>The shape changes pixels far outside its own bounds (a spotlight dims everything around it), so adding,
+    /// moving or removing it repaints the whole picture rather than <see cref="DirtyBounds"/>.</summary>
+    public virtual bool AffectsWholeImage => false;
 
     protected static double DistToSegment(int px, int py, int x1, int y1, int x2, int y2)
     {
@@ -170,6 +173,17 @@ public sealed record RedactShape(int Id, IntRect Rect, int Strength, bool Blur, 
 {
     public override IntRect Bounds => Rect;
     public override bool IsRedaction => true;
+    public override bool HitTest(int x, int y) => Rect.Contains(x, y);
+    public override Shape Moved(int dx, int dy) => this with { Rect = Rect.Offset(dx, dy) };
+    public override Shape? Resized(Handle h, int dx, int dy) => this with { Rect = Handles.Resize(Rect, h, dx, dy) };
+}
+
+/// <summary>A lit rectangle: everything outside the union of a document's spotlights is dimmed (see
+/// <see cref="Imaging.Emphasis"/>). It draws nothing of its own.</summary>
+public sealed record SpotlightShape(int Id, IntRect Rect) : Shape(Id)
+{
+    public override IntRect Bounds => Rect;
+    public override bool AffectsWholeImage => true;
     public override bool HitTest(int x, int y) => Rect.Contains(x, y);
     public override Shape Moved(int dx, int dy) => this with { Rect = Rect.Offset(dx, dy) };
     public override Shape? Resized(Handle h, int dx, int dy) => this with { Rect = Handles.Resize(Rect, h, dx, dy) };

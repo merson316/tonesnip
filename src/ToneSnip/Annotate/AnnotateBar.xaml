@@ -28,54 +28,60 @@
                 XYFocusKeyboardNavigation="Enabled">
       <!-- The tools are RadioButtons so a screen reader announces one single-select set. No GroupName: grouping by the
            immediate parent keeps the overlay's and the editor's bars independent.
-           PositionInSet counts the twelve tools only. Crop is counted even while collapsed, so the numbering does not
+           PositionInSet counts the thirteen tools only. Crop is counted even while collapsed, so the numbering does not
            shift when the crop tool appears. -->
       <RadioButton x:Name="TSelect" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Select" AutomationProperties.AutomationId="Tools_Select"
-                   AutomationProperties.PositionInSet="1" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Select (V)" Tag="Select" Click="OnTool">
+                   AutomationProperties.PositionInSet="1" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Select (V)" Tag="Select" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSelect}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TPen" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pen" AutomationProperties.AutomationId="Tools_Pen"
-                   AutomationProperties.PositionInSet="2" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Pen (P)" Tag="Pen" Click="OnTool">
+                   AutomationProperties.PositionInSet="2" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Pen (P)" Tag="Pen" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPen}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="THigh" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Highlighter" AutomationProperties.AutomationId="Tools_Highlighter"
-                   AutomationProperties.PositionInSet="3" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Highlighter (H)" Tag="Highlighter" Click="OnTool">
+                   AutomationProperties.PositionInSet="3" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Highlighter (H)" Tag="Highlighter" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHighlighter}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TLine" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Line" AutomationProperties.AutomationId="Tools_Line"
-                   AutomationProperties.PositionInSet="4" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Line (I)" Tag="Line" Click="OnTool">
+                   AutomationProperties.PositionInSet="4" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Line (I)" Tag="Line" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphLine}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TArrow" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Arrow" AutomationProperties.AutomationId="Tools_Arrow"
-                   AutomationProperties.PositionInSet="5" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Arrow (O)" Tag="Arrow" Click="OnTool">
+                   AutomationProperties.PositionInSet="5" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Arrow (O)" Tag="Arrow" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphArrow}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TRect" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Rectangle" AutomationProperties.AutomationId="Tools_Rectangle"
-                   AutomationProperties.PositionInSet="6" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Rectangle (Ctrl+R)" Tag="Rect" Click="OnTool">
+                   AutomationProperties.PositionInSet="6" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Rectangle (Ctrl+R)" Tag="Rect" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRectangle}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TEllipse" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Ellipse" AutomationProperties.AutomationId="Tools_Ellipse"
-                   AutomationProperties.PositionInSet="7" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Ellipse (E)" Tag="Ellipse" Click="OnTool">
+                   AutomationProperties.PositionInSet="7" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Ellipse (E)" Tag="Ellipse" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphEllipse}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TText" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Text" AutomationProperties.AutomationId="Tools_Text"
-                   AutomationProperties.PositionInSet="8" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Text (T)" Tag="Text" Click="OnTool">
+                   AutomationProperties.PositionInSet="8" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Text (T)" Tag="Text" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphText}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TCounter" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Counter" AutomationProperties.AutomationId="Tools_Counter"
-                   AutomationProperties.PositionInSet="9" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Counter (N)" Tag="Counter" Click="OnTool">
+                   AutomationProperties.PositionInSet="9" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Counter (N)" Tag="Counter" Click="OnTool">
         <FontIcon x:Name="CounterIcon" Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCounter}" FontSize="16"/>
       </RadioButton>
+      <!-- Spotlight dims everything outside the rectangles it draws, so it sits with the counter among the tools that
+           point at something, before the two that hide something. -->
+      <RadioButton x:Name="TSpotlight" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Spotlight" AutomationProperties.AutomationId="Tools_Spotlight"
+                   AutomationProperties.PositionInSet="10" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Spotlight (S)" Tag="Spotlight" Click="OnTool">
+        <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSpotlight}" FontSize="16"/>
+      </RadioButton>
       <RadioButton x:Name="TBlur" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Blur" AutomationProperties.AutomationId="Tools_Blur"
-                   AutomationProperties.PositionInSet="10" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Blur (B)" Tag="Blur" Click="OnTool">
+                   AutomationProperties.PositionInSet="11" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Blur (B)" Tag="Blur" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphBlur}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TPixel" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pixelate" AutomationProperties.AutomationId="Tools_Pixelate"
-                   AutomationProperties.PositionInSet="11" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Pixelate (X)" Tag="Pixelate" Click="OnTool">
+                   AutomationProperties.PositionInSet="12" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Pixelate (X)" Tag="Pixelate" Click="OnTool">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPixelate}" FontSize="16"/>
       </RadioButton>
       <RadioButton x:Name="TCrop" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Crop" AutomationProperties.AutomationId="Tools_Crop"
-                   AutomationProperties.PositionInSet="12" AutomationProperties.SizeOfSet="12" ToolTipService.ToolTip="Crop (C)" Tag="Crop" Click="OnTool" Visibility="Collapsed">
+                   AutomationProperties.PositionInSet="13" AutomationProperties.SizeOfSet="13" ToolTipService.ToolTip="Crop (C)" Tag="Crop" Click="OnTool" Visibility="Collapsed">
         <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCrop}" FontSize="16"/>
       </RadioButton>
       <!-- The Success green is set on the icon, not the button, because the button template swaps the content

@@ -13,6 +13,7 @@ public static class Handles
         LineShape l => new[] { (Handle.Start, l.X1, l.Y1), (Handle.End, l.X2, l.Y2) },
         BoxShape b => OfRect(b.Rect),
         RedactShape r => OfRect(r.Rect),
+        SpotlightShape sp => OfRect(sp.Rect),
         _ => Array.Empty<(Handle, int, int)>(),
     };
 

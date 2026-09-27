@@ -18,7 +18,7 @@ namespace ToneSnip.App.Annotate;
 public sealed partial class AnnotateBar : UserControl
 {
     private const int VkReturn = 0x0D, VkDelete = 0x2E, VkB = 0x42, VkC = 0x43, VkE = 0x45, VkH = 0x48, VkI = 0x49,
-                      VkN = 0x4E, VkO = 0x4F, VkP = 0x50, VkR = 0x52, VkT = 0x54, VkV = 0x56, VkX = 0x58, VkY = 0x59, VkZ = 0x5A;
+                      VkN = 0x4E, VkO = 0x4F, VkP = 0x50, VkR = 0x52, VkS = 0x53, VkT = 0x54, VkV = 0x56, VkX = 0x58, VkY = 0x59, VkZ = 0x5A;
 
     /// <summary>The row's padding, which is also where the band's content starts: a panel aligned "under its button"
     /// carries the button's offset within the row less this inset.</summary>
@@ -539,6 +539,7 @@ public sealed partial class AnnotateBar : UserControl
             (VkV, false) => Tool.Select, (VkP, false) => Tool.Pen, (VkH, false) => Tool.Highlighter,
             (VkI, false) => Tool.Line, (VkO, false) => Tool.Arrow, (VkR, true) => Tool.Rect,
             (VkE, false) => Tool.Ellipse, (VkT, false) => Tool.Text, (VkN, false) => Tool.Counter,
+            (VkS, false) => Tool.Spotlight,
             (VkB, false) => Tool.Blur, (VkX, false) => Tool.Pixelate,
             (VkC, false) when TCrop.Visibility == Visibility.Visible => Tool.Crop,
             _ => null,

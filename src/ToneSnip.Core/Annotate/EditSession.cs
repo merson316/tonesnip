@@ -208,6 +208,8 @@ public sealed class EditSession
             case Tool.Blur: case Tool.Pixelate:
                 uint seed = InProgress is RedactShape r ? r.Seed : (uint)Rng.Next(1, int.MaxValue);
                 InProgress = new RedactShape(0, DragRect(sx, sy, x, y, shift), st.Width, _tool == Tool.Blur, Doc.Private, seed); break;
+            case Tool.Spotlight:
+                InProgress = new SpotlightShape(0, DragRect(sx, sy, x, y, shift)); break;
             case Tool.Crop:
                 CropMarquee = DragRect(sx, sy, x, y, shift); Changed?.Invoke(IntRect.Empty); return;
         }

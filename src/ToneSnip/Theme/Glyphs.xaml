@@ -22,6 +22,7 @@
   <x:String x:Key="GlyphEllipse">&#xEA3A;</x:String>
   <x:String x:Key="GlyphText">&#xE8D2;</x:String>
   <x:String x:Key="GlyphCounter">&#xF146;</x:String>
+  <x:String x:Key="GlyphSpotlight">&#xE754;</x:String>
   <x:String x:Key="GlyphBlur">&#xED1A;</x:String>
   <x:String x:Key="GlyphPixelate">&#xF0E2;</x:String>
   <x:String x:Key="GlyphCrop">&#xE7A8;</x:String>

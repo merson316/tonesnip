@@ -104,9 +104,9 @@ public static class ShapeRenderer
     public static int? DragGhostId(EditSession session) => session.InProgress != null && session.Tool == Tool.Select ? session.Doc.SelectedId : null;
 
     /// <param name="suppressId">Shape left out of the draw pass (not the redaction pass); see <see cref="DragGhostId"/>.</param>
-    /// <param name="redactions">False skips the redaction pass entirely (growth loop, tile cache, prune): the caller
-    /// applies its own redaction (e.g. <see cref="ToneSnip.Core.Hdr.HdrRedaction"/> on the linear-light canvas) and only
-    /// wants the non-redaction shapes drawn.</param>
+    /// <param name="redactions">False skips the pixel passes entirely (redaction growth loop, tile cache, prune, and
+    /// the spotlight dim): the caller applies its own (e.g. <see cref="ToneSnip.Core.Hdr.HdrRedaction"/> and
+    /// <see cref="Emphasis"/> on the linear-light canvas) and only wants the drawn shapes.</param>
     /// <returns>The viewport-relative rectangle actually repainted (may be larger than <paramref name="dirty"/> when a
     /// redaction it touches needed to grow the area); <see cref="IntRect.Empty"/> if nothing was painted.</returns>
     public static IntRect Render(AnnotationDoc doc, BgraImage baseImg, IntRect viewport, BgraImage target, IntRect? dirty = null, uint accentArgb = DefaultAccent, int? suppressId = null, bool redactions = true)
@@ -139,6 +139,9 @@ public static class ShapeRenderer
             foreach (Shape s in doc.Shapes)
                 if (s is RedactShape r) { count++; if (r.Rect.IntersectsWith(areaSrc)) Redact(cache, r, baseImg, target, viewport); }
             if (cache.Count > count) Prune(cache, doc);
+            // After the redactions, so a redaction outside the spotlight is dimmed with everything else; before the
+            // drawn shapes, which stay at full strength so an arrow can point into the light from the dark.
+            Emphasis.Spotlight(doc.Shapes, target, viewport, area);
         }
         using Surface g = new(target, area);
         (TextResources text, bool owned) = Text();
@@ -238,6 +241,16 @@ public static class ShapeRenderer
                 using Gp.Brush hatch = Gp.Brush.Hatch(Gp.HatchStyle.DiagonalCross, 0x78FFFFFF, 0x3C000000);
                 Gp.RectF hr = Rect(rp.Rect, viewport);
                 gr.FillRectangle(hatch, hr.X, hr.Y, hr.W, hr.H);
+            }
+            else if (ip is SpotlightShape sp)
+            {
+                // The dim is a pixel pass over the whole picture, so it lands on release, as a redaction does; while
+                // dragging, the rectangle that will stay lit is outlined.
+                Gp.RectF lr = Rect(sp.Rect, viewport);
+                using Gp.Pen dark = new(0xA0000000, 3f);
+                using Gp.Pen light = new(0xF0FFFFFF, 1f);
+                light.DashStyle = Gp.DashStyle.Dash;
+                gr.DrawRectangle(dark, lr.X, lr.Y, lr.W, lr.H); gr.DrawRectangle(light, lr.X, lr.Y, lr.W, lr.H);
             }
             else Draw(gr, ip, viewport, accentArgb, text);
         }

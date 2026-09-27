@@ -659,6 +659,39 @@ function Get-EditorText {
     return @(Get-Elements $Target | Where-Object { $_.name -match $Pattern })
 }
 
+# Picks an annotation tool by its key and drags with it on the picture, then checks the drag went into the undo
+# history and comes back out of it: the editor is left with nothing to save, since the section ends by closing it
+# with Escape. A key that failed to pick the tool leaves Select up, whose drag over an empty picture is no edit.
+function Test-AnnotateTool {
+    param([int]$Target, [string]$Key, [string]$ToolId, [string]$Label)
+    Test-UI "editor: $ToolId is named '$Label'" {
+        $n = Get-Prop $Target $ToolId 'Name'
+        if ($n -ne $Label) { throw "the name is '$n'" }
+    }
+    Test-UI "editor: '$Key' picks $Label, and a drag with it is undone and redone" {
+        $r = Get-Rect $Target 'Editor_Canvas'
+        if (-not $r) { throw "no bounds for Editor_Canvas" }
+        $cx = [int]($r.X + $r.W / 2); $cy = [int]($r.Y + $r.H / 2)
+        # A snip annotated in the overlay opens with those shapes in the history, so undo can start out enabled.
+        $before = "$(Get-Prop $Target 'Tools_UndoButton' 'IsEnabled')"
+        winapp ui send-keys $Key -a $Target --via send-input | Out-Null
+        Start-Sleep -Milliseconds 400
+        winapp ui drag "$($cx - 50),$($cy - 30)" "$($cx + 30),$($cy + 20)" -a $Target | Out-Null
+        Start-Sleep -Milliseconds 600
+        if ("$(Get-Prop $Target 'Tools_RedoButton' 'IsEnabled')" -eq 'True') { throw "redo is enabled right after an edit" }
+        if ("$(Get-Prop $Target 'Tools_UndoButton' 'IsEnabled')" -ne 'True') { throw "the drag made no edit" }
+        winapp ui send-keys 'ctrl+z' -a $Target --via send-input | Out-Null
+        Start-Sleep -Milliseconds 400
+        if ("$(Get-Prop $Target 'Tools_UndoButton' 'IsEnabled')" -ne $before) { throw "undo did not return to where it started" }
+        winapp ui send-keys 'ctrl+y' -a $Target --via send-input | Out-Null
+        Start-Sleep -Milliseconds 400
+        if ("$(Get-Prop $Target 'Tools_RedoButton' 'IsEnabled')" -eq 'True') { throw "redo did not bring the edit back" }
+        winapp ui send-keys 'ctrl+z' -a $Target --via send-input | Out-Null
+        winapp ui send-keys 'v' -a $Target --via send-input | Out-Null
+        Start-Sleep -Milliseconds 400
+    }
+}
+
 if (Should-Run 'editor') {
     $p = $null
     try {
@@ -780,6 +813,7 @@ if (Should-Run 'editor') {
         }
         Test-UI "editor: annotate on brings up the tool row" { winapp ui wait-for 'Tools_Pen' -a $id -t 4000 }
         Shot $id 'editor-annotate'
+        Test-AnnotateTool $id 's' 'Tools_Spotlight' 'Spotlight'
         Test-UI "editor: the 'a' accelerator toggles annotate off" {
             winapp ui send-keys 'a' -a $id --via send-input | Out-Null
             Start-Sleep -Milliseconds 800
@@ -1215,7 +1249,7 @@ if (Should-Run 'toolbar-annotate') {
         $p = Start-Hold 'toolbar-annotate' 190
         $id = $p.Id
         # Tools_DoneButton is not checked: only the editor's annotate flow shows it.
-        foreach ($el in 'Tools_Pen','Tools_Arrow','Tools_ColourPicker','Tools_WidthPicker','Tools_ExposurePicker','Tools_ZebraToggle') {
+        foreach ($el in 'Tools_Pen','Tools_Arrow','Tools_Spotlight','Tools_ColourPicker','Tools_WidthPicker','Tools_ExposurePicker','Tools_ZebraToggle') {
             Test-UI "toolbar-annotate: $el exists" { winapp ui wait-for $el -a $id -t 4000 }
         }
         Shot $id 'toolbar-annotate'
