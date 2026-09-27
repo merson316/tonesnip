@@ -681,6 +681,19 @@ if (Should-Run 'settings') {
             winapp ui wait-for 'Settings_NotificationStyle' -a $id -t 4000
         }
         Test-ComboRoundTrip $id 'Settings_NotificationStyle' 'NotificationStyle'
+        # HDR on the clipboard: off by default, and a toggle that reads back. The hold keeps settings in memory.
+        Test-UI "settings: HdrClipboard is off by default and toggles back" {
+            winapp ui scroll-into-view 'Settings_HdrClipboard' -a $id 2>&1 | Out-Null
+            $was = (Get-Json @('get-value','Settings_HdrClipboard','-a',"$id",'--json')).text
+            Write-Host "        Settings_HdrClipboard was '$was'" -ForegroundColor DarkGray
+            if ($was -notmatch '^(Off|False|0)$') { throw "it reads '$was', not off" }
+            winapp ui invoke 'Settings_HdrClipboard' -a $id
+            Start-Sleep -Milliseconds 500
+            $now = (Get-Json @('get-value','Settings_HdrClipboard','-a',"$id",'--json')).text
+            if ($now -eq $was) { throw "the switch did not move off '$was'" }
+            winapp ui invoke 'Settings_HdrClipboard' -a $id
+            winapp ui wait-for 'Settings_HdrClipboard' -a $id --value $was -t 4000
+        }
 
         # --- the layout picker: value round-trip, then the single-tab-stop proof
         Test-UI "settings: back to General for the layout picker" {

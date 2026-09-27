@@ -367,6 +367,19 @@ public class SnipSettingsTests
     }
 
     [Fact]
+    public void Hdr_on_the_clipboard_is_off_by_default_and_round_trips_through_the_file()
+    {
+        Assert.False(new SnipSettings().Hdr.Clipboard);
+        string p = Temp("{ \"version\": 2, \"hdr\": { \"clipboard\": true } }");
+        SnipSettings s = SnipSettingsFile.Load(p).Settings;
+        Assert.True(s.Hdr.Clipboard);
+        Assert.Equal("none", s.Hdr.File);   // the rest of the section keeps its defaults
+        SnipSettingsFile.Save(p, s with { Hdr = s.Hdr with { Clipboard = false } });
+        Assert.False(SnipSettingsFile.Load(p).Settings.Hdr.Clipboard);
+        File.Delete(p);
+    }
+
+    [Fact]
     public void History_limit_defaults_to_20_and_round_trips_through_the_file()
     {
         Assert.Equal(20, new SnipSettings().HistoryLimit);

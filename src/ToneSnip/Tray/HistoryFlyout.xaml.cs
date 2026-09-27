@@ -498,7 +498,8 @@ public sealed partial class HistoryFlyout : PopupWindow
             HistoryItem item = r.Item;
             await ClipboardWriter.Enqueue(() =>
             {
-                if (App.Current.History.LoadForCopy(item) is { } loaded) ClipboardWriter.Set(loaded.Image, loaded.Png, App.Current.Log);
+                bool hdr = OutputPipeline.CopiesHdr(App.Current.Settings);
+                if (App.Current.History.LoadForCopy(item, hdr) is { } loaded) ClipboardWriter.Set(loaded.Image, loaded.Png, App.Current.Log, loaded.Jxr);
             });
         }
         catch (Exception ex) { App.Current.Log.Warn("history copy: " + ex.Message); }

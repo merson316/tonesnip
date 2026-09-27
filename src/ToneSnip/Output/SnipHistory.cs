@@ -291,23 +291,35 @@ public sealed class SnipHistory
     }
 
     /// <summary>The image and PNG bytes for the flyout's Copy, reusing existing PNG bytes where possible to avoid an
-    /// encode.</summary>
-    public (BgraImage Image, byte[] Png)? LoadForCopy(HistoryItem item)
+    /// encode. With <paramref name="hdr"/>, also the row's JPEG XR copy when it has one on disk, for
+    /// <see cref="ClipboardWriter.HdrFormat"/>; a compacted snip has no half-float data left to make one from.</summary>
+    public (BgraImage Image, byte[] Png, byte[]? Jxr)? LoadForCopy(HistoryItem item, bool hdr = false)
     {
+        byte[]? jxr = hdr ? LoadJxr(item) : null;
         if (item.Result is { } r)
         {
             byte[]? held = r.CompactedPng;
             BgraImage img = r.Peek();
-            return (img, held ?? Bitmaps.EncodePng(img));
+            return (img, held ?? Bitmaps.EncodePng(img), jxr);
         }
         if (!PathGuard.IsSafeAbsolute(item.Entry.Path) || !File.Exists(item.Entry.Path)) return null;
         try
         {
             byte[] bytes = File.ReadAllBytes(item.Entry.Path);
             BgraImage img = Bitmaps.Decode(bytes);
-            return (img, PathGuard.HasExtension(item.Entry.Path, ".png") ? bytes : Bitmaps.EncodePng(img));
+            return (img, PathGuard.HasExtension(item.Entry.Path, ".png") ? bytes : Bitmaps.EncodePng(img), jxr);
         }
         catch (Exception e) { _log.Warn("history copy: " + e.Message); return null; }
+    }
+
+    /// <summary>The row's HDR copy, if it is a JPEG XR that belongs to the row's file (history.json is untrusted) and
+    /// can be read.</summary>
+    private byte[]? LoadJxr(HistoryItem item)
+    {
+        string? path = item.Entry.HdrPath;
+        if (HdrOutput.FormatOf(path ?? "") != "jxr" || !OwnsSidecar(item.Entry.Path, path) || !PathGuard.IsSafeAbsolute(path)) return null;
+        try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
+        catch (Exception e) { _log.Warn("history copy: the HDR copy was not read: " + e.Message); return null; }
     }
 
     private void Save()

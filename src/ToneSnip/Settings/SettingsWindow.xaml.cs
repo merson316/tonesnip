@@ -227,7 +227,7 @@ public partial class SettingsWindow : Window
         Format.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Formats, s.Format)); JpegQuality.Value = s.JpegQuality; _loadedJpegQuality = JpegQuality.Value;
         ShowToast.IsOn = s.ShowToast;
         NotificationStyle.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Notifications, s.Notification));
-        HdrFile.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.HdrFiles, s.Hdr.File)); JxrLossless.IsOn = s.Hdr.JxrLossless;
+        HdrFile.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.HdrFiles, s.Hdr.File)); JxrLossless.IsOn = s.Hdr.JxrLossless; HdrClipboard.IsOn = s.Hdr.Clipboard;
         UpdateOutputLabels();
     }
 
@@ -286,7 +286,7 @@ public partial class SettingsWindow : Window
                 SaveFolder = string.IsNullOrWhiteSpace(_saveFolder) ? null : _saveFolder.Trim(),
                 Format = TagOf(Format, s.Format), JpegQuality = JpegQuality.Value == _loadedJpegQuality ? s.JpegQuality : (int)JpegQuality.Value,
                 ShowToast = ShowToast.IsOn, Notification = TagOf(NotificationStyle, s.Notification),
-                Hdr = s.Hdr with { File = TagOf(HdrFile, s.Hdr.File), JxrLossless = JxrLossless.IsOn },
+                Hdr = s.Hdr with { File = TagOf(HdrFile, s.Hdr.File), JxrLossless = JxrLossless.IsOn, Clipboard = HdrClipboard.IsOn },
             };
         return s;
     }
@@ -377,6 +377,7 @@ public partial class SettingsWindow : Window
         if (_loading) PlaceHdrFile(hdrFile == "jxr");
         else if (_hdrNested != (hdrFile == "jxr")) DispatcherQueue.TryEnqueue(() => { if (!_closed) PlaceHdrFile(TagOf(HdrFile, App.Current.Settings.Hdr.File) == "jxr"); });
         NotificationStyleRow.IsEnabled = ShowToast.IsOn;
+        HdrClipboardRow.IsEnabled = CopyToClipboard.IsOn;
     }
 
     /// <summary>

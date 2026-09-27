@@ -118,10 +118,21 @@ public sealed partial class ViewerWindow
             // An exposure pass rewrites the picture in place on a worker thread.
             if (!await ExposureIdle() || _closed) return;
             BgraImage img = Output();
+            SnipSettings settings = App.Current.Settings;
+            bool hdr = OutputPipeline.CopiesHdr(settings) && _result.Crops.Count > 0;
+            // The JPEG XR is built from _result, so it takes the document these pixels were rendered from, as Save does.
+            if (hdr) SyncResultFromSession(Snapshot());
+            CaptureResult result = _result;
+            uint accent = _accent;
             // Both on the pool: the clipboard needs no apartment, and the DIB copy costs as much as the PNG.
             // The encode on the pool; the write queued behind any other clipboard write, on the pool too.
-            byte[] png = await RunEncode(() => Bitmaps.EncodePng(img));
-            await ClipboardWriter.SetQueued(img, png, App.Current.Log);
+            byte[]? jxr = null;
+            byte[] png = await RunEncode(() =>
+            {
+                if (hdr) jxr = HdrOutput.EncodeForClipboard(result, img, settings, accent, App.Current.Log);
+                return Bitmaps.EncodePng(img);
+            });
+            await ClipboardWriter.Enqueue(() => ClipboardWriter.Set(img, png, App.Current.Log, jxr));
         }
         catch (Exception ex) { App.Current.Log.Warn("viewer copy: " + ex.Message); }
     }

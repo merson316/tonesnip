@@ -99,6 +99,21 @@ public static class HdrOutput
         }
     }
 
+    /// <summary>The snip as a JPEG XR for the clipboard (<see cref="ClipboardWriter.HdrFormat"/>), with the JPEG XR
+    /// settings the HDR copy uses; null, logged, when it cannot be made, so the SDR copy goes ahead without it.</summary>
+    public static byte[]? EncodeForClipboard(CaptureResult r, BgraImage sdrRendered, SnipSettings s, uint accent, ILog log)
+    {
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            (HalfImage canvas, _, float white) = BuildCanvas(r, s, accent);
+            byte[] bytes = Encode(canvas, sdrRendered, "jxr", s, white);
+            log.Debug($"hdr clipboard: {bytes.Length / 1024} KB JPEG XR in {sw.ElapsedMilliseconds} ms");
+            return bytes;
+        }
+        catch (Exception e) { log.Warn("hdr clipboard: " + e.Message); return null; }
+    }
+
     public static bool Write(CaptureResult r, BgraImage sdrRendered, string sdrPath, string file, SnipSettings s, uint accent, ILog log)
     {
         // PathFor throws for an unknown format; a failed sidecar must never affect the SDR save or what follows it.

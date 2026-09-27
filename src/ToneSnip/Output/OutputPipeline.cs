@@ -27,7 +27,10 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
     /// after the output, so <see cref="CaptureResult.Build"/> does not copy them. An editor opened later (from the toast
     /// or the history) reads the compacted PNG and never had them.
     /// </summary>
-    public bool UsesCrops(SnipSettings s) => KeepAlive(s) || WritesSidecar(s);
+    public bool UsesCrops(SnipSettings s) => KeepAlive(s) || WritesSidecar(s) || CopiesHdr(s);
+
+    /// <summary>Whether a copied HDR snip also puts its JPEG XR on the clipboard (<c>hdr.clipboard</c>).</summary>
+    public static bool CopiesHdr(SnipSettings s) => s.CopyToClipboard && s.Hdr.Clipboard;
     public Func<uint> Accent { get; set; } = () => Annotate.ShapeRenderer.DefaultAccent;
 
     public async Task RunAsync(CaptureResult result)
@@ -57,7 +60,9 @@ public sealed class OutputPipeline(Func<SnipSettings> settings, ILog log)
         result.SaveAttempted = s.AutoSave;
         if (s.CopyToClipboard && png != null)
         {
-            try { ClipboardWriter.Set(img, png, log); result.Copied = true; log.Debug($"clipboard: {img.Width}x{img.Height}"); } catch (Exception e) { log.Error("clipboard: " + e.Message); }
+            // Encoded before the clipboard is opened, so another app is never kept waiting on the encode.
+            byte[]? jxr = CopiesHdr(s) && result.Crops.Count > 0 ? HdrOutput.EncodeForClipboard(result, img, s, accent, log) : null;
+            try { ClipboardWriter.Set(img, png, log, jxr); result.Copied = true; log.Debug($"clipboard: {img.Width}x{img.Height}{(jxr != null ? $", HDR {jxr.Length / 1024} KB" : "")}"); } catch (Exception e) { log.Error("clipboard: " + e.Message); }
             DebugHooks.MemoryMark("after clipboard");
         }
         if (s.AutoSave)

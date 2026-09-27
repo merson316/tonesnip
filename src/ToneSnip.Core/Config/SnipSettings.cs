@@ -51,6 +51,10 @@ public sealed record HdrSettings
     /// what is asked for. Off falls back to the CPU path, which copies each frame into memory. No UI: a kill switch,
     /// overridden by TONESNIP_GPU_TONEMAP=0 or 1.</summary>
     public bool GpuTonemap { get; init; } = true;
+    /// <summary>A copied HDR snip also goes on the clipboard as JPEG XR under "image/vnd.ms-photo", beside the SDR
+    /// bitmap and PNG. Off by default: no mainstream app reads an HDR clipboard format yet, and the encode costs time
+    /// and keeps the snip's half-float crops until the copy is made.</summary>
+    public bool Clipboard { get; init; }
 }
 
 /// <summary>Persistent settings of the snipping tool (%LOCALAPPDATA%\tonesnip\settings.json).</summary>

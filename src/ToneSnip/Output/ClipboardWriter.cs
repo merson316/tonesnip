@@ -3,7 +3,8 @@ using ToneSnip.Core.Imaging;
 
 namespace ToneSnip.App.Output;
 
-/// <summary>Puts CF_DIBV5 (32-bit BGRA with alpha) and the registered "PNG" format on the clipboard in one transaction.</summary>
+/// <summary>Puts CF_DIBV5 (32-bit BGRA with alpha) and the registered "PNG" format on the clipboard in one transaction,
+/// and with <c>hdr.clipboard</c> on, an HDR snip's JPEG XR as well (<see cref="HdrFormat"/>).</summary>
 public static partial class ClipboardWriter
 {
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool OpenClipboard(IntPtr owner);
@@ -43,6 +44,15 @@ public static partial class ClipboardWriter
         }
     }
 
+    /// <summary>
+    /// The registered format an HDR snip's JPEG XR goes under: its media type, as WIC names it. No clipboard format for
+    /// HDR is documented on Windows, and no mainstream app (Paint, Photoshop, Word, the browsers) reads one yet, so
+    /// this is an opt-in for apps that look for it. JPEG XR is the format Windows itself uses for HDR stills (Game Bar
+    /// captures, Photos), and every WIC-based app can decode it. The SDR bitmap and PNG are always there beside it, so
+    /// an app that ignores it pastes exactly what it did before.
+    /// </summary>
+    public const string HdrFormat = "image/vnd.ms-photo";
+
     /// <summary><see cref="Set"/> through <see cref="Enqueue"/>.</summary>
     public static Task SetQueued(BgraImage image, byte[] png, Core.Diagnostics.ILog? log = null) => Enqueue(() => Set(image, png, log));
 
@@ -50,20 +60,25 @@ public static partial class ClipboardWriter
     public static Task SetTextQueued(string text, Core.Diagnostics.ILog? log = null) => Enqueue(() => SetText(text, log));
 
     /// <summary>
-    /// Writes both formats. Callable from any thread: the Win32 clipboard needs only its open/close pair on one thread.
-    /// If the PNG format fails after the DIB succeeded, that is logged rather than thrown.
+    /// Writes both formats, and <paramref name="hdrJxr"/> under <see cref="HdrFormat"/> when given. Callable from any
+    /// thread: the Win32 clipboard needs only its open/close pair on one thread. If the PNG or HDR format fails after the
+    /// DIB succeeded, that is logged rather than thrown.
+    /// <para>The HDR copy is rendered now, not on request (delayed rendering): a request can come at any time until
+    /// the clipboard changes, so the snip's half-float crops, several times the JPEG XR's size, would have to be kept
+    /// until then. Written now, the caller drops its bytes at once and the clipboard's copy leaves this process as the
+    /// other formats' do.</para>
     /// </summary>
-    public static void Set(BgraImage image, byte[] png, Core.Diagnostics.ILog? log = null)
+    public static void Set(BgraImage image, byte[] png, Core.Diagnostics.ILog? log = null, byte[]? hdrJxr = null)
     {
-        lock (WriteGate) SetLocked(image, png, log);
+        lock (WriteGate) SetLocked(image, png, log, hdrJxr);
     }
 
-    private static void SetLocked(BgraImage image, byte[] png, Core.Diagnostics.ILog? log)
+    private static void SetLocked(BgraImage image, byte[] png, Core.Diagnostics.ILog? log, byte[]? hdrJxr)
     {
         bool open = false;
         for (int i = 0; i < 10 && !(open = OpenClipboard(IntPtr.Zero)); i++) Thread.Sleep(50);
         if (!open) throw new InvalidOperationException("clipboard is busy");
-        var handed = new List<IntPtr>(2);
+        var handed = new List<IntPtr>(3);
         try
         {
             EmptyClipboard();
@@ -71,6 +86,11 @@ public static partial class ClipboardWriter
             handed.Add(Put(CfDibV5, DibV5Header + image.Width * 4L * image.Height, dest => WriteDibV5(image, dest)));
             try { handed.Add(Put(RegisterClipboardFormatW("PNG"), png.Length, dest => png.CopyTo(dest))); }
             catch (Exception e) { log?.Warn("clipboard: the PNG format was not added, the bitmap is there: " + e.Message); }
+            if (hdrJxr != null)
+            {
+                try { handed.Add(Put(RegisterClipboardFormatW(HdrFormat), hdrJxr.Length, dest => hdrJxr.CopyTo(dest))); }
+                catch (Exception e) { log?.Warn("clipboard: the HDR format was not added, the SDR formats are there: " + e.Message); }
+            }
         }
         finally { CloseClipboard(); }
         _ = ReleaseLocalCopiesAsync(handed, log);

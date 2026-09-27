@@ -517,6 +517,13 @@
                   </toolkit:SettingsCard>
                 </toolkit:SettingsExpander.Items>
               </toolkit:SettingsExpander>
+              <!-- Disabled rather than hidden while Copy to clipboard is off (UpdateOutputLabels). -->
+              <toolkit:SettingsCard x:Name="HdrClipboardRow" Header="HDR on the clipboard"
+                                    Description="A copied HDR snip also goes on the clipboard as JPEG XR (image/vnd.ms-photo) for apps that read it. Few do yet; everything else still pastes the SDR image.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCopy}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="HdrClipboard" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="HDR on the clipboard" AutomationProperties.AutomationId="Settings_HdrClipboard"/>
+              </toolkit:SettingsCard>
 
               <TextBlock Text="Notifications" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
               <toolkit:SettingsCard Header="Show a notification after each snip">
