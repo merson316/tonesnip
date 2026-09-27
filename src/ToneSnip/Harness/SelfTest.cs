@@ -97,6 +97,7 @@ public static partial class SelfTest
                 // frame's readouts against the same pixels in memory (SelfTest.Gpu.cs).
                 if (!HdrFrameChecks(grabber, grabbed)) ok = 0;
                 if (!WindowCaptureChecks(grabber)) ok = 0;
+                if (grabber.UseGpu() && !LateReleaseCheck(log)) ok = 0;
             }
 
             // WIC: a PNG must round-trip byte-identical and a JPEG at the same size. Without a frame the subject is

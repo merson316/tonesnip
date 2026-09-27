@@ -185,6 +185,55 @@ public static partial class SelfTest
         return ok;
     }
 
+    /// <summary>
+    /// A frame freed while another thread holds the device past its budget, as the last frame of a device the capture
+    /// has already let go of: nothing will ever call into that tonemapper again, so its release must happen on its own
+    /// once the gate is free, giving the device back. Measured by the device's COM reference count, on a device of its
+    /// own so the capture's is untouched.
+    /// </summary>
+    private static bool LateReleaseCheck(Core.Diagnostics.ILog log)
+    {
+        const int HoldMs = 2600;   // past GpuTonemapper.GateBudgetMs (2 s), so the dispose gives up waiting
+        try
+        {
+            Vortice.Direct3D11.D3D11.D3D11CreateDevice(null, Vortice.Direct3D.DriverType.Hardware, Vortice.Direct3D11.DeviceCreationFlags.BgraSupport,
+                new[] { Vortice.Direct3D.FeatureLevel.Level_11_0 }, out Vortice.Direct3D11.ID3D11Device device, out Vortice.Direct3D11.ID3D11DeviceContext context).CheckError();
+            using (device)
+            {
+                context.Dispose();
+                using (var mt = device.QueryInterface<Vortice.Direct3D11.ID3D11Multithread>()) mt.SetMultithreadProtected(true);
+                var gate = new object();
+                uint before = Refs(device);
+                GpuTonemapper gpu;
+                lock (gate) gpu = GpuTonemapper.Create(device, gate, log);
+                GpuHdrFrame frame = gpu.Upload(64, 64, (_, row) => row.Fill(0x3C00));
+                lock (gate) gpu.Release();   // the capture's reference, as its idle release drops it
+                uint held = Refs(device);
+                using var holding = new ManualResetEventSlim();
+                var holder = new Thread(() => { lock (gate) { holding.Set(); Thread.Sleep(HoldMs); } });
+                holder.Start();
+                holding.Wait();
+                var sw = Stopwatch.StartNew();
+                frame.Dispose();   // gives up after the budget: the release is left pending
+                double tDispose = sw.Elapsed.TotalMilliseconds;
+                holder.Join();   // the holder leaves without touching this tonemapper
+                sw.Restart();
+                while (Refs(device) != before && sw.ElapsedMilliseconds < 10_000) Thread.Sleep(50);
+                uint after = Refs(device);
+                bool ok = after == before && held > before;
+                Console.WriteLine($"gpu late release: device references {before} before, {held} with a frame alive, {after} {sw.ElapsedMilliseconds} ms after a dispose that waited {tDispose:F0} ms for the busy device{(ok ? "" : " FAILED (the device was not given back)")}");
+                return ok;
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"gpu late release: FAILED {e.GetType().Name}: {e.Message}");
+            return false;
+        }
+
+        static uint Refs(Vortice.Direct3D11.ID3D11Device d) { d.AddRef(); return d.Release(); }
+    }
+
     /// <summary>Back-to-back grabs the cursor readout is timed against.</summary>
     private const int Grabs = 20;
 

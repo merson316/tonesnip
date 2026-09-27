@@ -191,7 +191,38 @@ public sealed unsafe class GpuTonemapper
     internal void FrameReleasedLater()
     {
         Interlocked.Increment(ref _pendingReleases);
-        _log.Warn($"capture: an HDR frame was freed while the graphics device was busy for over {GateBudgetMs} ms; its readback scratch goes with the next call");
+        _log.Warn($"capture: an HDR frame was freed while the graphics device was busy for over {GateBudgetMs} ms; its readback scratch goes once the device is free");
+        // The next holder of the gate need not be a user of this tonemapper: the gate is the capture's, and after an
+        // idle release the capture's next device has a tonemapper of its own. If that was the last frame, nothing
+        // would ever call Settle here, and this device, its shaders and scratch would be held for good. So a pool task
+        // waits for the gate itself; one at a time, since it settles every release pending when it gets there.
+        if (Interlocked.Exchange(ref _settling, 1) == 0) _ = Task.Run(() => SettleWhenFree(1));
+    }
+
+    /// <summary>Set while <see cref="SettleWhenFree"/> is waiting for the gate.</summary>
+    private int _settling;
+
+    /// <summary>
+    /// Takes <see cref="Gate"/> as soon as it is free and settles the frames freed while it was not. Never gives up: a
+    /// driver call that never returns keeps the device either way. Each wait is bounded and the next attempt is
+    /// scheduled rather than slept for, so a pool thread is held for at most <see cref="GateBudgetMs"/> at a time.
+    /// Any thread.
+    /// </summary>
+    private void SettleWhenFree(int attempt)
+    {
+        if (!Monitor.TryEnter(Gate, GateBudgetMs))
+        {
+            if (attempt == 5) _log.Warn($"capture: the graphics device has been busy for over {5 * 2 * GateBudgetMs / 1000} s; a freed HDR frame's device is released once it is free");
+            _ = Task.Delay(GateBudgetMs).ContinueWith(_ => SettleWhenFree(attempt + 1), TaskScheduler.Default);
+            return;
+        }
+        try { Settle(); }
+        catch (Exception e) { _log.Warn("capture: the late release of an HDR frame failed: " + e.Message); }
+        finally { Monitor.Exit(Gate); }
+        Volatile.Write(ref _settling, 0);
+        // A frame freed late after Settle read the count saw this still running and started nothing, so its release is
+        // still pending: go round again for it, unless a new one has just been started.
+        if (Volatile.Read(ref _pendingReleases) != 0 && Interlocked.Exchange(ref _settling, 1) == 0) SettleWhenFree(1);
     }
 
     /// <summary>Runs the <see cref="FrameReleased"/> of frames disposed while the gate was busy. Called with
