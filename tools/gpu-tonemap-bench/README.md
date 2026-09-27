@@ -48,3 +48,21 @@ AW3425DW 3440x1440 HDR (SDR white 212, peak 456) on an RTX 4090, and a UP2516D 1
 `diff`: on real frames desktop (knee 1), Hable and ACES are bit-identical; desktop at knee 0.5 or 0.6 has 1–5 of 4.95 M
 pixels 1 LSB off. On the stress image the worst is 1 LSB in at most 0.02 % of pixels, on the RTX 4090, the AMD iGPU
 and WARP alike; the 1-px readout, the stats (to 0.01 nits), the fp16 crop and the zebra mask match the CPU exactly.
+
+## Readback bands: 2026-09-27 (dev/1.0.5-memory)
+
+Same machine, `run --path gpu --runs 10`, two passes each, medians of snips 2 to 10. `run` now also times the snip's auto
+exposure from the frame's samples alone (`IHdrFrame.Luminances`, over the same 1720x720 rectangle) and the Settings
+preview's downsample, which the app takes from every HDR grab. The half-float readback was tried double-buffered, as
+the BGRA one is, and every readback band at 2, 8 and 16 MB against today's 4 MB:
+
+| half bands | band size | crop + AE | AE samples | preview | exposure | WS peak / held |
+|---|---|---|---|---|---|---|
+| one | 4 MB (as shipped) | 28.8–31.3 ms | 7.8–8.1 ms | 2.8–2.9 ms | 1.4–1.7 ms | 93–95 / 78 MB |
+| two | 4 MB | 29.8–30.3 ms | 8.2–8.3 ms | 2.8 ms | 1.5 ms | 105 / 91 MB |
+| two | 2 MB | 29.7–30.4 ms | 8.1–8.6 ms | 2.7–3.8 ms | 1.8 ms | 91–93 / 77 MB |
+| two | 8 MB | 30.4 ms | 8.6 ms | 3.4 ms | 1.3 ms | 134 / 123 MB |
+| two | 16 MB | 29.2–29.6 ms | 7.7–7.9 ms | 2.6–2.7 ms | 1.4 ms | 144 / 89 MB |
+
+Neither buys time: the copies are small next to the Map round trips, and the full-frame exposure pass is already
+1.4 ms. Wider bands only add system memory, so the bands stay as they are.

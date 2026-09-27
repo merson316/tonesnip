@@ -243,7 +243,7 @@ public static class Program
 
     private sealed class Snip
     {
-        public double GrabMs, MemInGrab, MemAfterGrab, MemAfterRelease, GpuAfterGrab, CursorMs, StatsMs, CropMs, ExposureMs;
+        public double GrabMs, MemInGrab, MemAfterGrab, MemAfterRelease, GpuAfterGrab, CursorMs, StatsMs, CropMs, LuminanceMs, DownsampleMs, ExposureMs;
     }
 
     private static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(); return a.Length == 0 ? double.NaN : a[a.Length / 2]; }
@@ -318,6 +318,12 @@ public static class Program
                 HalfImage crop = f.Crop(rect);
                 AutoExposure.Compute(crop, o.SdrWhiteNits, 1f);
                 s.CropMs = c.Elapsed.TotalMilliseconds; c.Restart();
+                // The snip's auto exposure when it keeps no crop: only the samples are read back (IHdrFrame.Luminances).
+                AutoExposure.Compute(f, rect, o.SdrWhiteNits, 1f);
+                s.LuminanceMs = c.Elapsed.TotalMilliseconds; c.Restart();
+                // The Settings preview's reduced frame, taken from every grab of an HDR monitor (App's Grabbed handler).
+                f.Downsample(Math.Max(1, (int)Math.Round(o.Width / 1290.0)));
+                s.DownsampleMs = c.Elapsed.TotalMilliseconds; c.Restart();
                 var passes = new double[5];
                 for (int k = 0; k < 5; k++)
                 {
@@ -336,7 +342,7 @@ public static class Program
             peakMem = Math.Max(peakMem, Math.Max(s.MemInGrab, s.MemAfterGrab));
             snips.Add(s);
             Console.WriteLine($"  snip {r + 1}: grab {s.GrabMs:F1} ms | WS in grab {s.MemInGrab:F0}, after grab {s.MemAfterGrab:F0}, after release+GC {s.MemAfterRelease:F0} MB | adapter {s.GpuAfterGrab:F0} MB | " +
-                              $"cursor {s.CursorMs:F3} stats {s.StatsMs:F2} crop+AE {s.CropMs:F1} exposure {s.ExposureMs:F1} ms");
+                              $"cursor {s.CursorMs:F3} stats {s.StatsMs:F2} crop+AE {s.CropMs:F1} AE samples {s.LuminanceMs:F1} preview {s.DownsampleMs:F1} exposure {s.ExposureMs:F1} ms");
         }
         Settle(); Thread.Sleep(2000);
         double heldMem = ProcessMemory.Mb(), heldGpu = am.MainDedicatedMb();
@@ -348,7 +354,7 @@ public static class Program
         var rest = snips.Skip(1).ToList();
         Console.WriteLine($"SUMMARY path={path} tonemap={tonemap} firstGrabMs={snips[0].GrabMs:F1} medGrabMs={Median(rest.Select(x => x.GrabMs)):F1} " +
                           $"baseWS={baseMem:F1} peakWS={peakMem:F1} heldWS={heldMem:F1} releasedWS={relMem:F1} baseGpu={baseGpu:F0} heldGpu={heldGpu:F0} releasedGpu={relGpu:F0} " +
-                          $"cursorMs={Median(rest.Select(x => x.CursorMs)):F3} statsMs={Median(rest.Select(x => x.StatsMs)):F2} cropAeMs={Median(rest.Select(x => x.CropMs)):F1} exposureMs={Median(rest.Select(x => x.ExposureMs)):F1}");
+                          $"cursorMs={Median(rest.Select(x => x.CursorMs)):F3} statsMs={Median(rest.Select(x => x.StatsMs)):F2} cropAeMs={Median(rest.Select(x => x.CropMs)):F1} aeSamplesMs={Median(rest.Select(x => x.LuminanceMs)):F1} previewMs={Median(rest.Select(x => x.DownsampleMs)):F1} exposureMs={Median(rest.Select(x => x.ExposureMs)):F1}");
         return 0;
     }
 
