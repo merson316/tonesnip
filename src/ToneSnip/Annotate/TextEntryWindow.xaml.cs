@@ -23,10 +23,14 @@ public sealed partial class TextEntryWindow : PopupWindow
     /// </summary>
     /// <param name="zoom">Screen pixels per picture pixel where the text will land: 1 over the overlay's frozen desktop,
     /// the editor's zoom times the display scale in the editor.</param>
-    public static TextEntryWindow For(Style style, uint accentArgb, double zoom = 1) => new(ShapeRenderer.ResolveColor(style.Color, accentArgb), style.TextSize * zoom);
+    public static TextEntryWindow For(Style style, uint accentArgb, double zoom = 1)
+        => new(ShapeRenderer.ResolveColor(style.Color, accentArgb), style.TextSize * zoom, style.TextBox);
 
     // Small DWM corners (4 px) so the window's clip traces the same curve as the Frame's SmallCornerRadius hairline.
-    public TextEntryWindow(uint accentArgb, double sizePx) : base(activate: true, smallCorners: true)
+    /// <param name="accentArgb">The text colour, or with <paramref name="boxed"/> the box's.</param>
+    /// <param name="boxed">The text will land on a filled box (Style.TextBox): the frame is filled with the colour and
+    /// the letters are black or white as they will be drawn, so what is typed looks like the result.</param>
+    public TextEntryWindow(uint accentArgb, double sizePx, bool boxed = false) : base(activate: true, smallCorners: true)
     {
         _sizePx = sizePx;
         InitializeComponent();
@@ -35,7 +39,8 @@ public sealed partial class TextEntryWindow : PopupWindow
         Surface.Opacity = 0;
         OnSettled = () => { if (!IsClosed) Surface.Opacity = 1; };
         Theme.ThemeManager.Attach(this);
-        var ink = new SolidColorBrush(new global::Windows.UI.Color { A = 255, R = (byte)(accentArgb >> 16), G = (byte)(accentArgb >> 8), B = (byte)accentArgb });
+        if (boxed) Frame.Background = Brush(accentArgb);
+        SolidColorBrush ink = Brush(boxed ? Style.InkOn(accentArgb) : accentArgb);
         Box.Foreground = ink;
         // The template swaps the foreground per visual state, so the state tokens are overridden too.
         foreach (string key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused", "TextControlForegroundDisabled" })
@@ -59,6 +64,9 @@ public sealed partial class TextEntryWindow : PopupWindow
         // A window closed from outside (OverlaySession.Finish) must still complete the task the caller awaits.
         this.WhenClosed(() => _done.TrySetResult(null));
     }
+
+    private static SolidColorBrush Brush(uint argb)
+        => new(new global::Windows.UI.Color { A = 255, R = (byte)(argb >> 16), G = (byte)(argb >> 8), B = (byte)argb });
 
     /// <summary>Which frame brush is showing. Unlike <c>_focused</c>, which records that the box was given focus once,
     /// this follows focus both ways.</summary>

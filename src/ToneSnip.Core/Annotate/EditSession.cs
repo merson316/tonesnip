@@ -146,7 +146,7 @@ public sealed class EditSession
     {
         if (PendingText is not (int x, int y)) return;
         PendingText = null;
-        if (!string.IsNullOrWhiteSpace(text)) Doc.Add(new TextShape(Doc.NewId(), x, y, text.TrimEnd(), Doc.Current.TextSize, Doc.Current.Color));
+        if (!string.IsNullOrWhiteSpace(text)) Doc.Add(new TextShape(Doc.NewId(), x, y, text.TrimEnd(), Doc.Current.TextSize, Doc.Current.Color, Doc.Current.TextBox));
     }
 
     public void CancelText() { PendingText = null; }
@@ -236,7 +236,7 @@ public sealed class EditSession
         PenShape p => p with { Width = st.Width, Color = st.Color },
         LineShape l => l with { Width = st.Width, Color = st.Color },
         BoxShape b => b with { Width = st.Width, Color = st.Color },
-        TextShape t => t with { Size = st.TextSize, Color = st.Color },
+        TextShape t => t with { Size = st.TextSize, Color = st.Color, Boxed = st.TextBox },
         CounterShape c => c with { Size = st.TextSize, Color = st.Color },
         RedactShape r => r with { Strength = st.Width },
         _ => s,

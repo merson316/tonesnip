@@ -231,6 +231,14 @@ public static partial class GdiPlus
             return new FontFamily(clone);
         }
 
+        /// <summary>The distance between two lines of this family as a multiple of the em size.</summary>
+        public float LineSpacingPerEm(FontStyle style)
+        {
+            Check(GdipGetLineSpacing(Handle, (int)style, out ushort spacing), nameof(GdipGetLineSpacing));
+            Check(GdipGetEmHeight(Handle, (int)style, out ushort em), nameof(GdipGetEmHeight));
+            return em == 0 ? 1.2f : (float)spacing / em;
+        }
+
         public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeleteFontFamily(Handle); Handle = IntPtr.Zero; } }
     }
 
@@ -263,6 +271,29 @@ public static partial class GdiPlus
         {
             var layout = new RectF(x, y, 0, 0);
             Check(GdipAddPathString(Handle, text, text.Length, family.Handle, (int)style, emSize, ref layout, format.Handle), nameof(GdipAddPathString));
+        }
+
+        /// <summary>A closed rectangle with quarter-circle corners of <paramref name="radius"/> (clamped to half the
+        /// shorter side). The radius must be positive.</summary>
+        public void AddRoundedRectangle(RectF r, float radius)
+        {
+            float d = Math.Min(2 * radius, Math.Min(r.W, r.H));
+            if (d <= 0) return;   // an empty rectangle (or no radius) outlines nothing; GDI+ rejects a zero-size arc
+            Check(GdipAddPathArc(Handle, r.X, r.Y, d, d, 180, 90), nameof(GdipAddPathArc));
+            Check(GdipAddPathArc(Handle, r.X + r.W - d, r.Y, d, d, 270, 90), nameof(GdipAddPathArc));
+            Check(GdipAddPathArc(Handle, r.X + r.W - d, r.Y + r.H - d, d, d, 0, 90), nameof(GdipAddPathArc));
+            Check(GdipAddPathArc(Handle, r.X, r.Y + r.H - d, d, d, 90, 90), nameof(GdipAddPathArc));
+            Check(GdipClosePathFigure(Handle), nameof(GdipClosePathFigure));
+        }
+
+        /// <summary>The tight box around the path's outlines, as filled (no pen).</summary>
+        public RectF Bounds
+        {
+            get
+            {
+                Check(GdipGetPathWorldBounds(Handle, out RectF b, IntPtr.Zero, IntPtr.Zero), nameof(GdipGetPathWorldBounds));
+                return b;
+            }
         }
 
         public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeletePath(Handle); Handle = IntPtr.Zero; } }
@@ -358,12 +389,17 @@ public static partial class GdiPlus
 
     [LibraryImport("gdiplus.dll")] private static partial int GdipCreatePath(int fillMode, out IntPtr path);
     [LibraryImport("gdiplus.dll")] private static partial int GdipDeletePath(IntPtr path);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipAddPathArc(IntPtr path, float x, float y, float width, float height, float startAngle, float sweepAngle);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipClosePathFigure(IntPtr path);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipGetPathWorldBounds(IntPtr path, out RectF bounds, IntPtr matrix, IntPtr pen);
     [LibraryImport("gdiplus.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GdipAddPathString(IntPtr path, string text, int length, IntPtr family, int style, float emSize, ref RectF layoutRect, IntPtr format);
 
     [LibraryImport("gdiplus.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial int GdipCreateFontFamilyFromName(string name, IntPtr fontCollection, out IntPtr family);
     [LibraryImport("gdiplus.dll")] private static partial int GdipGetGenericFontFamilySansSerif(out IntPtr family);
     [LibraryImport("gdiplus.dll")] private static partial int GdipCloneFontFamily(IntPtr family, out IntPtr clone);
     [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteFontFamily(IntPtr family);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipGetLineSpacing(IntPtr family, int style, out ushort lineSpacing);
+    [LibraryImport("gdiplus.dll")] private static partial int GdipGetEmHeight(IntPtr family, int style, out ushort emHeight);
     [LibraryImport("gdiplus.dll")] private static partial int GdipCreateFont(IntPtr family, float emSize, int style, int unit, out IntPtr font);
     [LibraryImport("gdiplus.dll")] private static partial int GdipDeleteFont(IntPtr font);
 

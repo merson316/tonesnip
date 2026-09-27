@@ -1269,6 +1269,35 @@ if (Should-Run 'toolbar-annotate') {
             if ($w1 -gt $w0) { throw "the row grew from $w0 to $w1" }
         }
 
+        # The text tool's background box lives in the size band. Picking it closes the band, as every band cell does,
+        # so its state is read again from a reopened band; it is put back off, since the style is remembered.
+        Test-UI "toolbar-annotate: the size band holds the text background toggle, off by default" {
+            winapp ui invoke 'Tools_SizePicker' -a $id
+            winapp ui wait-for 'Tools_TextBackground' -a $id -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "no Tools_TextBackground in the size band" }
+            $n = Get-Prop $id 'Tools_TextBackground' 'Name'
+            if ($n -ne 'Text background') { throw "the toggle is named '$n'" }
+            winapp ui wait-for 'Tools_TextBackground' -a $id -p ToggleState --value 'Off' -t 1000
+        }
+        Shot $id 'toolbar-size'
+        $w3 = Get-BarWidth $id
+        Test-UI "toolbar-annotate: the size band does not widen the row ($w0 -> $w3)" {
+            if ($w3 -gt $w0) { throw "the row grew from $w0 to $w3" }
+        }
+        Test-UI "toolbar-annotate: the text background toggle turns on and back off" {
+            winapp ui invoke 'Tools_TextBackground' -a $id | Out-Null
+            Start-Sleep -Milliseconds 600
+            winapp ui invoke 'Tools_SizePicker' -a $id | Out-Null
+            winapp ui wait-for 'Tools_TextBackground' -a $id -p ToggleState --value 'On' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "the toggle did not stay on" }
+            winapp ui invoke 'Tools_TextBackground' -a $id | Out-Null
+            Start-Sleep -Milliseconds 600
+            winapp ui invoke 'Tools_SizePicker' -a $id | Out-Null
+            winapp ui wait-for 'Tools_TextBackground' -a $id -p ToggleState --value 'Off' -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "the toggle did not turn off again" }
+            winapp ui invoke 'Tools_SizePicker' -a $id | Out-Null
+        }
+
         Test-UI "toolbar-annotate: the exposure band opens" {
             winapp ui invoke 'Tools_ExposurePicker' -a $id
             Start-Sleep -Milliseconds 800

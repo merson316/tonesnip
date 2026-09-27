@@ -20,6 +20,8 @@ public sealed record AnnotateSettings
     public string Colour { get; init; } = "accent";
     public int Width { get; init; } = 4;
     public int TextSize { get; init; } = 20;
+    /// <summary>New text goes on a filled box of the annotation colour (the text tool's background box).</summary>
+    public bool TextBackground { get; init; }
     /// <summary>Blur and Pixelate hide content with a generated pattern instead of the real pixels.</summary>
     public bool PrivacyMode { get; init; } = true;
     /// <summary>Freeform snips: cut annotations outside the lasso (true) or let them extend over the transparent area (false).</summary>
@@ -29,13 +31,13 @@ public sealed record AnnotateSettings
     {
         uint c = accentArgb;
         if (Colour is { Length: 7 } && Colour[0] == '#' && uint.TryParse(Colour.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out uint rgb)) c = 0xFF000000 | rgb;
-        return new ToneSnip.Core.Annotate.Style(c, Width, TextSize);
+        return new ToneSnip.Core.Annotate.Style(c, Width, TextSize, TextBackground);
     }
 
     public static AnnotateSettings FromStyle(ToneSnip.Core.Annotate.Style s, uint accentArgb) => new()
     {
         Colour = s.Color == accentArgb || s.Color == ToneSnip.Core.Annotate.Style.AccentPlaceholder ? "accent" : $"#{s.Color & 0xFFFFFF:X6}",
-        Width = s.Width, TextSize = s.TextSize,
+        Width = s.Width, TextSize = s.TextSize, TextBackground = s.TextBox,
     };
 }
 

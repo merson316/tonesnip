@@ -37,6 +37,9 @@ public static class ShapeRenderer
 
         /// <summary>"Segoe UI Variable Text", falling back to "Segoe UI" and then the generic sans-serif family.</summary>
         public Gp.FontFamily Family => _family ??= Resolve();
+        private float _lineSpacing;
+        /// <summary>The family's line spacing per em, which is how far apart GDI+ lays out the lines of a text shape.</summary>
+        public float LineSpacing => _lineSpacing > 0 ? _lineSpacing : _lineSpacing = Family.LineSpacingPerEm(Gp.FontStyle.Regular);
         public Gp.StringFormat Typographic => _typographic ??= Gp.StringFormat.GenericTypographic();
 
         /// <summary>Centred both ways, for a counter's number.</summary>
@@ -78,7 +81,7 @@ public static class ShapeRenderer
         public void Dispose()
         {
             DisposeCounterFonts();
-            _family?.Dispose(); _family = null;
+            _family?.Dispose(); _family = null; _lineSpacing = 0;
             _typographic?.Dispose(); _typographic = null;
             _centred?.Dispose(); _centred = null;
         }
@@ -400,9 +403,26 @@ public static class ShapeRenderer
                 using Gp.Path path = new();
                 // t.Size is already device pixels (see Style.TextSizes), not points.
                 path.AddString(t.Text, text.Family, Gp.FontStyle.Regular, t.Size, t.X - vp.Left, t.Y - vp.Top, text.Typographic);
+                uint colour = ResolveColor(t.Color, accent);
+                if (t.Boxed)
+                {
+                    // The box spans the letters' ink left to right, and their line boxes top to bottom, so a line of
+                    // lower-case letters gets the same height of box as one with capitals and descenders.
+                    Gp.RectF ink = path.Bounds;
+                    int lines = t.Text.Split('\n').Length;
+                    float top = t.Y - vp.Top - t.BoxPadY, bottom = t.Y - vp.Top + lines * t.Size * text.LineSpacing + t.BoxPadY;
+                    var box = new Gp.RectF(ink.X - t.BoxPadX, top, ink.W + 2 * t.BoxPadX, bottom - top);
+                    using Gp.Path rounded = new();
+                    rounded.AddRoundedRectangle(box, t.BoxPadX);
+                    using Gp.Brush fill = Gp.Brush.Solid(colour);
+                    g.FillPath(fill, rounded);
+                    using Gp.Brush letters = Gp.Brush.Solid(Style.InkOn(colour));
+                    g.FillPath(letters, path);
+                    break;
+                }
                 using Gp.Pen outline = new(0xC8000000, 2f);
                 outline.LineJoin = Gp.LineJoin.Round;
-                using Gp.Brush br = Gp.Brush.Solid(ResolveColor(t.Color, accent));
+                using Gp.Brush br = Gp.Brush.Solid(colour);
                 g.DrawPath(outline, path); g.FillPath(br, path);
                 break;
             }

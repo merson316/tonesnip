@@ -44,6 +44,7 @@ public sealed partial class AnnotateBar : UserControl
     private readonly List<(int Value, RadioButton Cell, Rectangle Bar)> _widthCells = new();
     private readonly List<SizeCell> _sizeCells = new();
     private bool _sizeCounterBuilt;
+    private ToggleButton? _textBoxCell;
 
     /// <summary>Accessible names for <see cref="Core.Annotate.Style.Palette"/>, in its order, since a swatch's only
     /// content is a coloured <see cref="Ellipse"/>. <c>StyleTests.Palette_length_is_pinned</c> fails if the palette
@@ -159,6 +160,10 @@ public sealed partial class AnnotateBar : UserControl
             _sizeCells.Add(new SizeCell(sz, cell, letter, counter));
             SizeList.Children.Add(cell);
         }
+        // The text tool's one option rides in the size band, after a divider: text sizes are the text tool's other
+        // setting, and a row button of its own would widen the overlay's bar for everyone.
+        SizeList.Children.Add(Divider());
+        SizeList.Children.Add(_textBoxCell = TextBoxCell());
         if (!_sizeCounterBuilt)
         {
             _sizeCounterBuilt = true;
@@ -219,6 +224,25 @@ public sealed partial class AnnotateBar : UserControl
         // Detach() may have run before the click is delivered; SetStyle's null check comes too late for the argument.
         cell.Click += (_, _) => { if (_session is { } s) { SetStyle(s.Style with { Color = colour }); ClosePanels(); } };
         _swatchCells.Add((colour, ring, gap, outlined ? swatch : null, cell, name));
+        return cell;
+    }
+
+    /// <summary>The text background toggle in the size band: an "A" knocked out of a filled box, drawn from the Tok
+    /// brushes because the cell's content does not inherit a fill (see <see cref="SyncBands"/>).</summary>
+    private ToggleButton TextBoxCell()
+    {
+        var letter = new TextBlock { Style = (XamlStyle)Resources["CellGlyph"], Text = "A", FontSize = 12 };
+        var box = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(3), Child = letter };
+        var cell = new ToggleButton { Style = (XamlStyle)Resources["BandCell"], Content = box };
+        const string label = "Text background";
+        ToolTipService.SetToolTip(cell, label);
+        AutomationProperties.SetName(cell, label);
+        AutomationProperties.SetAutomationId(cell, "Tools_TextBackground");
+        cell.Click += (_, _) =>
+        {
+            if (_session is { } s) SetStyle(s.Style with { TextBox = cell.IsChecked == true });
+            ClosePanels();
+        };
         return cell;
     }
 
@@ -340,6 +364,15 @@ public sealed partial class AnnotateBar : UserControl
             if (s is { } text) c.Cell.IsChecked = c.Value == text.TextSize;
             c.Letter.Foreground = c.Cell.IsChecked == true ? TokOnAccent.Background : TokPrimary.Background;
         }
+        if (_textBoxCell is { Content: Border { Child: TextBlock letter } box })
+        {
+            if (s is { } boxed) _textBoxCell.IsChecked = boxed.TextBox;
+            // The box takes the colour the cell's glyph would have, and the letter the colour behind it: the surface,
+            // or the accent fill once checked.
+            bool on = _textBoxCell.IsChecked == true;
+            box.Background = on ? TokOnAccent.Background : TokPrimary.Background;
+            letter.Foreground = on ? TokAccent.Background : TokSurface.Background;
+        }
     }
 
     /// <summary>Which sample the size picker shows: the counter's circled "1" while the counter tool is live or a
@@ -357,7 +390,11 @@ public sealed partial class AnnotateBar : UserControl
     private void SyncIcons()
     {
         WidthBar.Fill = GlyphBrush(WidthBtn);
-        SizeGlyph.Foreground = GlyphBrush(SizeBtn);
+        bool boxed = _session?.Style.TextBox == true;
+        SizeGlyphBox.Background = boxed ? GlyphBrush(SizeBtn) : null;
+        SizeGlyphBox.Width = SizeGlyphBox.Height = boxed ? 16 : double.NaN;
+        SizeGlyph.FontSize = boxed ? 11 : 15;
+        SizeGlyph.Foreground = boxed ? TokSurface.Background : GlyphBrush(SizeBtn);
     }
 
     private Brush GlyphBrush(Control c) => c.IsEnabled ? TokPrimary.Background : TokDisabled.Background;

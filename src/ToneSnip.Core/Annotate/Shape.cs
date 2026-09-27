@@ -133,8 +133,15 @@ public sealed record BoxShape(int Id, IntRect Rect, int Width, uint Color, bool 
     public override Shape? Resized(Handle h, int dx, int dy) => this with { Rect = Handles.Resize(Rect, h, dx, dy) };
 }
 
-public sealed record TextShape(int Id, int X, int Y, string Text, int Size, uint Color) : Shape(Id)
+/// <param name="Boxed">Drawn on a filled rounded box of <paramref name="Color"/> with contrasting letters, for text over
+/// a busy picture, rather than as coloured letters with a dark outline.</param>
+public sealed record TextShape(int Id, int X, int Y, string Text, int Size, uint Color, bool Boxed = false) : Shape(Id)
 {
+    /// <summary>How far a box reaches past the letters' line box on the left and right; 0 unboxed.</summary>
+    public int BoxPadX => Boxed ? (int)Math.Ceiling(Size * 0.35) : 0;
+    /// <summary>How far a box reaches above and below the letters' line box; 0 unboxed.</summary>
+    public int BoxPadY => Boxed ? (int)Math.Ceiling(Size * 0.12) : 0;
+
     /// <summary>Core cannot measure fonts; this estimate is for hit-testing. <see cref="DirtyBounds"/> pads it further for invalidation.</summary>
     public override IntRect Bounds
     {
@@ -142,7 +149,7 @@ public sealed record TextShape(int Id, int X, int Y, string Text, int Size, uint
         {
             string[] lines = Text.Split('\n');
             int w = (int)Math.Ceiling(lines.Max(l => l.Length) * Size * 0.6) + 4, h = (int)Math.Ceiling(lines.Length * Size * 1.3) + 4;
-            return new IntRect(X, Y, Math.Max(w, 8), Math.Max(h, 8));
+            return new IntRect(X - BoxPadX, Y - BoxPadY, Math.Max(w, 8) + 2 * BoxPadX, Math.Max(h, 8) + 2 * BoxPadY);
         }
     }
     /// <summary>Wider and taller than <see cref="Bounds"/>, since the real glyph metrics (which Core cannot compute) can
@@ -153,7 +160,7 @@ public sealed record TextShape(int Id, int X, int Y, string Text, int Size, uint
         {
             string[] lines = Text.Split('\n');
             int w = (int)Math.Ceiling(lines.Max(l => l.Length) * Size * 1.0) + 8, h = (int)Math.Ceiling(lines.Length * Size * 1.4) + 8;
-            return new IntRect(X - 4, Y - 4, Math.Max(w, 8), Math.Max(h, 8));
+            return new IntRect(X - 4 - BoxPadX, Y - 4 - BoxPadY, Math.Max(w, 8) + 2 * BoxPadX, Math.Max(h, 8) + 2 * BoxPadY);
         }
     }
     public override bool HitTest(int x, int y) => Bounds.Contains(x, y);

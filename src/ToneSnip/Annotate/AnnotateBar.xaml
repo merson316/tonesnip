@@ -126,7 +126,9 @@
         <Grid Width="16" Height="16"><Rectangle x:Name="WidthBar" Width="16" Height="4" RadiusX="2" RadiusY="2" VerticalAlignment="Center"/></Grid>
       </ToggleButton>
       <!-- One picker sets both text and counter size, so its glyph shows which is in hand: the "A", or the counter
-           glyph (built in code by CounterGlyph) while the counter tool is live or a counter is selected. -->
+           glyph (built in code by CounterGlyph) while the counter tool is live or a counter is selected. The same band
+           holds the text background toggle; while it is on, the "A" is knocked out of a filled box (SizeGlyphBox),
+           as the text will be. -->
       <ToggleButton x:Name="SizeBtn" Style="{StaticResource PickerToggle}" AutomationProperties.Name="Text and counter size" AutomationProperties.AutomationId="Tools_SizePicker"
                     ToolTipService.ToolTip="Text and counter size" Click="OnTextSize">
         <ToggleButton.Resources>
@@ -137,7 +139,9 @@
           </ResourceDictionary>
         </ToggleButton.Resources>
         <Grid Width="16" Height="16">
-          <TextBlock x:Name="SizeGlyph" Text="A" Style="{StaticResource CellGlyph}"/>
+          <Border x:Name="SizeGlyphBox" CornerRadius="3" Background="Transparent">
+            <TextBlock x:Name="SizeGlyph" Text="A" Style="{StaticResource CellGlyph}"/>
+          </Border>
           <Grid x:Name="SizeCounterHost" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Grid>
       </ToggleButton>
@@ -214,6 +218,7 @@
       <Border x:Name="TokOnAccent" Background="{ThemeResource AccentText}"/>
       <Border x:Name="TokDisabled" Background="{ThemeResource TextDisabled}"/>
       <Border x:Name="TokSurface" Background="{ThemeResource SurfaceBase}"/>
+      <Border x:Name="TokAccent" Background="{ThemeResource Accent}"/>
       <Border x:Name="TokEdge" Background="{ThemeResource ControlEdge}"/>
     </Grid>
   </StackPanel>

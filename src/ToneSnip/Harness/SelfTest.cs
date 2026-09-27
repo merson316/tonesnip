@@ -264,6 +264,11 @@ public static partial class SelfTest
                 if (!hashesMatch && strictHashes) ok = 0;
             }
 
+            // The emphasis shapes, kept out of the pinned document above so its fingerprint stays put: a spotlight
+            // dims the whole picture outside it, and boxed text fills a box. A dirty-rect repaint must still match a
+            // full one tile by tile.
+            if (!EmphasisCheck()) ok = 0;
+
             // Last, because it grabs again and so overwrites the pooled frames the checks above read.
             if (grabber != null && !GpuStressAndContention(grabber, grabbed)) ok = 0;
         }
@@ -381,6 +386,34 @@ public static partial class SelfTest
         Buffer.BlockCopy(baseImg.Data, 0, target.Data, 0, target.Data.Length);
         Annotate.ShapeRenderer.Zebra(target, viewport, new[] { (viewport, half) }, 203f / 80f, 1f, viewport);
         return Hash(target.Data);
+    }
+
+    /// <summary>
+    /// The emphasis shapes through the SDR rasterizer: deterministic, every one leaving marks, the spotlight dimming
+    /// outside itself and not inside, and a repaint in small dirty tiles matching the full render. Prints a fingerprint
+    /// (not pinned: it covers GDI+ text).
+    /// </summary>
+    private static bool EmphasisCheck()
+    {
+        const int w = 240, h = 140;
+        BgraImage baseImg = Synthetic(w, h);
+        var viewport = new IntRect(0, 0, w, h);
+        var doc = new Core.Annotate.AnnotationDoc();
+        doc.Add(new Core.Annotate.SpotlightShape(doc.NewId(), new IntRect(20, 20, 80, 50)));
+        doc.Add(new Core.Annotate.SpotlightShape(doc.NewId(), new IntRect(90, 60, 40, 30)));
+        doc.Add(new Core.Annotate.TextShape(doc.NewId(), 140, 20, "Boxed", 14, 0xFFFFF100, Boxed: true));
+        doc.Add(new Core.Annotate.RedactShape(doc.NewId(), new IntRect(10, 100, 40, 30), 4, true, true, 9));
+        BgraImage t1 = BgraImage.Blank(w, h), t2 = BgraImage.Blank(w, h), t3 = BgraImage.Blank(w, h);
+        Annotate.ShapeRenderer.Render(doc, baseImg, viewport, t1);
+        Annotate.ShapeRenderer.Render(doc, baseImg, viewport, t2);
+        for (int ty = 0; ty < h; ty += 23) for (int tx = 0; tx < w; tx += 31)
+            Annotate.ShapeRenderer.Render(doc, baseImg, viewport, t3, new IntRect(tx, ty, 31, 23));
+        bool same = t1.Data.AsSpan().SequenceEqual(t2.Data), tiled = t1.Data.AsSpan().SequenceEqual(t3.Data);
+        bool Changed(int x, int y) { int i = (y * w + x) * 4; return t1.Data[i] != baseImg.Data[i] || t1.Data[i + 1] != baseImg.Data[i + 1] || t1.Data[i + 2] != baseImg.Data[i + 2]; }
+        bool lit = !Changed(50, 40) && !Changed(110, 80), dimmed = Changed(200, 120) && Changed(5, 5);
+        bool boxed = Changed(141, 21);   // inside the box, left of the first letter's ink
+        Console.WriteLine($"emphasis: deterministic={same}, tiledMatchesFull={tiled}, spotlightLit={lit}, outsideDimmed={dimmed}, textBoxFilled={boxed}, hash={Hash(t1.Data)}");
+        return same && tiled && lit && dimmed && boxed;
     }
 
     /// <summary>
