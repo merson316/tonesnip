@@ -50,7 +50,7 @@ public class HardeningTests
             Assert.EndsWith("ToneSnip 9.9.9, pid 42", current[0]);
             Assert.EndsWith("ToneSnip 9.9.9, pid 42", previous[0]);
             Assert.EndsWith("line 19", current[^1]);
-            Assert.Contains(previous, l => l.EndsWith("line " + (19 - (current.Length - 1))));
+            Assert.Contains(previous, l => l.EndsWith("line " + (19 - (current.Length - 1)), StringComparison.Ordinal));
             // Only one previous file is kept.
             Assert.Equal(2, Directory.GetFiles(dir).Length);
         }

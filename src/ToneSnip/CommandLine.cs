@@ -1,3 +1,4 @@
+using System.Globalization;
 using ToneSnip.Core.Capture;
 
 namespace ToneSnip.App;
@@ -75,14 +76,14 @@ public static class CommandLine
     {
         var text = new System.Text.StringBuilder();
         // ASCII throughout: this goes to a console whose code page is whatever the shell is set to.
-        text.AppendLine($"ToneSnip {typeof(CommandLine).Assembly.GetName().Version?.ToString(3)} - HDR-aware screen snipping for Windows 11");
+        text.AppendLine(CultureInfo.InvariantCulture, $"ToneSnip {typeof(CommandLine).Assembly.GetName().Version?.ToString(3)} - HDR-aware screen snipping for Windows 11");
         text.AppendLine();
-        text.AppendLine($"usage: {ExeName} [options]");
+        text.AppendLine(CultureInfo.InvariantCulture, $"usage: {ExeName} [options]");
         text.AppendLine();
         // Mirrors SnipModes.Names, wrapped by hand.
         text.AppendLine("  --snip <mode>      take a snip now; mode is region (or rectangle), window,");
         text.AppendLine("                     fullscreen, freeform, fullScreenAll or activeWindow");
-        text.AppendLine($"  --delay <seconds>  count down before the snip starts (with --snip); 0 to {MaxDelaySeconds}");
+        text.AppendLine(CultureInfo.InvariantCulture, $"  --delay <seconds>  count down before the snip starts (with --snip); 0 to {MaxDelaySeconds}");
         text.AppendLine("  --settings         open the settings window");
         text.AppendLine("  --history          open the Recent flyout");
         text.AppendLine("  --background       start in the notification area and nothing else, even when");
@@ -90,7 +91,7 @@ public static class CommandLine
         text.AppendLine("  --help, -h         this text");
 #if TONESNIP_HARNESS
         text.AppendLine();
-        text.AppendLine($"{ExeName} only - the harness modes. Each runs before the single-instance mutex,");
+        text.AppendLine(CultureInfo.InvariantCulture, $"{ExeName} only - the harness modes. Each runs before the single-instance mutex,");
         text.AppendLine("claims nothing, forwards nothing, and waits out a snip already in flight:");
         text.AppendLine("  --selftest         run the self-test and exit; --no-capture skips the capture checks,");
         text.AppendLine("                     --strict-hashes fails on a rasterizer fingerprint change");
@@ -245,7 +246,7 @@ public static class CommandLine
     {
         var a = new List<string>();
         if (c.Mode != null) { a.Add("--snip"); a.Add(SnipModes.Name(c.Mode.Value)); }
-        if (c.Delay != null) { a.Add("--delay"); a.Add(c.Delay.Value.ToString()); }
+        if (c.Delay != null) { a.Add("--delay"); a.Add(c.Delay.Value.ToString(CultureInfo.InvariantCulture)); }
         if (c.OpenSettings) a.Add("--settings");
         if (c.OpenHistory) a.Add("--history");
         return a.ToArray();

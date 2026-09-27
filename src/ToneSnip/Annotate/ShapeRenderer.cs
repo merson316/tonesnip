@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ToneSnip.Core.Annotate;
@@ -494,7 +495,7 @@ public static class ShapeRenderer
                 using Gp.Brush br = Gp.Brush.Solid(ResolveColor(c.Color, accent)); g.FillEllipse(br, r.X, r.Y, r.W, r.H);
                 using Gp.Pen edge = new(0xA0000000, 1f); g.DrawEllipse(edge, r.X, r.Y, r.W, r.H);
                 using Gp.Brush white = Gp.Brush.Solid(0xFFFFFFFF);
-                g.DrawString(c.Number.ToString(), text.CounterFont(c.Size * 0.9f), white, r, text.Centred);
+                g.DrawString(c.Number.ToString(CultureInfo.CurrentCulture), text.CounterFont(c.Size * 0.9f), white, r, text.Centred);
                 break;
             }
         }

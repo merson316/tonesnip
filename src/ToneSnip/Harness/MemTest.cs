@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
@@ -330,7 +331,7 @@ internal static class MemTest
         return done.Task;
     }
 
-    private static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0.0");
+    private static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.InvariantCulture);
 
     private static string Span(int first, int count) => count == 1 ? $"{first}" : $"{first}-{first + count - 1}";
 

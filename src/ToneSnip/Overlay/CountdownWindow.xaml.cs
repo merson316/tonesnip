@@ -1,3 +1,4 @@
+using System.Globalization;
 using ToneSnip.App.Interop;
 using ToneSnip.Core.Geometry;
 using Microsoft.UI.Xaml.Automation;
@@ -62,7 +63,7 @@ public sealed partial class CountdownWindow : PopupWindow
     /// is what a live region announces, and "3 seconds" says more than "3".</summary>
     public void Set(int seconds)
     {
-        Label.Text = seconds.ToString();
+        Label.Text = seconds.ToString(CultureInfo.CurrentCulture);
         AutomationProperties.SetName(Label, seconds == 1 ? "1 second" : $"{seconds} seconds");
         Controls.LiveRegion.Announce(Label);
     }

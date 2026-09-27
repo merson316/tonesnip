@@ -35,7 +35,7 @@ public class ColorTextTests
         Assert.Equal("rgb", new SnipSettings { ColorFormat = "RGB" }.Sanitized(out _).ColorFormat);
         SnipSettings bad = new SnipSettings { ColorFormat = "hsl" }.Sanitized(out List<string> fixes);
         Assert.Equal("hex", bad.ColorFormat);
-        Assert.Contains(fixes, f => f.StartsWith("colorFormat"));
+        Assert.Contains(fixes, f => f.StartsWith("colorFormat", StringComparison.Ordinal));
         Assert.Equal("hex", (new SnipSettings { ColorFormat = null! }).Sanitized(out _).ColorFormat);
     }
 }

@@ -410,7 +410,7 @@ public class SnipSettingsTests
     {
         SnipSettings s = new SnipSettings { HistoryLimit = stored }.Sanitized(out List<string> fixes);
         Assert.Equal(expected, s.HistoryLimit);
-        Assert.Equal(stored != expected, fixes.Any(f => f.StartsWith("historyLimit")));
+        Assert.Equal(stored != expected, fixes.Any(f => f.StartsWith("historyLimit", StringComparison.Ordinal)));
     }
 
     [Fact]

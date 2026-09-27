@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
@@ -280,7 +281,7 @@ internal static class LeakTest
         return GC.GetTotalMemory(true);
     }
 
-    private static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0.0");
+    private static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0.0", CultureInfo.InvariantCulture);
 
     private static void Line(string text)
     {
