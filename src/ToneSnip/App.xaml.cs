@@ -222,6 +222,13 @@ public partial class App : Application
             try { PublishOutputs(Grabber.Outputs()); }
             catch (Exception e) { Log.Warn("monitors: " + e.Message); }
         });
+        // A few seconds in, once startup's own compiling has settled: the runtime starts counting calls only then.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            try { Grabber.WarmCpuTonemap(); }
+            catch (Exception e) { Log.Warn("tonemap warm-up: " + e.Message); }
+        });
         if (Command != null) RunCommand(Command);
 
         // A toast click can launch the app fresh. The activation is reported as AppNotification only once the COM

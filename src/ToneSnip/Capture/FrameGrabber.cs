@@ -463,6 +463,28 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     public void TonemapInto(HalfImage img, OutputInfo o, float exposure, BgraImage target)
         => HalfFrame.Tonemap(img, CurveFor(o, exposure), new IntRect(0, 0, img.Width, img.Height), target, 0, 0);
 
+    /// <summary>
+    /// Runs the CPU tonemap on a small image a dozen times over about two seconds, so its per-pixel code reaches the
+    /// runtime's fully optimised version before the first snips rather than during them. The app ships precompiled
+    /// code, which the first snip runs; the runtime then counts calls and recompiles the hot methods, and the snip
+    /// that tonemaps while that is under way took 150-220 ms longer.
+    /// </summary>
+    public void WarmCpuTonemap()
+    {
+        const int Size = 64;
+        var img = new HalfImage(Size, Size);
+        for (int i = 0; i < img.Data.Length; i++) img.Data[i] = BitConverter.HalfToUInt16Bits((Half)(i % 997 / 250f));
+        BgraImage target = BgraImage.Blank(Size, Size);
+        // The configured curve, which is the code a snip runs: ACES reads a table, the others compute each pixel.
+        OutputInfo o = Outputs().FirstOrDefault(x => x.Hdr) ?? new OutputInfo(0, "", 0, 0, Size, Size, true, 80f, 1000f, null);
+        TonemapCurve curve = CurveFor(o);
+        for (int round = 0; round < 12; round++)
+        {
+            HalfFrame.Tonemap(img, curve, new IntRect(0, 0, Size, Size), target, 0, 0);
+            Thread.Sleep(150);
+        }
+    }
+
     /// <summary>The configured curve for this monitor; <paramref name="exposureOverride"/> replaces the configured
     /// exposure when positive.</summary>
     public TonemapCurve CurveFor(OutputInfo o, float exposureOverride = -1f)
