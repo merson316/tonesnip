@@ -153,7 +153,7 @@ public partial class App : Application
             LastResult = r;
             // One thumbnail per snip, shared by the toast and the history flyout. It is encoded on the thread pool, so
             // the toast waits for the file rather than the UI thread waiting for the encode.
-            Task<string> thumb = History.Add(r);
+            Task<string?> thumb = History.Add(r);
             if (Settings.AfterSelect == "edit") OpenViewer(r, annotate: true);
             else if (Settings.ShowToast) _ = ShowToastWhenThumbnailed(r, thumb);
         };
@@ -375,9 +375,14 @@ public partial class App : Application
     /// thumbnail is written first.</summary>
     private Task _toastInLine = Task.CompletedTask;
 
-    /// <summary>Shows the snip's toast once its thumbnail file is written. The write logs its own failures and still
-    /// completes, so the toast always shows, without the picture if there is none.</summary>
-    private Task ShowToastWhenThumbnailed(CaptureResult r, Task<string> thumb)
+    /// <summary>The longest a toast waits for its thumbnail. The encode normally takes tens of milliseconds; a disk
+    /// that stalls must not hold this toast, and every toast queued behind it, back for as long as it stalls.</summary>
+    private static readonly TimeSpan ToastThumbWait = TimeSpan.FromSeconds(2);
+
+    /// <summary>Shows the snip's toast once its thumbnail file is written, or after <see cref="ToastThumbWait"/>
+    /// without the picture. The write logs its own failures and still completes (null when it failed), so the toast
+    /// always shows.</summary>
+    private Task ShowToastWhenThumbnailed(CaptureResult r, Task<string?> thumb)
     {
         Task before = _toastInLine;
         return _toastInLine = ShowAfter();
@@ -387,7 +392,10 @@ public partial class App : Application
             try
             {
                 await before;
-                Toasts.Show(r, await thumb);
+                string? path = null;
+                if (await Task.WhenAny(thumb, Task.Delay(ToastThumbWait)) == thumb) path = await thumb;
+                else Log.Warn($"toast: the thumbnail was not written within {ToastThumbWait.TotalSeconds:0} s; shown without it");
+                Toasts.Show(r, path);
             }
             catch (Exception e) { Log.Warn("toast: " + e.Message); }
         }

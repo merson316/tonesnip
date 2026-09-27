@@ -16,8 +16,15 @@ public sealed record HistoryRowStyle(Brush Glyph, Brush ArmedFill, Brush ArmedGl
 /// <see cref="DeleteArmed"/> and <see cref="Restyle"/> all drive the row through <see cref="PropertyChanged"/>.</remarks>
 public sealed class HistoryRow : INotifyPropertyChanged
 {
-    /// <summary>Thumbnails that failed to decode, so each broken file is logged only once.</summary>
-    private static readonly HashSet<string> WarnedThumbs = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Thumbnail files that failed to open or decode, kept for the life of the process: rows are rebuilt each time the
+    /// flyout opens, so a per-row flag let every open re-open every bad file. Each file is also logged only once. A
+    /// thumbnail's name is new for every write, so a listed path never becomes good later. UI thread only.
+    /// </summary>
+    private static readonly HashSet<string> FailedThumbs = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Bounds <see cref="FailedThumbs"/>: far above any history's size, so it only ever clears after a very
+    /// long session of broken thumbnails, which then cost one more attempt each.</summary>
+    private const int FailedThumbsKept = 1024;
 
     /// <summary>The entry the bindings last reflected, so a refresh can skip unchanged rows. The item itself is
     /// mutated in place on re-save, so the entry record is compared instead.</summary>
@@ -30,9 +37,6 @@ public sealed class HistoryRow : INotifyPropertyChanged
     private bool _thumbPending;
     /// <summary>Whether a list container is showing this row, so its thumbnail is wanted (<see cref="LoadThumb"/>).</summary>
     private bool _thumbWanted;
-    /// <summary>The thumbnail path that last failed to open or decode, so a container showing the row again (a scroll, a
-    /// refresh) does not re-open a file already known to be bad. A save writes a new thumbnail path, which is tried.</summary>
-    private string? _failedThumb;
     private HistoryRowStyle _style;
     private bool _deleteArmed;
 
@@ -183,11 +187,12 @@ public sealed class HistoryRow : INotifyPropertyChanged
     private void Raise(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
     /// <summary>A container is showing this row: loads its thumbnail unless it is loaded, its file is still being
-    /// written (<see cref="Update"/> loads it once the write lands), or it already failed.</summary>
+    /// written (<see cref="Update"/> loads it once the write lands), or it has failed before, in this open or an earlier
+    /// one (<see cref="FailedThumbs"/>). A save writes a new thumbnail path, which is tried.</summary>
     public void LoadThumb()
     {
         _thumbWanted = true;
-        if (ThumbSource != null || _thumbPending || string.Equals(Item.Entry.Thumb, _failedThumb, StringComparison.OrdinalIgnoreCase)) return;
+        if (ThumbSource != null || _thumbPending || FailedThumbs.Contains(Item.Entry.Thumb)) return;
         SetThumb(Item.Entry.Thumb, _style.ThumbWidth);
         Raise(nameof(ThumbSource));
         Raise(nameof(PlaceholderVisibility));
@@ -208,8 +213,8 @@ public sealed class HistoryRow : INotifyPropertyChanged
     /// is missing or fails to decode shows the placeholder.</summary>
     private void SetThumb(string path, int width) => ThumbnailLoader.Load(path, width, bmp => ThumbSource = bmp, (bmp, ex) =>
     {
-        if (ex != null && WarnedThumbs.Add(path)) App.Current.Log.Warn("history thumbnail: " + ex.Message);
-        _failedThumb = path;
+        if (FailedThumbs.Count >= FailedThumbsKept) FailedThumbs.Clear();
+        if (FailedThumbs.Add(path)) App.Current.Log.Warn("history thumbnail: " + (ex?.Message ?? "the file is missing"));
         // Show the placeholder, unless a newer thumbnail has replaced this bitmap mid-decode.
         if (ReferenceEquals(ThumbSource, bmp))
         {

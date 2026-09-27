@@ -142,12 +142,12 @@ public sealed class SnipHistory
 
     /// <summary>
     /// Records a finished snip and starts writing its thumbnail on the thread pool. The row is in the list at once; the
-    /// returned task completes on the calling (UI) thread with the thumbnail's path once the file is written (or the
-    /// write has failed), which is when the toast can show it.
+    /// returned task completes on the calling (UI) thread with the thumbnail's path once the file is written, which is
+    /// when the toast can show it, or with null when the write failed.
     /// </summary>
     /// <param name="kind">A pin or Copy text snip from the snip screen; a window snip is marked from the result.</param>
     /// <param name="text">The text a Copy text snip recognised.</param>
-    public Task<string> Add(CaptureResult r, HistoryKind kind = HistoryKind.None, string? text = null)
+    public Task<string?> Add(CaptureResult r, HistoryKind kind = HistoryKind.None, string? text = null)
     {
         BgraImage img = r.Output ?? r.Image;
         string id = Guid.NewGuid().ToString("N");
@@ -159,7 +159,7 @@ public sealed class SnipHistory
         foreach (HistoryItem older in _items.Skip(2)) older.Result = null;   // only the newest few keep their PNG in memory
         var item = new HistoryItem(entry) { Result = r };
         _items.Insert(0, item);
-        Task<string> written = WriteThumb(item, img, thumb, keepOld: false);
+        Task<string?> written = WriteThumb(item, img, thumb, keepOld: false);
         Save();
         return written;
     }
@@ -193,11 +193,14 @@ public sealed class SnipHistory
     /// PNG encode used to run on the UI thread, in front of the toast. The result is applied back on the calling (UI)
     /// thread, which raises <see cref="Changed"/> so the flyout loads the file.
     /// <para>With <paramref name="keepOld"/> (a re-save) the entry names the new file only once it is written, and the
-    /// old file is deleted then; otherwise the entry already names it and is marked pending until it lands. A write
-    /// overtaken by a newer one for the same row, or finishing after its row has left the list, deletes its own
-    /// file.</para>
+    /// old file is deleted then; otherwise the entry already names it and is marked pending until it lands.</para>
+    /// <para>A write overtaken by a newer one for the same row (an editor save straight after the snip) keeps its file
+    /// while the entry still names it: the newer write may yet fail, and until it lands this is the row's only
+    /// thumbnail, so it also clears the pending mark. Once the entry names another file, or the row has left the list,
+    /// the overtaken write deletes its own file.</para>
+    /// <para>Returns the file written, or null when the write failed or its file was deleted as unwanted.</para>
     /// </summary>
-    private async Task<string> WriteThumb(HistoryItem item, BgraImage img, string thumb, bool keepOld)
+    private async Task<string?> WriteThumb(HistoryItem item, BgraImage img, string thumb, bool keepOld)
     {
         int write = ++item.ThumbWrites;
         if (!keepOld) item.ThumbPending = true;
@@ -212,22 +215,34 @@ public sealed class SnipHistory
             }
             catch (Exception e) { _log.Warn("thumbnail: " + e.Message); return false; }
         });
-        if (write != item.ThumbWrites || !_items.Contains(item))
+        bool listed = _items.Contains(item);
+        bool named = listed && string.Equals(item.Entry.Thumb, thumb, StringComparison.OrdinalIgnoreCase);
+        if (write != item.ThumbWrites || !listed)
         {
+            if (named)
+            {
+                // Overtaken, but still the row's thumbnail: shown until the newer write replaces it.
+                if (ok && item.ThumbPending) { item.ThumbPending = false; Changed?.Invoke(); }
+                return ok ? thumb : null;
+            }
             if (ok) DeleteOwn(thumb, Png);
-            return ok ? thumb : item.Entry.Thumb;
+            return null;
         }
-        item.ThumbPending = false;
+        // A failed re-save leaves the row on its old file, which an earlier write may still be writing (that write
+        // clears the mark as it lands, above).
+        if (!keepOld || ok) item.ThumbPending = false;
         if (keepOld && ok)
         {
             string old = item.Entry.Thumb;
             item.Entry = item.Entry with { Thumb = thumb };
             _list.Update(item.Entry);
+            // An earlier write still under way for the old file deletes it when it lands, since the row no longer
+            // names it.
             DeleteOwn(old, Png);
             Save();
         }
         else Changed?.Invoke();
-        return ok ? thumb : item.Entry.Thumb;
+        return ok ? thumb : null;
     }
 
     private static bool OwnsSidecar(string? sdrPath, string? hdrPath) => HdrOutput.OwnsSidecar(sdrPath, hdrPath);

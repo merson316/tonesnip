@@ -54,7 +54,8 @@ public sealed class ToastService : IDisposable
         _ui = DispatcherQueue.GetForCurrentThread();
     }
 
-    public void Show(CaptureResult r, string thumbPath)
+    /// <param name="thumbPath">The written thumbnail, or null when there is none to show.</param>
+    public void Show(CaptureResult r, string? thumbPath)
     {
         // Retained first, for both styles, so it does not depend on a registration that can throw.
         string id = Retain(r);
@@ -80,7 +81,7 @@ public sealed class ToastService : IDisposable
         return id;
     }
 
-    private void ShowWindowsToast(CaptureResult r, string id, string thumbPath)
+    private void ShowWindowsToast(CaptureResult r, string id, string? thumbPath)
     {
         SnipNotice notice = NoticeFor(r);
         string title = notice.Title, text = notice.Detail;
@@ -88,7 +89,8 @@ public sealed class ToastService : IDisposable
         {
             EnsureRegistered();
             var builder = new AppNotificationBuilder().AddArgument("open", id).AddText(title).AddText(text);
-            if (File.Exists(thumbPath)) builder.SetInlineImage(new Uri(thumbPath));
+            // A path only once its file is written (SnipHistory.Add), so no File.Exists here on the UI thread.
+            if (thumbPath != null) builder.SetInlineImage(new Uri(thumbPath));
             // The body click carries "open"; each button carries "action" and "id". All carry the saved path, which a
             // click can still act on once the id is no longer held.
             AppNotificationButton Button(string label, string action)
@@ -170,7 +172,7 @@ public sealed class ToastService : IDisposable
 
     /// <summary>Re-binds the card on screen (restarting its dwell), or builds a new one if none is up or the current
     /// one is already fading out to close.</summary>
-    private void ShowCard(CaptureResult r, string thumbPath)
+    private void ShowCard(CaptureResult r, string? thumbPath)
     {
         try { Card().Bind(r, thumbPath); }
         catch (Exception e)

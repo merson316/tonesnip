@@ -88,7 +88,7 @@ public sealed partial class ToastWindow : PopupWindow
     /// <summary>
     /// Puts a result on the card and restarts the dwell timer; a later snip re-binds and re-places the same window.
     /// </summary>
-    internal void Bind(CaptureResult r, string thumbPath)
+    internal void Bind(CaptureResult r, string? thumbPath)
     {
         _result = r;
         bool saved = r.SavedPath != null;
