@@ -94,6 +94,9 @@ public sealed class CaptureResult
     public required bool AnyHdr { get; init; }
     public required List<HalfCrop> Crops { get; init; }
     public DateTime TakenLocal { get; init; } = DateTime.Now;
+    /// <summary>Whether the snip is of one window (window mode, or the active-window snip), which Recent can filter
+    /// on.</summary>
+    public bool OfWindow { get; set; }
     public string? SavedPath { get; set; }
     /// <summary>What the output pipeline attempted and whether it succeeded, so the notification reports it
     /// accurately.</summary>

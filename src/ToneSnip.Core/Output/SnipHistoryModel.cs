@@ -1,12 +1,25 @@
+using System.Text.Json.Serialization;
+
 namespace ToneSnip.Core.Output;
 
-/// <summary>One remembered snip. <see cref="Path"/> is null when the snip was copied but not saved.</summary>
-public sealed record HistoryEntry(string Id, string? Path, DateTime TakenUtc, int Width, int Height, bool Hdr, string Thumb, string? HdrPath = null);
+/// <summary>What else a snip was, beyond its pixels: taken of a window, pinned to the screen from the snip screen, or
+/// taken for its text. Written to history.json by name, so a hand-edited file stays readable.</summary>
+[Flags]
+[JsonConverter(typeof(JsonStringEnumConverter<HistoryKind>))]
+public enum HistoryKind { None = 0, Window = 1, Pin = 2, Text = 4 }
+
+/// <summary>One remembered snip. <see cref="Path"/> is null when the snip was copied, pinned or read for its text but
+/// not saved. <see cref="Text"/> is text recognised in it (a Copy text snip, or Copy text on its row), kept so the Recent
+/// search can find it; it is capped at <see cref="HistoryList.MaxText"/> characters.</summary>
+public sealed record HistoryEntry(string Id, string? Path, DateTime TakenUtc, int Width, int Height, bool Hdr, string Thumb, string? HdrPath = null,
+                                  HistoryKind Kind = HistoryKind.None, string? Text = null);
 
 /// <summary>Newest-first list of recent snips, capped; the file-side effects (thumbnail deletion) are left to the caller.</summary>
 public sealed class HistoryList
 {
     public const int DefaultMax = 20;
+    /// <summary>The most recognised text an entry keeps: enough to search a page of text, not a document.</summary>
+    public const int MaxText = 4000;
     private readonly List<HistoryEntry> _entries;
     public int Max { get; }
     public IReadOnlyList<HistoryEntry> Entries => _entries;
@@ -41,6 +54,17 @@ public sealed class HistoryList
     }
 
     public bool Remove(string id) => _entries.RemoveAll(e => e.Id == id) > 0;
+
+    /// <summary>Recognised text as an entry keeps it: trimmed, and cut at <see cref="MaxText"/> characters without
+    /// splitting a surrogate pair. Null when there is none.</summary>
+    public static string? ClipText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        string t = text.Trim();
+        if (t.Length <= MaxText) return t;
+        int cut = char.IsHighSurrogate(t[MaxText - 1]) ? MaxText - 1 : MaxText;
+        return t[..cut];
+    }
 
     /// <summary>The thumbnail files no entry names: left behind by a crash between writing one and saving the list, or
     /// by a hand-edited history.json. Matched case-insensitively, as NTFS does.</summary>

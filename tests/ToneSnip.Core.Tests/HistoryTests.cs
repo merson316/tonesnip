@@ -58,6 +58,35 @@ public class HistoryTests
         List<HistoryEntry>? back = System.Text.Json.JsonSerializer.Deserialize<List<HistoryEntry>>(json);
         Assert.Equal(@"C:\x\Snip.jxr", back![0].HdrPath); Assert.Null(back[1].HdrPath);
     }
+
+    [Fact]
+    public void Kind_and_text_survive_json_by_name_and_old_files_read_as_plain_snips()
+    {
+        var e = E(1) with { Kind = HistoryKind.Window | HistoryKind.Pin, Text = "hello" };
+        string json = System.Text.Json.JsonSerializer.Serialize(new List<HistoryEntry> { e }, ToneSnip.Core.Config.JsonFile.Options);
+        Assert.Contains("\"Window, Pin\"", json);
+        HistoryEntry back = System.Text.Json.JsonSerializer.Deserialize<List<HistoryEntry>>(json, ToneSnip.Core.Config.JsonFile.Options)![0];
+        Assert.Equal(HistoryKind.Window | HistoryKind.Pin, back.Kind);
+        Assert.Equal("hello", back.Text);
+        // A history.json from 1.0.4 has neither field.
+        string old = """[{"id":"a","path":null,"takenUtc":"2026-09-05T00:00:00Z","width":1,"height":1,"hdr":false,"thumb":"t.png"}]""";
+        HistoryEntry plain = System.Text.Json.JsonSerializer.Deserialize<List<HistoryEntry>>(old, ToneSnip.Core.Config.JsonFile.Options)![0];
+        Assert.Equal(HistoryKind.None, plain.Kind);
+        Assert.Null(plain.Text);
+    }
+
+    [Fact]
+    public void Kept_text_is_trimmed_capped_and_never_splits_a_surrogate_pair()
+    {
+        Assert.Null(HistoryList.ClipText(null));
+        Assert.Null(HistoryList.ClipText("  \r\n "));
+        Assert.Equal("abc", HistoryList.ClipText("  abc\r\n"));
+        Assert.Equal(HistoryList.MaxText, HistoryList.ClipText(new string('x', HistoryList.MaxText + 50))!.Length);
+        string emoji = new string('x', HistoryList.MaxText - 1) + "\U0001F600";
+        string clipped = HistoryList.ClipText(emoji)!;
+        Assert.Equal(HistoryList.MaxText - 1, clipped.Length);
+        Assert.False(char.IsHighSurrogate(clipped[^1]));
+    }
 }
 
 public class HistoryListHardeningTests

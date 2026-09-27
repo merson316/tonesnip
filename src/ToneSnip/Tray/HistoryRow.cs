@@ -84,18 +84,41 @@ public sealed class HistoryRow : INotifyPropertyChanged
         foreach (string p in new[]
                  {
                      nameof(Title), nameof(TitleOpacity), nameof(Subtitle), nameof(AccessibleName), nameof(HdrVisibility),
-                     nameof(SdrVisibility), nameof(HdrFileVisibility), nameof(HdrFileText), nameof(FolderVisibility),
+                     nameof(SdrVisibility), nameof(HdrFileVisibility), nameof(HdrFileText), nameof(KindText), nameof(KindVisibility), nameof(FolderVisibility),
                      nameof(DeleteTip), nameof(ShownTitle), nameof(ShownTitleOpacity), nameof(ShownSubtitle), nameof(ConfirmLabel),
                  })
             Raise(p);
         if (rewritten) { Raise(nameof(ThumbSource)); Raise(nameof(PlaceholderVisibility)); }
     }
 
-    public string Title => Item.FileMissing ? "File moved or deleted" : Item.Entry.Path != null ? Path.GetFileName(Item.Entry.Path) : "Copied only";
+    /// <summary>The file's name; for a snip never saved, the first line of its text (a Copy text snip), "Pinned" (a pin
+    /// from the snip screen) or "Copied only".</summary>
+    public string Title => Item.FileMissing ? "File moved or deleted"
+        : Item.Entry.Path != null ? Path.GetFileName(Item.Entry.Path)
+        : Item.Entry.Text is { } text ? FirstLine(text)
+        : Item.Entry.Kind.HasFlag(HistoryKind.Pin) ? "Pinned"
+        : "Copied only";
     public double TitleOpacity => Item.FileMissing ? 0.55 : 1.0;
     /// <summary>The row's screen-reader name, including what the Raw badges show, e.g. "Snip 120326.png, HDR, JXR,
-    /// 6 min ago · 1920 × 1080".</summary>
-    public string AccessibleName => string.Join(", ", new[] { Title, Item.Entry.HdrPath != null ? "HDR" : "SDR", HdrFileText, Subtitle }.Where(p => p.Length > 0));
+    /// Window, 6 min ago · 1920 × 1080".</summary>
+    public string AccessibleName => string.Join(", ", new[] { Title, Item.Entry.HdrPath != null ? "HDR" : "SDR", HdrFileText, KindText, Subtitle }.Where(p => p.Length > 0));
+
+    private static string FirstLine(string text)
+    {
+        int end = text.AsSpan().IndexOfAny('\r', '\n');
+        return end < 0 ? text : text[..end];
+    }
+
+    /// <summary>The kind tag: one word, the most specific when a snip is more than one (a pin made in window
+    /// mode reads Pin).</summary>
+    public string KindText => Item.Entry.Kind switch
+    {
+        var k when k.HasFlag(HistoryKind.Pin) => "Pin",
+        var k when k.HasFlag(HistoryKind.Text) => "Text",
+        var k when k.HasFlag(HistoryKind.Window) => "Window",
+        _ => "",
+    };
+    public Visibility KindVisibility => KindText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     public string Subtitle => $"{HistoryList.TimeAgo(Item.Entry.TakenUtc, NowUtc)} · {Item.Entry.Width} × {Item.Entry.Height}";
 
 #if TONESNIP_HARNESS

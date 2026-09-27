@@ -41,22 +41,29 @@ internal static class HarnessData
     /// </summary>
     /// <param name="Copied">Copied to the clipboard and never saved: no path, so the row reads "Copied only".</param>
     /// <param name="Missing">Named but absent on disk, for the "File moved or deleted" row.</param>
-    internal readonly record struct Row(TimeSpan Age, int Width, int Height, bool Hdr, string? HdrFile, bool Copied, bool Missing);
+    /// <param name="Kind">The kind tag: a window snip, or (with <paramref name="Copied"/>, as they are never saved) a
+    /// pin or a Copy text snip from the snip screen.</param>
+    /// <param name="Text">A Copy text snip's recognised text, which becomes its title.</param>
+    internal readonly record struct Row(TimeSpan Age, int Width, int Height, bool Hdr, string? HdrFile, bool Copied, bool Missing,
+                                        Core.Output.HistoryKind Kind = Core.Output.HistoryKind.None, string? Text = null);
 
     /// <summary>
-    /// The eight rows, newest first. Together they cover every branch of <c>HistoryList.TimeAgo</c>, both badges,
-    /// all three HDR-copy tags, an HDR capture saved as SDR only, a clipboard-only snip and a missing file; the
-    /// scrolled shots need six rows and the armed-delete shot four.
+    /// The ten rows, newest first. Together they cover every branch of <c>HistoryList.TimeAgo</c>, both badges,
+    /// all three HDR-copy tags, the three kind tags, an HDR capture saved as SDR only, a clipboard-only snip and a
+    /// missing file; the scrolled shots need six rows and the armed-delete shot four.
     /// <para>The newest row (1280 x 720) is the one the editor and toast shots open.</para>
     /// </summary>
     internal static readonly Row[] Rows =
     {
         new(TimeSpan.FromSeconds(40),                  1280,  720, Hdr: false, HdrFile: null,   Copied: false, Missing: false),
         new(TimeSpan.FromMinutes(6),                   1920, 1080, Hdr: true,  HdrFile: "jxr",  Copied: false, Missing: false),
-        new(TimeSpan.FromMinutes(24),                  1600,  900, Hdr: true,  HdrFile: null,   Copied: false, Missing: false),
+        new(TimeSpan.FromMinutes(24),                  1600,  900, Hdr: true,  HdrFile: null,   Copied: false, Missing: false, Kind: Core.Output.HistoryKind.Window),
+        new(TimeSpan.FromMinutes(100),                  900,  500, Hdr: true,  HdrFile: null,   Copied: true,  Missing: false, Kind: Core.Output.HistoryKind.Pin),
         new(TimeSpan.FromMinutes(190),                 2560, 1080, Hdr: true,  HdrFile: "png",  Copied: false, Missing: false),
         new(TimeSpan.FromMinutes(570),                  800,  600, Hdr: false, HdrFile: null,   Copied: true,  Missing: false),
         new(TimeSpan.FromHours(30),                    1440,  900, Hdr: true,  HdrFile: "jpeg", Copied: false, Missing: false),
+        new(TimeSpan.FromHours(50),                     640,  200, Hdr: false, HdrFile: null,   Copied: true,  Missing: false, Kind: Core.Output.HistoryKind.Text,
+            Text: "Quarterly figures, draft 3\r\nRevenue up 4 % on the year"),
         new(TimeSpan.FromHours(76),                    1024,  768, Hdr: false, HdrFile: null,   Copied: false, Missing: true),
         new(TimeSpan.FromDays(40) + TimeSpan.FromHours(3), 640, 480, Hdr: false, HdrFile: null, Copied: false, Missing: false),
     };

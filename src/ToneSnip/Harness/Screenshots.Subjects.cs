@@ -54,7 +54,7 @@ internal static partial class Screenshots
                 string? hdrPath = row.HdrFile == null ? null : Output.HdrOutput.PathFor(png, row.HdrFile);
                 entries.Add(new Core.Output.HistoryEntry($"harness{i + 1}", row.Copied ? null : png,
                                                          HarnessData.TakenUtc(row), row.Width, row.Height, row.Hdr, thumb,
-                                                         row.Copied ? null : hdrPath));
+                                                         row.Copied ? null : hdrPath, row.Kind, row.Text));
             }
         }
         catch (Exception ex) { _failures++; app.Log.Error("screenshots: history seed: " + ex); return; }

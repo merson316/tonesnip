@@ -38,6 +38,8 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// <summary>Takes a snip whose selection was for something other than an ordinary snip (its text, a pin) instead of
     /// the output pipeline. Runs on the UI thread, inside the snip.</summary>
     public Func<CaptureResult, SnipAction, Task>? Divert { get; set; }
+    /// <summary>The overlay's mode when its selection was made (<see cref="SelectInteractively"/>). UI thread.</summary>
+    private SnipMode _selectedMode;
 
     /// <summary>Holds <see cref="Busy"/> for the whole run, including a delay restart that re-enters
     /// <see cref="RunCore"/>, so a hotkey during the countdown cannot start a concurrent snip.</summary>
@@ -111,6 +113,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             IReadOnlyList<(int X, int Y)>? freeform = null;
             AnnotationDoc? doc = null; float exposure = 1f; bool retonemap = false;
             SnipAction action = SnipAction.Snip;
+            bool ofWindow = mode == SnipMode.ActiveWindow;
             switch (mode)
             {
                 case SnipMode.FullScreenAll: region = desktop; break;
@@ -121,6 +124,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
                     break;
                 default:
                     (region, freeform, doc, exposure, bool restarted, retonemap, action) = await SelectInteractively(mode, outputs, desktop);
+                    ofWindow = _selectedMode == SnipMode.Window;
                     if (region.IsEmpty)
                     {
                         log.Info(restarted ? $"{mode}: restarted with a delay" : $"{mode}: cancelled after {sw.ElapsedMilliseconds} ms");
@@ -139,6 +143,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
                 // After the build, whose tonemap writes opaque pixels; the HDR file takes its alpha from this image. The
                 // result keeps them for the editor, whose exposure pass writes opaque pixels again.
                 built.ApplyCorners(window?.Corners);
+                built.OfWindow = ofWindow;
                 return built;
             });
             // Built: the result has its own copies, so the HDR frames (on the graphics card, with their readback
@@ -300,6 +305,8 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             await RunCore(overlay.Mode, outcome.RestartWithDelay);
             return (IntRect.Empty, null, null, 1f, true, false, SnipAction.Snip);
         }
+        // The mode can change in the overlay, so Recent is told the one the selection was made in.
+        _selectedMode = overlay.Mode;
         return (outcome.Region, outcome.Freeform, outcome.Doc, outcome.Exposure, false, outcome.ExposurePreviewed, outcome.Action);
     }
 

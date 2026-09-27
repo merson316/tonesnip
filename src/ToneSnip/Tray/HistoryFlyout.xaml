@@ -162,6 +162,11 @@
                               AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind HdrFileVisibility, Mode=OneWay}">
                         <TextBlock Text="{x:Bind HdrFileText, Mode=OneWay}" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
                       </Border>
+                      <!-- Window, Pin or Text: what else the snip was. -->
+                      <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" BorderBrush="{ThemeResource Stroke}" BorderThickness="1"
+                              AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind KindVisibility, Mode=OneWay}">
+                        <TextBlock Text="{x:Bind KindText, Mode=OneWay}" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
+                      </Border>
                     </StackPanel>
                   </Grid>
                   <TextBlock Text="{x:Bind ShownSubtitle, Mode=OneWay}" Style="{StaticResource Caption}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
@@ -295,6 +300,11 @@
                             BorderBrush="{ThemeResource ControlEdge}" BorderThickness="1"
                             AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind HdrFileVisibility, Mode=OneWay}">
                       <TextBlock Text="{x:Bind HdrFileText, Mode=OneWay}" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
+                    </Border>
+                    <Border Height="16" Padding="5,0,5,0" CornerRadius="{StaticResource SmallCornerRadius}" Background="{ThemeResource SurfaceBase}"
+                            BorderBrush="{ThemeResource ControlEdge}" BorderThickness="1"
+                            AutomationProperties.AccessibilityView="Raw" x:Phase="1" Visibility="{x:Bind KindVisibility, Mode=OneWay}">
+                      <TextBlock Text="{x:Bind KindText, Mode=OneWay}" Style="{StaticResource Tag}" Foreground="{ThemeResource TextSecondary}"/>
                     </Border>
                   </StackPanel>
                   <!-- 30 px buttons with 2 px padding and gaps; deliberately off the 4 px grid. -->

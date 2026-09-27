@@ -128,13 +128,16 @@ public sealed class SnipHistory
     /// returned task completes on the calling (UI) thread with the thumbnail's path once the file is written (or the
     /// write has failed), which is when the toast can show it.
     /// </summary>
-    public Task<string> Add(CaptureResult r)
+    /// <param name="kind">A pin or Copy text snip from the snip screen; a window snip is marked from the result.</param>
+    /// <param name="text">The text a Copy text snip recognised.</param>
+    public Task<string> Add(CaptureResult r, HistoryKind kind = HistoryKind.None, string? text = null)
     {
         BgraImage img = r.Output ?? r.Image;
         string id = Guid.NewGuid().ToString("N");
         string thumb = Path.Combine(_thumbDir, id + ".png");
         Wrote(r.SavedPath); Wrote(r.HdrPath);
-        var entry = new HistoryEntry(id, r.SavedPath, r.TakenLocal.ToUniversalTime(), img.Width, img.Height, r.AnyHdr, thumb, r.HdrPath);
+        if (r.OfWindow) kind |= HistoryKind.Window;
+        var entry = new HistoryEntry(id, r.SavedPath, r.TakenLocal.ToUniversalTime(), img.Width, img.Height, r.AnyHdr, thumb, r.HdrPath, kind, HistoryList.ClipText(text));
         foreach (HistoryEntry dropped in _list.Add(entry)) { DeleteOwn(dropped.Thumb, Png); _items.RemoveAll(i => i.Entry.Id == dropped.Id); }
         foreach (HistoryItem older in _items.Skip(2)) older.Result = null;   // only the newest few keep their PNG in memory
         var item = new HistoryItem(entry) { Result = r };
@@ -220,7 +223,8 @@ public sealed class SnipHistory
         string id = Guid.NewGuid().ToString("N");
         string thumb = Path.Combine(_thumbDir, id + ".png");
         Wrote(path);
-        var entry = new HistoryEntry(id, path, r.TakenLocal.ToUniversalTime(), img.Width, img.Height, r.AnyHdr, thumb);
+        var entry = new HistoryEntry(id, path, r.TakenLocal.ToUniversalTime(), img.Width, img.Height, r.AnyHdr, thumb,
+                                     Kind: r.OfWindow ? HistoryKind.Window : HistoryKind.None);
         foreach (HistoryEntry dropped in _list.Add(entry)) { DeleteOwn(dropped.Thumb, Png); _items.RemoveAll(i => i.Entry.Id == dropped.Id); }
         var item = new HistoryItem(entry);
         _items.Insert(0, item);

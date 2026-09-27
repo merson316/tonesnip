@@ -29,5 +29,6 @@ public static class SnipModes
 }
 
 /// <summary>What a finished selection is for: an ordinary snip (clipboard, save, notification), its text copied, or
-/// the snip pinned to the screen. The last two leave the clipboard's image, the save folder and Recent alone.</summary>
+/// the snip pinned to the screen. The last two leave the clipboard's image and the save folder alone; Recent lists
+/// them with their kind.</summary>
 public enum SnipAction { Snip, CopyText, Pin }
