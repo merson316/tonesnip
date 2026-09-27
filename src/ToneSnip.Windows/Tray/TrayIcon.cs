@@ -32,7 +32,6 @@ public sealed class TrayIcon : IDisposable
     private const int NimAdd = 0, NimModify = 1, NimDelete = 2, NimSetVersion = 4;
     private const int NifMessage = 0x01, NifIcon = 0x02, NifTip = 0x04, NifInfo = 0x10, NifShowTip = 0x80;
     private const int NotifyIconVersion4 = 4;
-    private const int SmCxSmIcon = 49, SmCySmIcon = 50;
     private const uint ImageIcon = 1, LrLoadFromFile = 0x0010;
     // Version-4 notifications: a plain left click arrives as NIN_SELECT, not WM_LBUTTONUP.
     private const int WmLButtonUp = 0x0202, WmRButtonUp = 0x0205, WmContextMenu = 0x007B, NinSelect = 0x0400, NinKeySelect = 0x0401;
@@ -52,9 +51,10 @@ public sealed class TrayIcon : IDisposable
     /// <summary>Right click or the keyboard menu key, with the anchor point in screen pixels.</summary>
     public event Action<int, int>? RightClick;
 
-    /// <summary>Loads an .ico file at the notification area's icon size. Returns IntPtr.Zero when the file cannot be read.</summary>
-    public static IntPtr LoadIconFile(string path)
-        => User32.LoadImageW(IntPtr.Zero, path, ImageIcon, User32.GetSystemMetrics(SmCxSmIcon), User32.GetSystemMetrics(SmCySmIcon), LrLoadFromFile);
+    /// <summary>Loads an .ico file at <paramref name="size"/> pixels square, the notification area's icon size
+    /// (<see cref="TrayGlyph.TraySize"/>). Returns IntPtr.Zero when the file cannot be read.</summary>
+    public static IntPtr LoadIconFile(string path, int size)
+        => User32.LoadImageW(IntPtr.Zero, path, ImageIcon, size, size, LrLoadFromFile);
 
     /// <summary>IDI_APPLICATION: the shared system icon to fall back on. It belongs to the system — never destroy it, so pass ownsIcon: false.</summary>
     public static IntPtr DefaultIcon() => User32.LoadIconW(IntPtr.Zero, (IntPtr)32512);

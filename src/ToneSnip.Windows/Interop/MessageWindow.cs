@@ -17,7 +17,8 @@ public sealed partial class MessageWindow : IDisposable
 
     public const int WmDisplayChange = 0x007E, WmCommand = 0x0111, WmMeasureItem = 0x002C, WmDrawItem = 0x002B,
                      WmInitMenuPopup = 0x0117, WmNull = 0x0000, WmSettingChange = 0x001A, WmThemeChanged = 0x031A,
-                     WmPowerBroadcast = 0x0218, WmWtsSessionChange = 0x02B1, WmEndSession = 0x0016, WmQueryEndSession = 0x0011;
+                     WmPowerBroadcast = 0x0218, WmWtsSessionChange = 0x02B1, WmEndSession = 0x0016, WmQueryEndSession = 0x0011,
+                     WmDpiChanged = 0x02E0;
 
     /// <summary>ENDSESSION_CLOSEAPP in WM_QUERYENDSESSION and WM_ENDSESSION's lParam: the app alone is being closed, by an
     /// installer's Restart Manager, rather than the session ending.</summary>
@@ -73,6 +74,13 @@ public sealed partial class MessageWindow : IDisposable
     /// which is a colour signal raised on a pool thread.
     /// </remarks>
     public event Action? ThemeChanged;
+
+    /// <summary>
+    /// Something that can change the taskbar's DPI happened: WM_DPICHANGED on this window, or any WM_SETTINGCHANGE
+    /// (a scaling change is announced as one). It is often something else, so a handler re-reads the DPI and does
+    /// nothing when it is unchanged. Raised inside the window procedure; post any real work.
+    /// </summary>
+    public event Action? DpiMayHaveChanged;
 
     /// <summary>The machine is going to sleep (false) or has woken (true). Registered for explicitly so Modern Standby
     /// machines report it too.</summary>
@@ -206,7 +214,11 @@ public sealed partial class MessageWindow : IDisposable
             case WmThemeChanged:
                 ThemeChanged?.Invoke();
                 return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
+            case WmDpiChanged:
+                DpiMayHaveChanged?.Invoke();
+                return User32.DefWindowProcW(hwnd, msg, wParam, lParam);
             case WmSettingChange:
+                DpiMayHaveChanged?.Invoke();
                 // lParam is a string pointer only for some senders, so it is read only in the shape the shell uses
                 // (wParam 0); the contrast switch is recognised by wParam alone.
                 if (wParam == (IntPtr)SpiSetHighContrast ||

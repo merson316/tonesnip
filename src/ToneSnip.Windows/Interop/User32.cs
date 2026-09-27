@@ -158,6 +158,7 @@ public static partial class User32
     [LibraryImport(Dll)] public static partial int GetSystemMetrics(int index);
     [LibraryImport(Dll)] public static partial uint GetDpiForWindow(IntPtr hwnd);
     [LibraryImport(Dll)] public static partial uint GetDpiForSystem();
+    [LibraryImport(Dll)] public static partial int GetSystemMetricsForDpi(int index, uint dpi);
     [LibraryImport(Dll)] public static partial IntPtr MonitorFromRect(ref Rect rect, uint flags);
     /// <summary>The POINT is passed by value, packed into 64 bits (x low, y high).</summary>
     [LibraryImport(Dll)] public static partial IntPtr MonitorFromPoint(long point, uint flags);

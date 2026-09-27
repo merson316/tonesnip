@@ -38,11 +38,23 @@ public static class TrayGlyph
         return new Layout(Px(9), Px(6), Px(2), Px(2), Px(6), Px(1), Px(1));
     }
 
-    /// <summary>The notification area's icon size for the taskbar's DPI: 16 at 100 %, 20 at 125 %, 24 at 150 %.</summary>
+    /// <summary>
+    /// The notification area's icon size for the taskbar's DPI now: 16 at 100 %, 20 at 125 %, 24 at 150 %. Read from
+    /// the taskbar's own window rather than GetSystemMetrics, which answers at the DPI the process started with and
+    /// so stays at the old size after the primary monitor's scaling changes, or the taskbar moves to another monitor.
+    /// </summary>
     public static int TraySize()
     {
-        int s = User32.GetSystemMetrics(SmCxSmIcon);
+        int s = TaskbarDpi() is uint dpi and > 0 ? User32.GetSystemMetricsForDpi(SmCxSmIcon, dpi) : User32.GetSystemMetrics(SmCxSmIcon);
         return s >= 8 && s <= 256 ? s : 16;
+    }
+
+    /// <summary>The DPI of the monitor the primary taskbar is on, or null when there is no taskbar (Explorer is not
+    /// running).</summary>
+    private static uint? TaskbarDpi()
+    {
+        IntPtr taskbar = User32.FindWindowW("Shell_TrayWnd", null);
+        return taskbar == IntPtr.Zero ? null : User32.GetDpiForWindow(taskbar);
     }
 
     /// <summary>Monochrome follows the taskbar's light/dark setting (<c>SystemUsesLightTheme</c>, not

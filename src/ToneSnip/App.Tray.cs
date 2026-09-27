@@ -21,6 +21,11 @@ public partial class App
         // A high-contrast switch arrives through the message window; it raises ThemeManager.Changed, which redraws.
         // Posted rather than run inline, to get off the window procedure's stack before touching XAML.
         _messages!.ThemeChanged += () => RunOnUi(Theme.ThemeManager.SystemThemeChanged);
+        // The icon is drawn for the taskbar's DPI, which changes with the primary monitor's scaling or when the taskbar
+        // moves; Explorer restarting after such a change re-adds the icon at its old size too.
+        _messages.DpiMayHaveChanged += () => RunOnUi(RefreshTrayIconForDpi);
+        _messages.DisplayChanged += () => RunOnUi(RefreshTrayIconForDpi);
+        _messages.TaskbarCreated += () => RunOnUi(RefreshTrayIconForDpi);
         string trayApplied = Settings.TrayIcon, themeApplied = Settings.Theme;
         // SettingsChanged fires on every settings edit, so redraw only when these values change.
         SettingsChanged += () =>
@@ -83,17 +88,32 @@ public partial class App
     /// </summary>
     private (IntPtr Icon, bool Owns) TrayImage()
     {
+        int size = _trayIconSize = TrayGlyph.TraySize();
         if (Settings.TrayIcon is "mono" or "accent")
         {
             uint argb = TrayGlyph.GlyphArgb(Settings.TrayIcon, Settings.Theme, Theme.ThemeManager.SystemAccentArgb, Theme.ThemeManager.IsHighContrast);
-            IntPtr glyph = TrayGlyph.CreateIcon(TrayGlyph.TraySize(), argb);
+            IntPtr glyph = TrayGlyph.CreateIcon(size, argb);
             if (glyph != IntPtr.Zero) return (glyph, true);
             Log.Warn("tray icon: could not draw the glyph; falling back to icon.ico");
         }
-        IntPtr icon = TrayIcon.LoadIconFile(IconFile());
+        IntPtr icon = TrayIcon.LoadIconFile(IconFile(), size);
         if (icon != IntPtr.Zero) return (icon, true);
         Log.Warn("tray icon: could not load icon.ico; using the system application icon");
         return (TrayIcon.DefaultIcon(), false);
+    }
+
+    /// <summary>The size, in pixels, the tray icon was last drawn or loaded at.</summary>
+    private int _trayIconSize;
+
+    /// <summary>Redraws the tray icon when the taskbar's icon size is no longer the one it was drawn at; most of the
+    /// messages that ask for this changed something else.</summary>
+    private void RefreshTrayIconForDpi()
+    {
+        if (_tray == null) return;
+        int size = TrayGlyph.TraySize();
+        if (size == _trayIconSize) return;
+        Log.Info($"tray icon: the taskbar's icon size went from {_trayIconSize} to {size} px; redrawn");
+        RefreshTrayIcon();
     }
 
     /// <summary>Redraws the tray icon; TrayIcon destroys the icon it previously owned.</summary>
