@@ -21,7 +21,7 @@ public partial class App
         if (Command?.ScreenshotDir is { } screenshotDir)
         {
             ScreenshotMode = SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);   // read-only here
+            StartWindowServices();
             _ = Screenshots.Run(screenshotDir, Command.ScreenshotTheme);
             return true;
         }
@@ -29,7 +29,7 @@ public partial class App
         if (Command?.HoldWindow is { } holdWindow)
         {
             ScreenshotMode = SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
+            StartWindowServices();
             _ = Screenshots.Hold(holdWindow, Command.HoldSeconds, Command.ScreenshotTheme, Command.HoldFlipTheme);
             return true;
         }
@@ -37,11 +37,24 @@ public partial class App
         if (Command?.LeakTest == true)
         {
             SideMode = true;
-            History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
+            StartWindowServices();
             _ = LeakTest.Run();
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// What the real windows reach for through <see cref="Current"/>, for the side modes that open them: the history
+    /// (read-only here), the grabber, whose tonemapper the editor's exposure slider re-tonemaps with, and the toast
+    /// service, which Copy text reports through. None of them captures, registers or writes anything until used: the
+    /// grabber opens no device until a grab, and the toasts register nothing in the debug build.
+    /// </summary>
+    private void StartWindowServices()
+    {
+        History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
+        Grabber = new Capture.FrameGrabber(() => Settings, Log);
+        Toasts = new ToastService(Log);
     }
 
     /// <summary>`--memtest`, which needs the grabber and its Grabbed handler but nothing after them. True when it was
