@@ -27,6 +27,12 @@ public sealed class EditSession
     public bool Busy => _start != null;
     public event Action<IntRect>? Changed;
     public event Action? ToolChanged;
+    /// <summary>
+    /// <see cref="CropMarquee"/> moved, appeared or went. Apart from <see cref="Changed"/> because the marquee is not in
+    /// the picture: a host draws it over the rendered image, so a drag of it re-renders nothing. (Raising a whole-view
+    /// Changed per move made the editor re-render, re-dim and re-upload a 4K picture on every pointer move.)
+    /// </summary>
+    public event Action? MarqueeChanged;
     public event Action? TextRequested;
 
     /// <summary>Where a magnifier's lens must stay, placed or dragged, given its source rectangle: the host's picture,
@@ -134,7 +140,7 @@ public sealed class EditSession
                 UpdateDragShape(x, y, mods);
                 IntRect m = CropMarquee; InProgress = null;
                 if (m.Width < Handles.MinSize || m.Height < Handles.MinSize) CropMarquee = IntRect.Empty;
-                Changed?.Invoke(IntRect.Empty); return;
+                MarqueeChanged?.Invoke(); return;
             default:
                 UpdateDragShape(x, y, mods);
                 Shape? made = InProgress; InProgress = null;
@@ -168,10 +174,12 @@ public sealed class EditSession
         if (CropMarquee.IsEmpty) return;
         IntRect crop = Doc.Crop.IsEmpty ? CropMarquee : CropMarquee.Intersect(Doc.Crop);
         if (crop.IsEmpty) { CancelCrop(); return; }
-        Doc.SetCrop(crop); CropMarquee = IntRect.Empty; Tool = Tool.Select;
+        // The marquee goes first, so the repaint for the new crop already has no marquee to draw.
+        CropMarquee = IntRect.Empty; MarqueeChanged?.Invoke();
+        Doc.SetCrop(crop); Tool = Tool.Select;
     }
 
-    public void CancelCrop() { if (CropMarquee.IsEmpty) return; CropMarquee = IntRect.Empty; Changed?.Invoke(IntRect.Empty); }
+    public void CancelCrop() { if (CropMarquee.IsEmpty) return; CropMarquee = IntRect.Empty; MarqueeChanged?.Invoke(); }
 
     /// <summary>Escape: pending text, then crop marquee, then an in-progress drag, then the selection. False when nothing was pending.</summary>
     public bool Escape()
@@ -198,7 +206,7 @@ public sealed class EditSession
         // hidden from while it was (hosts suppress the original under an in-progress Select drag).
         Shape? inProgress = InProgress, original = _dragOriginal;
         _start = null; _points = null; InProgress = null; _dragOriginal = null; _handle = Handle.None;
-        if (!CropMarquee.IsEmpty) { CropMarquee = IntRect.Empty; Changed?.Invoke(IntRect.Empty); return; }
+        if (!CropMarquee.IsEmpty) { CropMarquee = IntRect.Empty; MarqueeChanged?.Invoke(); }
         if (inProgress != null || original != null) Raise(original, inProgress);
         else Changed?.Invoke(IntRect.Empty);
     }
@@ -227,7 +235,7 @@ public sealed class EditSession
                 (int lx, int ly) = MagnifierShape.PlaceLens(source, lensArea);
                 InProgress = new MagnifierShape(0, source, lx, ly, st.Width, st.Color).ClampedTo(lensArea); break;
             case Tool.Crop:
-                CropMarquee = DragRect(sx, sy, x, y, shift); Changed?.Invoke(IntRect.Empty); return;
+                CropMarquee = DragRect(sx, sy, x, y, shift); MarqueeChanged?.Invoke(); return;
         }
         if (InProgress != null) Raise(old, InProgress);
     }

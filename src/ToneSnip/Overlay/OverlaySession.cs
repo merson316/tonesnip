@@ -318,7 +318,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     private void DrawChromeCore(IntPtr hdc, IntRect monitor)
     {
         if (_edit is not { } edit) return;
-        Annotate.ShapeRenderer.Chrome(edit, monitor, hdc, monitor.Width, monitor.Height, Accent);
+        Annotate.ShapeRenderer.Chrome(edit, monitor, hdc, Accent);
     }
 
     private Action<BgraImage, IntRect, IntRect>? _zebra;

@@ -64,7 +64,6 @@ public sealed class EditorSurface : UserControl
     private uint _accent = ShapeRenderer.DefaultAccent;
     private bool _zebra;
     private bool _chrome;                // chrome was drawn last paint, so the next dirty rect needs a handle-sized margin
-    private bool _marquee;               // a crop marquee dimmed the whole view last paint, so the whole view must go across
     private double _zoom = 1;
     private readonly ExposurePreview _exposure;
     private bool _closing;
@@ -227,6 +226,7 @@ public sealed class EditorSurface : UserControl
         // A lens has to land on the picture (the crop, once there is one) to be seen or saved.
         Session = new EditSession(doc) { Tool = Tool.Select, LensArea = _ => View };
         Session.Changed += OnChanged;
+        Session.MarqueeChanged += OnMarqueeChanged;
         Session.ToolChanged += ApplyCursor;
         View = new IntRect(0, 0, _original.Width, _original.Height);
         Rebuild();
@@ -299,6 +299,10 @@ public sealed class EditorSurface : UserControl
         Paint(dirty);
     }
 
+    /// <summary>The crop marquee is drawn over the blit (<see cref="DrawMarquee"/>), never into the picture's buffers,
+    /// so moving it re-renders and uploads nothing: the next frame just draws it somewhere else.</summary>
+    private void OnMarqueeChanged() => _canvas.Invalidate();
+
     /// <summary>Renders shapes for a source-frame dirty rect (Empty = all) into the target, draws chrome, and uploads the changed pixels.</summary>
     private void Paint(IntRect dirty) => Paint(new[] { dirty });
 
@@ -312,7 +316,7 @@ public sealed class EditorSurface : UserControl
         long started = Stopwatch.GetTimestamp();
         // Chrome is painted over the target, so last frame's handles survive outside the dirty rect unless the base is
         // recopied there too. Handles ring a shape's bounds, so a handle-sized margin covers them.
-        bool chrome = Session.InProgress != null || (Session.Tool == Tool.Select && Session.Doc.Selected != null) || !Session.CropMarquee.IsEmpty;
+        bool chrome = Session.InProgress != null || (Session.Tool == Tool.Select && Session.Doc.Selected != null);
         bool pad = chrome || _chrome;
         _chrome = chrome;
         var uploads = new List<IntRect>(dirty.Length);
@@ -326,12 +330,8 @@ public sealed class EditorSurface : UserControl
         }
         if (uploads.Count == 0) return;
         ShapeRenderer.Chrome(Session, View, _target, _accent);   // whole view: chrome is cheap and handles move
-        // Chrome stays inside the padded dirty rects, except a crop marquee's dimming, which covers the whole view;
-        // that case (and the frame that clears it) uploads the whole view.
-        bool marquee = !Session.CropMarquee.IsEmpty;
-        if (marquee || _marquee) Upload(ViewLocal);
-        else foreach (IntRect r in Core.Annotate.DirtyRegion.Merge(uploads)) Upload(r);
-        _marquee = marquee;
+        // Chrome stays inside the padded dirty rects, so only those go across.
+        foreach (IntRect r in Core.Annotate.DirtyRegion.Merge(uploads)) Upload(r);
         _canvas.Invalidate();
         double ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
         if (ms > PaintBudgetMs) App.Current.Log.Debug($"paint {ms:F0} ms");
@@ -445,17 +445,39 @@ public sealed class EditorSurface : UserControl
         // Behind the picture only: while a zoom animates the control can be larger than the picture (HoldCanvasSize).
         if (_checkerBrush != null) args.DrawingSession.FillRectangle(dest, _checkerBrush);
         args.DrawingSession.DrawImage(_bitmap, dest, new Rect(0, 0, View.Width, View.Height), 1f, interpolation);
-        if (!_textArea.IsEmpty) DrawTextArea(args.DrawingSession, sender, w / Math.Max(1, View.Width));
+        double scale = w / Math.Max(1, View.Width);
+        if (!_textArea.IsEmpty) DrawDimmedArea(args.DrawingSession, sender, scale, _textArea);
+        if (!Session.CropMarquee.IsEmpty) DrawMarquee(args.DrawingSession, sender, scale);
     }
 
     /// <summary>
-    /// The area being marked for Copy text, styled as the crop marquee is: the rest of the picture dimmed, a black line
-    /// just outside the area and a white one on its edge, one screen line wide at any zoom. Drawn over the blit rather
-    /// than into the picture's buffers, so marking re-renders nothing.
+    /// The crop marquee: the picture outside it dimmed and its edge lined as <see cref="DrawDimmedArea"/> does, with a
+    /// white square on each of its eight handles, a fixed 8 effective pixels at any zoom.
     /// </summary>
-    private void DrawTextArea(CanvasDrawingSession ds, CanvasControl sender, double scale)
+    private void DrawMarquee(CanvasDrawingSession ds, CanvasControl sender, double scale)
     {
-        IntRect a = _textArea.Offset(-View.Left, -View.Top);
+        IntRect m = Session.CropMarquee.Intersect(View);
+        if (m.IsEmpty) return;
+        DrawDimmedArea(ds, sender, scale, m);
+        const double half = 4;
+        foreach ((Handle _, int hx, int hy) in Handles.Of(new BoxShape(0, Session.CropMarquee, 1, 0, false, false)))
+        {
+            // The middle of the handle's pixel, on screen.
+            double x = (hx - View.Left + 0.5) * scale - _originX, y = (hy - View.Top + 0.5) * scale - _originY;
+            var r = new Rect(x - half, y - half, 2 * half, 2 * half);
+            ds.FillRectangle(r, Microsoft.UI.Colors.White);
+            ds.DrawRectangle(r, Microsoft.UI.Colors.Black, 1f);
+        }
+    }
+
+    /// <summary>
+    /// An area picked on the picture (the Copy text mark and the crop marquee): the rest of the picture dimmed, a black
+    /// line just outside the area and a white one on its edge, one screen line wide at any zoom. Drawn over the blit
+    /// rather than into the picture's buffers, so moving the area re-renders nothing.
+    /// </summary>
+    private void DrawDimmedArea(CanvasDrawingSession ds, CanvasControl sender, double scale, IntRect area)
+    {
+        IntRect a = area.Offset(-View.Left, -View.Top);
         // Snapped to whole screen pixels and drawn aliased: antialiased edges at fractional positions leave a faint seam
         // where the dimmed strips meet.
         double px = 96.0 / sender.Dpi;

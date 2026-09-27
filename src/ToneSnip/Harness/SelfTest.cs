@@ -18,7 +18,7 @@ namespace ToneSnip.App;
 public static partial class SelfTest
 {
     /// <summary>The pinned rasterizer fingerprints. Re-pin only together with a deliberate rasterizer change.</summary>
-    private const string ExpectedAnnotateHash = "D2CC8BB51C078E86", ExpectedChromeHash = "3B0E390B82FD6C83";
+    private const string ExpectedAnnotateHash = "D2CC8BB51C078E86", ExpectedChromeHash = "C3B9C6027CEAD43D";
 
     /// <summary>Share of sampled pixels that are black: a GPU frame taken before anything was composed comes back all black.</summary>
     private static double BlackShare(BgraImage img)
@@ -469,7 +469,7 @@ public static partial class SelfTest
 
     /// <summary>
     /// Fingerprints <see cref="Annotate.ShapeRenderer.Chrome"/> over its three branches: a move with selection
-    /// handles, a redaction preview, and a crop marquee. Independent of any frame, clock or random seed.
+    /// handles, a redaction preview, and a spotlight preview. Independent of any frame, clock or random seed.
     /// </summary>
     private static string ChromeHash(IntRect viewport)
     {
@@ -494,13 +494,14 @@ public static partial class SelfTest
         Annotate.ShapeRenderer.Chrome(redSession, viewport, b, Annotate.ShapeRenderer.DefaultAccent);
         redSession.Detach();
 
-        var cropDoc = new Core.Annotate.AnnotationDoc();
-        var cropSession = new Core.Annotate.EditSession(cropDoc) { Tool = Core.Annotate.Tool.Crop };
-        cropSession.Begin(25, 15, Core.Annotate.InputMods.None);
-        cropSession.Move(160, 100, Core.Annotate.InputMods.None);
-        cropSession.End(160, 100, Core.Annotate.InputMods.None);   // marquee survives the release
-        Annotate.ShapeRenderer.Chrome(cropSession, viewport, c, Annotate.ShapeRenderer.DefaultAccent);
-        cropSession.Detach();
+        // The crop marquee is drawn by the editor over its picture (EditorSurface.DrawMarquee), not here; the third
+        // branch is a spotlight being dragged, whose outline stands in for the dim it will leave.
+        var spotDoc = new Core.Annotate.AnnotationDoc();
+        var spotSession = new Core.Annotate.EditSession(spotDoc) { Tool = Core.Annotate.Tool.Spotlight };
+        spotSession.Begin(25, 15, Core.Annotate.InputMods.None);
+        spotSession.Move(160, 100, Core.Annotate.InputMods.None);
+        Annotate.ShapeRenderer.Chrome(spotSession, viewport, c, Annotate.ShapeRenderer.DefaultAccent);
+        spotSession.Detach();
 
         return Hash(a.Data, b.Data, c.Data);
     }

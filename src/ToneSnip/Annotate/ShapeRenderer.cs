@@ -263,31 +263,31 @@ public static class ShapeRenderer
     public static void Chrome(EditSession session, IntRect viewport, BgraImage target, uint accentArgb)
     {
         using Surface g = new(target, new IntRect(0, 0, target.Width, target.Height));
-        Chrome(session, viewport, g.Graphics, target.Width, target.Height, accentArgb);
+        Chrome(session, viewport, g.Graphics, accentArgb);
     }
 
     /// <summary>
     /// Same chrome straight into a device context, for hosts that paint through GDI (the overlay windows) so the
     /// in-progress shape and the handles never land in their cached back buffer.
     /// </summary>
-    public static void Chrome(EditSession session, IntRect viewport, IntPtr hdc, int width, int height, uint accentArgb)
+    public static void Chrome(EditSession session, IntRect viewport, IntPtr hdc, uint accentArgb)
     {
         using Gp.Graphics gr = Gp.Graphics.FromHdc(hdc);
         // The same hints Surface sets, so chrome antialiases in the overlay as it does in the editor.
         gr.Smoothing = Gp.SmoothingMode.AntiAlias;
         gr.TextRendering = Gp.TextRenderingHint.AntiAliasGridFit;
         gr.PixelOffset = Gp.PixelOffsetMode.Half;
-        Chrome(session, viewport, gr, width, height, accentArgb);
+        Chrome(session, viewport, gr, accentArgb);
     }
 
-    private static void Chrome(EditSession session, IntRect viewport, Gp.Graphics gr, int width, int height, uint accentArgb)
+    private static void Chrome(EditSession session, IntRect viewport, Gp.Graphics gr, uint accentArgb)
     {
         (TextResources text, bool owned) = Text();
-        try { ChromeCore(session, viewport, gr, width, height, accentArgb, text); }
+        try { ChromeCore(session, viewport, gr, accentArgb, text); }
         finally { if (owned) text.Dispose(); }
     }
 
-    private static void ChromeCore(EditSession session, IntRect viewport, Gp.Graphics gr, int width, int height, uint accentArgb, TextResources text)
+    private static void ChromeCore(EditSession session, IntRect viewport, Gp.Graphics gr, uint accentArgb, TextResources text)
     {
         if (session.InProgress is Shape ip)
         {
@@ -332,18 +332,6 @@ public static class ShapeRenderer
                 gr.FillEllipse(fill, x, y, EditSession.HandleSize, EditSession.HandleSize);
                 gr.DrawEllipse(edge, x, y, EditSession.HandleSize, EditSession.HandleSize);
             }
-        }
-        IntRect m = session.CropMarquee.Intersect(viewport).Offset(-viewport.Left, -viewport.Top);
-        if (!m.IsEmpty)
-        {
-            using Gp.Brush dim = Gp.Brush.Solid(0x88000000);
-            gr.FillRectangle(dim, 0, 0, width, m.Top); gr.FillRectangle(dim, 0, m.Bottom, width, height - m.Bottom);
-            gr.FillRectangle(dim, 0, m.Top, m.Left, m.Height); gr.FillRectangle(dim, m.Right, m.Top, width - m.Right, m.Height);
-            using Gp.Pen black = new(0xFF000000, 1f); using Gp.Pen white = new(0xFFFFFFFF, 1f);
-            gr.DrawRectangle(black, m.Left - 1, m.Top - 1, m.Width + 1, m.Height + 1); gr.DrawRectangle(white, m.Left, m.Top, m.Width - 1, m.Height - 1);
-            using Gp.Brush fill = Gp.Brush.Solid(0xFFFFFFFF);
-            foreach ((Handle _, int hx, int hy) in Handles.Of(new BoxShape(0, session.CropMarquee, 1, 0, false, false)))
-                gr.FillRectangle(fill, hx - viewport.Left - 4, hy - viewport.Top - 4, 8, 8);
         }
     }
 

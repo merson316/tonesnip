@@ -170,6 +170,28 @@ public class EditSessionTests
     }
 
     [Fact]
+    public void Dragging_the_crop_marquee_repaints_no_picture()
+    {
+        // The editor draws the marquee over its blit; a Changed per move made it re-render and re-upload the whole view.
+        EditSession s = NewSession(Tool.Crop);
+        int changed = 0, marquee = 0;
+        s.Changed += _ => changed++;
+        s.MarqueeChanged += () => marquee++;
+        s.Begin(10, 10, InputMods.None);
+        for (int i = 0; i < 20; i++) s.Move(20 + i * 5, 20 + i * 3, InputMods.None);
+        s.End(120, 80, InputMods.None);
+        Assert.Equal(0, changed);
+        Assert.True(marquee >= 21);
+        marquee = 0;
+        Assert.True(s.Escape());
+        Assert.True(s.CropMarquee.IsEmpty); Assert.Equal(1, marquee); Assert.Equal(0, changed);
+        s.Begin(10, 10, InputMods.None); s.Move(90, 70, InputMods.None); s.End(90, 70, InputMods.None);
+        marquee = 0;
+        s.ApplyCrop();
+        Assert.Equal(1, marquee); Assert.True(changed > 0);   // the crop itself is an edit
+    }
+
+    [Fact]
     public void A_second_crop_dragged_past_the_first_stays_inside_it()
     {
         // The captured pointer can drag past the canvas edge; the new crop must not restore pixels the first removed.

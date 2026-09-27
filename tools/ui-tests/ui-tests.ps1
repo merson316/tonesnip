@@ -815,6 +815,29 @@ if (Should-Run 'editor') {
         Shot $id 'editor-annotate'
         Test-AnnotateTool $id 's' 'Tools_Spotlight' 'Spotlight'
         Test-AnnotateTool $id 'm' 'Tools_Magnifier' 'Magnifier'
+        # The crop marquee is drawn over the picture rather than into it; dragging it must still end in a crop that
+        # Enter applies (the status strip's size changes) and undo takes back.
+        Test-UI "editor: a crop marquee dragged with 'c' applies on Enter and undoes" {
+            $r = Get-Rect $id 'Editor_Canvas'
+            if (-not $r) { throw "no bounds for Editor_Canvas" }
+            $cx = [int]($r.X + $r.W / 2); $cy = [int]($r.Y + $r.H / 2)
+            $before = (Get-EditorText $id '\d+\s*(x|\u00D7)\s*\d+')[0].name
+            winapp ui send-keys 'c' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 400
+            winapp ui drag "$($cx - 60),$($cy - 40)" "$($cx + 40),$($cy + 30)" -a $id | Out-Null
+            Start-Sleep -Milliseconds 400
+            Shot $id 'editor-crop-marquee'
+            winapp ui send-keys 'enter' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 800
+            $after = (Get-EditorText $id '\d+\s*(x|\u00D7)\s*\d+')[0].name
+            Write-Host "        $before -> $after" -ForegroundColor DarkGray
+            if ($after -eq $before) { throw "the size stayed at $before" }
+            winapp ui send-keys 'ctrl+z' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 800
+            $undone = (Get-EditorText $id '\d+\s*(x|\u00D7)\s*\d+')[0].name
+            if ($undone -ne $before) { throw "undo left the size at $undone, not $before" }
+            winapp ui send-keys 'v' -a $id --via send-input | Out-Null
+        }
         Test-UI "editor: the 'a' accelerator toggles annotate off" {
             winapp ui send-keys 'a' -a $id --via send-input | Out-Null
             Start-Sleep -Milliseconds 800
