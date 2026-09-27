@@ -157,7 +157,8 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
                         BgraImage sdr = stillCopying
                             ? BgraImage.Blank(o.Width, o.Height)
                             : _pool.Bgra(o.Index, FramePool.Frame, o.Width, o.Height);
-                        GdiCapture.CaptureBgra8Into(o.Bounds, sdr.Data);
+                        // With the pointer when the setting asks for it, as the monitors captured the usual way have it.
+                        GdiCapture.CaptureBgra8Into(o.Bounds, sdr.Data, settings().CaptureCursor);
                         c = new CapturedOutput(o with { Hdr = false }, null, sdr);
                         fallbacks.Add(o.DeviceName);
                     }

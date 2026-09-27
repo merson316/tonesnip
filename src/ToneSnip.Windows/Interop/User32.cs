@@ -155,6 +155,10 @@ public static partial class User32
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool DestroyIcon(IntPtr icon);
     [LibraryImport(Dll, SetLastError = true)] public static partial IntPtr CreateIconIndirect(ref IconInfo info);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] internal static partial bool GetIconInfo(IntPtr icon, out IconInfo info);
+    /// <summary>CURSORINFO: whether the pointer is showing, its cursor and where it is, in physical screen pixels.</summary>
+    [StructLayout(LayoutKind.Sequential)] public struct CursorInfo { public uint Size, Flags; public IntPtr Cursor; public Point ScreenPos; }
+    [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetCursorInfo(ref CursorInfo info);
+    [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool DrawIconEx(IntPtr dc, int x, int y, IntPtr icon, int width, int height, uint step, IntPtr flickerFreeBrush, uint flags);
 
     // ----- metrics, DPI and monitors -----
     [LibraryImport(Dll)] public static partial int GetSystemMetrics(int index);
