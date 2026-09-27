@@ -28,6 +28,26 @@ public class HistoryTests
     }
 
     [Fact]
+    public void Lowering_the_cap_drops_the_oldest_and_raising_it_makes_room()
+    {
+        var h = new HistoryList(new[] { E(1), E(2), E(3), E(4), E(5) }, max: 5);
+        Assert.Equal(new[] { "id2", "id1" }, h.Resize(3).Select(e => e.Id));
+        Assert.Equal(new[] { "id5", "id4", "id3" }, h.Entries.Select(e => e.Id));
+        Assert.Empty(h.Resize(4));
+        Assert.Empty(h.Add(E(6)));   // the fourth slot is free now
+        Assert.Equal("id3", Assert.Single(h.Add(E(7))).Id);
+        Assert.Equal(4, h.Entries.Count);
+        Assert.Throws<ArgumentOutOfRangeException>(() => h.Resize(0));
+    }
+
+    [Fact]
+    public void Loading_more_rows_than_the_cap_keeps_the_newest()
+    {
+        var h = new HistoryList(new[] { E(1), E(4), E(2), E(3) }, max: 2);
+        Assert.Equal(new[] { "id4", "id3" }, h.Entries.Select(e => e.Id));
+    }
+
+    [Fact]
     public void Update_replaces_in_place_without_reordering()
     {
         var h = new HistoryList(new[] { E(1), E(2), E(3) });

@@ -61,6 +61,9 @@ public sealed record SnipSettings
     public static readonly int[] Delays = { 0, 3, 5, 10 };
     public static readonly string[] HdrFiles = { "none", "jxr", "png", "jpeg" };
     public static readonly string[] FlyoutLayouts = { "row", "grid" };
+    /// <summary>How many snips Recent keeps, as Settings offers them. 200 thumbnails are about 40 to 80 MB on disk;
+    /// the flyout decodes only the rows on screen, so the number costs no memory there.</summary>
+    public static readonly int[] HistoryLimits = { 20, 50, 100, 200 };
     /// <summary>The overlay's selection frame, in the order Settings shows them; see <see cref="Capture.FrameStyle"/>.</summary>
     public static readonly string[] SelectionFrames = { "normal", "viewfinder", "guides" };
     /// <summary>How the notification-area icon is drawn: the full-colour app icon, a monochrome glyph that follows the
@@ -95,6 +98,9 @@ public sealed record SnipSettings
     public string Theme { get; init; } = "auto";
     /// <summary>How the recent-snips flyout lists its snips: row | grid. A change applies the next time it opens.</summary>
     public string RecentFlyoutLayout { get; init; } = "row";
+    /// <summary>How many snips the Recent list shows; one of <see cref="HistoryLimits"/>. Lowering it drops the oldest
+    /// rows and their thumbnails at once; the snips' own files are never touched.</summary>
+    public int HistoryLimit { get; init; } = Output.HistoryList.DefaultMax;
     /// <summary>normal | viewfinder | guides. Normal is the default: the outline 1.0.1 had. A change applies to the next snip.</summary>
     public string SelectionFrame { get; init; } = "normal";
     /// <summary>colour | mono | accent. Monochrome is the default: the Windows 11 convention for a tray glyph.</summary>
@@ -214,6 +220,7 @@ public sealed record SnipSettings
         if (string.IsNullOrWhiteSpace(s.SaveFolder)) s = s with { SaveFolder = null };
         else if (!PathGuard.IsSafeAbsolute(s.SaveFolder.Trim())) { fixes.Add($"saveFolder '{s.SaveFolder}' -> default"); s = s with { SaveFolder = null }; }
         else s = s with { SaveFolder = s.SaveFolder.Trim() };
+        if (!HistoryLimits.Contains(s.HistoryLimit)) { int h = HistoryLimits.MinBy(x => Math.Abs(x - s.HistoryLimit)); fixes.Add($"historyLimit {s.HistoryLimit} -> {h}"); s = s with { HistoryLimit = h }; }
         if (!Delays.Contains(s.DefaultDelay)) { int d = Delays.MinBy(x => Math.Abs(x - s.DefaultDelay)); fixes.Add($"defaultDelay {s.DefaultDelay} -> {d}"); s = s with { DefaultDelay = d }; }
         if (!Themes.Contains(s.Theme.ToLowerInvariant())) { fixes.Add($"theme '{s.Theme}' -> auto"); s = s with { Theme = "auto" }; }
         else s = s with { Theme = s.Theme.ToLowerInvariant() };

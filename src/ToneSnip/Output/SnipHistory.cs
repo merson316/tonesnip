@@ -48,7 +48,10 @@ public sealed class SnipHistory
     /// <param name="saveFolder">Read at delete time, since the save folder can change while the app runs.</param>
     /// <param name="deleteToRecycleBin"><c>SnipSettings.DeleteToRecycleBin</c>, read the same way; defaults to
     /// on.</param>
-    public SnipHistory(ILog log, Func<string>? saveFolder = null, Func<bool>? deleteToRecycleBin = null)
+    /// <param name="limit"><c>SnipSettings.HistoryLimit</c> at startup; <see cref="ApplyLimit"/> takes a later
+    /// change. Rows beyond it in history.json are dropped, and <see cref="SweepOrphanThumbs"/> deletes their
+    /// thumbnails.</param>
+    public SnipHistory(ILog log, Func<string>? saveFolder = null, Func<bool>? deleteToRecycleBin = null, int limit = HistoryList.DefaultMax)
     {
         _log = log;
         _saveFolder = saveFolder ?? (() => Path.Combine(AppPaths.Pictures, SnipSettings.DefaultSaveFolderName));
@@ -58,9 +61,9 @@ public sealed class SnipHistory
         {
             (List<HistoryEntry>? saved, string? err) = JsonFile.Load<List<HistoryEntry>>(_path);
             if (err != null) log.Warn("history: " + err);
-            _list = new HistoryList(saved);
+            _list = new HistoryList(saved, limit);
         }
-        catch (Exception e) { log.Warn("history: " + e.Message); _list = new HistoryList(); }
+        catch (Exception e) { log.Warn("history: " + e.Message); _list = new HistoryList(max: limit); }
         foreach (HistoryEntry e in _list.Entries) _items.Add(new HistoryItem(e));
     }
 
@@ -87,6 +90,20 @@ public sealed class SnipHistory
             moved = true;
         }
         if (moved) Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Takes a new <c>SnipSettings.HistoryLimit</c>. A lower one drops the oldest rows now and deletes their thumbnails,
+    /// which are the app's own cache; the snips' files and HDR copies stay where they are, as when a row falls off the
+    /// end. UI thread.
+    /// </summary>
+    public void ApplyLimit(int limit)
+    {
+        if (limit < 1 || limit == _list.Max) return;
+        List<HistoryEntry> dropped = _list.Resize(limit);
+        foreach (HistoryEntry e in dropped) { DeleteOwn(e.Thumb, Png); _items.RemoveAll(i => i.Entry.Id == e.Id); }
+        _log.Info(dropped.Count > 0 ? $"history: keeps {limit} snips, {dropped.Count} older row(s) dropped" : $"history: keeps {limit} snips");
+        if (dropped.Count > 0) Save();
     }
 
     /// <summary>Deletes thumbnails no row names (<see cref="HistoryList.OrphanThumbs"/>), on the thread pool. Only files

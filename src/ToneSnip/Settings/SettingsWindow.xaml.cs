@@ -178,6 +178,7 @@ public partial class SettingsWindow : Window
         // Matched by each radio's Tag rather than by position in FlyoutLayouts.
         bool grid = LayoutValue(LayoutGrid).Equals(s.RecentFlyoutLayout, StringComparison.OrdinalIgnoreCase);
         LayoutGrid.IsChecked = grid; LayoutRow.IsChecked = !grid;
+        HistoryLimit.SelectedItem = HistoryLimit.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag as string == s.HistoryLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
         // Also by Tag; the sanitised setting always names one of them, and Normal stands in if it somehow does not.
         RadioButton[] frames = FrameRadios();
         RadioButton frame = frames.FirstOrDefault(r => string.Equals(r.Tag as string, s.SelectionFrame, StringComparison.OrdinalIgnoreCase)) ?? FrameNormal;
@@ -256,6 +257,7 @@ public partial class SettingsWindow : Window
                 Annotate = s.Annotate with { PrivacyMode = PrivacyMode.IsOn, ClipToLasso = ClipToLasso.IsOn },
                 DeleteToRecycleBin = DeleteToRecycleBin.IsOn,
                 RecentFlyoutLayout = LayoutValue(LayoutGrid.IsChecked == true ? LayoutGrid : LayoutRow),
+                HistoryLimit = int.TryParse(TagOf(HistoryLimit, ""), out int kept) ? kept : s.HistoryLimit,
                 SelectionFrame = FrameRadios().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? s.SelectionFrame,
             };
         if (_realised[HotkeysPage])

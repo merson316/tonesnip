@@ -710,6 +710,15 @@ if (Should-Run 'settings') {
             if ($f -match 'Settings_LayoutGrid') { throw "Tab moved inside the picker (landed on Settings_LayoutGrid): it is two tab stops, not one" }
         }
 
+        # --- how many snips Recent lists: 20 unless changed, and a ComboBox like the others.
+        Test-UI "settings: Settings_HistoryLimit reads 20 snips (the default)" {
+            winapp ui scroll-into-view 'Settings_HistoryLimit' -a $id 2>&1 | Out-Null
+            $v = (Get-Json @('get-value', 'Settings_HistoryLimit', '-a', "$id", '--json')).text
+            Write-Host "        Settings_HistoryLimit = '$v'" -ForegroundColor DarkGray
+            if ($v -ne '20 snips') { throw "it reads '$v'" }
+        }
+        Test-ComboRoundTrip $id 'Settings_HistoryLimit' 'HistoryLimit'
+
         # --- the selection frame picker: each frame reads back as selected, ending on Normal (the default)
         Test-UI "settings: FrameViewfinder / FrameGuides / FrameNormal round-trip" {
             foreach ($frame in 'Settings_FrameViewfinder', 'Settings_FrameGuides', 'Settings_FrameNormal') {
@@ -723,8 +732,8 @@ if (Should-Run 'settings') {
         }
         Note-DeadId $id 'Settings_LayoutPicker' 'settings'
 
-        # --- hover a card, then get the pointer out of the window
-        Test-UI "settings: hover a SettingsCard" { winapp ui hover 'Settings_StartWithWindows' -a $id --dwell-time 1200 }
+        # --- hover a card near the top of the page (one further down can sit below the fold, with zero size), then get the pointer out of the window
+        Test-UI "settings: hover a SettingsCard" { winapp ui hover 'Settings_TrayIconCombo' -a $id --dwell-time 1200 }
         Shot $id 'settings-general-hover'
         Move-PointerAway
 

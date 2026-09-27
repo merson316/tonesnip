@@ -36,9 +36,9 @@ highlights are compressed. What you paste looks like what you saw.
   it as `#RRGGBB` or `rgb()`, with the nits on HDR monitors.
 - **Keyboard-only snips and Narrator:** the overlay can be driven entirely from the keyboard, and it names itself and
   announces mode changes to screen readers.
-- **Recent snips:** left-click the tray icon for new-snip buttons and the last 20 snips, as a list or a grid, with
-  copy, open, edit, show in folder and delete (to the Recycle Bin by default); right-click a row to pin it or copy
-  its text.
+- **Recent snips:** left-click the tray icon for new-snip buttons and your latest snips (20, or up to 200), as a list
+  or a grid, with search, filters, copy, open, edit, show in folder and delete (to the Recycle Bin by default);
+  right-click a row to pin it or copy its text.
 - **Hotkeys** recorded in Settings, including PrintScreen itself and, optionally, `Win+Shift+S` in place of Snipping
   Tool.
 - **Settings** with a live tonemap preview. Follows the Windows theme, accent colour and contrast themes, and is
@@ -151,6 +151,7 @@ is kept as `settings.json.bad-<time>` and defaults are used.
 | `theme` | `auto` | `auto`, `light` or `dark` |
 | `trayIcon` | `mono` | `mono`, `colour` or `accent` |
 | `recentFlyoutLayout` | `row` | `row` or `grid` |
+| `historyLimit` | `20` | 20, 50, 100 or 200: how many snips Recent lists. Older snips leave the list; their files stay |
 | `deleteToRecycleBin` | `true` | Deleting from Recent snips moves the file and its HDR copy to the Recycle Bin |
 | `showNitsReadout` | `true` | |
 | `colorFormat` | `hex` | `hex` (`#RRGGBB`) or `rgb` (`rgb(r, g, b)`): what the colour picker copies |

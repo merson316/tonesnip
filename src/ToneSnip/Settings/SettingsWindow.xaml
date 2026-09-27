@@ -68,78 +68,8 @@
                   <ComboBoxItem Content="Colour"/><ComboBoxItem Content="Monochrome"/><ComboBoxItem Content="Accent"/>
                 </ComboBox>
               </toolkit:SettingsCard>
-              <!-- The two Recent flyout layouts, drawn as schematics. A RadioButtons group rather than loose
-                   RadioButtons, so it is one tab stop, uses arrow keys and reports set position to screen readers. -->
-              <toolkit:SettingsCard Header="Recent flyout" Description="How recent snips are listed when you click the tray icon.">
-                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHistory}"/></toolkit:SettingsCard.HeaderIcon>
-                <RadioButtons x:Name="LayoutPicker" MaxColumns="2" AutomationProperties.Name="Recent flyout layout"
-                              AutomationProperties.AutomationId="Settings_LayoutPicker">
-                  <!-- Tag is the stored setting value, Content the label, ContentTemplate the schematic. The schematics
-                       are drawings at about 1 : 6 scale, so their sizes are deliberately off the 4 px grid. -->
-
-                  <RadioButton x:Name="LayoutRow" Style="{StaticResource LayoutOption}" Tag="row" Content="Row"
-                               AutomationProperties.Name="Row" AutomationProperties.AutomationId="Settings_LayoutRow"
-                               Checked="OnPickerChecked">
-                   <RadioButton.ContentTemplate><DataTemplate>
-                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
-                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
-                      <StackPanel Margin="6" Spacing="4">
-                        <StackPanel Orientation="Horizontal" Spacing="2">
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource Accent}"/>
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                        </StackPanel>
-                        <Rectangle Height="1" Fill="{ThemeResource Stroke}"/>
-                        <StackPanel Spacing="4">
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                            <Rectangle Width="72" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
-                          </StackPanel>
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                            <Rectangle Width="72" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
-                          </StackPanel>
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                            <Rectangle Width="52" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
-                          </StackPanel>
-                        </StackPanel>
-                      </StackPanel>
-                    </Border>
-                   </DataTemplate></RadioButton.ContentTemplate>
-                  </RadioButton>
-                  <RadioButton x:Name="LayoutGrid" Style="{StaticResource LayoutOption}" Tag="grid" Content="Grid"
-                               AutomationProperties.Name="Grid" AutomationProperties.AutomationId="Settings_LayoutGrid"
-                               Checked="OnPickerChecked">
-                   <RadioButton.ContentTemplate><DataTemplate>
-                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
-                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
-                      <StackPanel Margin="6" Spacing="4">
-                        <StackPanel Orientation="Horizontal" Spacing="2">
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource Accent}"/>
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                        </StackPanel>
-                        <Rectangle Height="1" Fill="{ThemeResource Stroke}"/>
-                        <Grid ColumnSpacing="4" RowSpacing="4">
-                          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                          <Rectangle Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Grid.Row="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                          <Rectangle Grid.Row="1" Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
-                        </Grid>
-                      </StackPanel>
-                    </Border>
-                   </DataTemplate></RadioButton.ContentTemplate>
-                  </RadioButton>
-                </RadioButtons>
-              </toolkit:SettingsCard>
-
               <!-- The three selection frames, drawn as schematics of a selection with its frame, the same way as the
-                   Recent flyout layouts above. Order is Normal, Viewfinder, Guides. A label must fit under its 112 px
+                   Recent flyout layouts below. Order is Normal, Viewfinder, Guides. A label must fit under its 112 px
                    schematic, like "Row" and "Grid": RadioButtons sizes every column to its widest item, so one long
                    label widens all three tiles and they stop matching the Recent flyout row. -->
               <toolkit:SettingsCard Header="Selection frame" Description="How a snip marks what you are selecting.">
@@ -224,6 +154,88 @@
                    </DataTemplate></RadioButton.ContentTemplate>
                   </RadioButton>
                 </RadioButtons>
+              </toolkit:SettingsCard>
+
+              <!-- The Recent card on the tray icon: how it lists snips and how many. -->
+              <TextBlock Text="Recent" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <!-- The two Recent flyout layouts, drawn as schematics. A RadioButtons group rather than loose
+                   RadioButtons, so it is one tab stop, uses arrow keys and reports set position to screen readers. -->
+              <toolkit:SettingsCard Header="Layout" Description="How recent snips are listed when you click the tray icon.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHistory}"/></toolkit:SettingsCard.HeaderIcon>
+                <RadioButtons x:Name="LayoutPicker" MaxColumns="2" AutomationProperties.Name="Recent flyout layout"
+                              AutomationProperties.AutomationId="Settings_LayoutPicker">
+                  <!-- Tag is the stored setting value, Content the label, ContentTemplate the schematic. The schematics
+                       are drawings at about 1 : 6 scale, so their sizes are deliberately off the 4 px grid. -->
+
+                  <RadioButton x:Name="LayoutRow" Style="{StaticResource LayoutOption}" Tag="row" Content="Row"
+                               AutomationProperties.Name="Row" AutomationProperties.AutomationId="Settings_LayoutRow"
+                               Checked="OnPickerChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <StackPanel Margin="6" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource Accent}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                        </StackPanel>
+                        <Rectangle Height="1" Fill="{ThemeResource Stroke}"/>
+                        <StackPanel Spacing="4">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Width="72" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
+                          </StackPanel>
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Width="72" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
+                          </StackPanel>
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Rectangle Width="10" Height="7" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                            <Rectangle Width="52" Height="2" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextSecondary}" VerticalAlignment="Center"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+                  <RadioButton x:Name="LayoutGrid" Style="{StaticResource LayoutOption}" Tag="grid" Content="Grid"
+                               AutomationProperties.Name="Grid" AutomationProperties.AutomationId="Settings_LayoutGrid"
+                               Checked="OnPickerChecked">
+                   <RadioButton.ContentTemplate><DataTemplate>
+                    <Border Width="112" Height="64" Background="{ThemeResource SurfaceBase}" BorderBrush="{ThemeResource Stroke}"
+                            BorderThickness="1" CornerRadius="{StaticResource SmallCornerRadius}">
+                      <StackPanel Margin="6" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource Accent}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Width="6" Height="6" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                        </StackPanel>
+                        <Rectangle Height="1" Fill="{ThemeResource Stroke}"/>
+                        <Grid ColumnSpacing="4" RowSpacing="4">
+                          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                          <Rectangle Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Grid.Row="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                          <Rectangle Grid.Row="1" Grid.Column="1" Height="14" RadiusX="1" RadiusY="1" Fill="{ThemeResource TextDisabled}"/>
+                        </Grid>
+                      </StackPanel>
+                    </Border>
+                   </DataTemplate></RadioButton.ContentTemplate>
+                  </RadioButton>
+                </RadioButtons>
+              </toolkit:SettingsCard>
+              <!-- Items carry the value as Tag, so the order here need not follow SnipSettings.HistoryLimits. -->
+              <toolkit:SettingsCard Header="Show up to"
+                                    Description="How many recent snips the list shows. Older snips leave the list; their files stay in your folder.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphThumbnail}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="HistoryLimit" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Recent snips: show up to" AutomationProperties.AutomationId="Settings_HistoryLimit">
+                  <ComboBoxItem Content="20 snips" Tag="20"/><ComboBoxItem Content="50 snips" Tag="50"/>
+                  <ComboBoxItem Content="100 snips" Tag="100"/><ComboBoxItem Content="200 snips" Tag="200"/>
+                </ComboBox>
               </toolkit:SettingsCard>
 
               <TextBlock Text="Startup &amp; capture" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>

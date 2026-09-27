@@ -367,6 +367,31 @@ public class SnipSettingsTests
     }
 
     [Fact]
+    public void History_limit_defaults_to_20_and_round_trips_through_the_file()
+    {
+        Assert.Equal(20, new SnipSettings().HistoryLimit);
+        string p = Temp("{ \"version\": 2 }");
+        Assert.Equal(20, SnipSettingsFile.Load(p).Settings.HistoryLimit);
+        SnipSettingsFile.Save(p, new SnipSettings { HistoryLimit = 200 });
+        Assert.Equal(200, SnipSettingsFile.Load(p).Settings.HistoryLimit);
+        File.Delete(p);
+    }
+
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(-5, 20)]
+    [InlineData(30, 20)]
+    [InlineData(40, 50)]
+    [InlineData(100, 100)]
+    [InlineData(100000, 200)]
+    public void A_history_limit_not_offered_snaps_to_the_nearest_one(int stored, int expected)
+    {
+        SnipSettings s = new SnipSettings { HistoryLimit = stored }.Sanitized(out List<string> fixes);
+        Assert.Equal(expected, s.HistoryLimit);
+        Assert.Equal(stored != expected, fixes.Any(f => f.StartsWith("historyLimit")));
+    }
+
+    [Fact]
     public void Delete_to_recycle_bin_round_trips_through_the_file()
     {
         string p = Temp("{ \"version\": 2, \"deleteToRecycleBin\": false }");

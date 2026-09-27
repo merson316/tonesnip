@@ -21,11 +21,12 @@ public sealed class HistoryList
     /// <summary>The most recognised text an entry keeps: enough to search a page of text, not a document.</summary>
     public const int MaxText = 4000;
     private readonly List<HistoryEntry> _entries;
-    public int Max { get; }
+    public int Max { get; private set; }
     public IReadOnlyList<HistoryEntry> Entries => _entries;
 
     public HistoryList(IEnumerable<HistoryEntry>? entries = null, int max = DefaultMax)
     {
+        if (max < 1) throw new ArgumentOutOfRangeException(nameof(max));
         Max = max;
         // history.json is hand-editable: drop null rows and rows missing an id or thumbnail rather than throwing at startup.
         _entries = (entries ?? Array.Empty<HistoryEntry>())
@@ -54,6 +55,17 @@ public sealed class HistoryList
     }
 
     public bool Remove(string id) => _entries.RemoveAll(e => e.Id == id) > 0;
+
+    /// <summary>Changes the cap and returns the entries a lower one drops, oldest last, for the caller to delete their
+    /// thumbnails. A higher cap drops nothing and keeps room for more.</summary>
+    public List<HistoryEntry> Resize(int max)
+    {
+        if (max < 1) throw new ArgumentOutOfRangeException(nameof(max));
+        Max = max;
+        var dropped = _entries.Skip(max).ToList();
+        if (dropped.Count > 0) _entries.RemoveRange(max, dropped.Count);
+        return dropped;
+    }
 
     /// <summary>Recognised text as an entry keeps it: trimmed, and cut at <see cref="MaxText"/> characters without
     /// splitting a surrogate pair. Null when there is none.</summary>

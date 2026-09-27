@@ -144,8 +144,10 @@ public partial class App : Application
         Toasts.Edited += r => OpenViewer(r, annotate: true);
         Toasts.Pinned += r => _ = PinAsync(r);
         Toasts.Lookup = FindSnipAsync;
-        History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin);
+        History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin, Settings.HistoryLimit);
         History.SweepOrphanThumbs();
+        // A lower cap prunes at once rather than at the next snip, so the thumbnails it frees go now.
+        SettingsChanged += () => RunOnUi(() => History.ApplyLimit(Settings.HistoryLimit));
         Output.Completed += r =>
         {
             LastResult = r;
