@@ -91,7 +91,7 @@ public static partial class GdiPlus
             return new Graphics(g);
         }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDisposeImage(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDisposeImage(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class Graphics : IDisposable
@@ -158,7 +158,7 @@ public static partial class GdiPlus
         public void DrawString(string text, Font font, Brush brush, RectF layout, StringFormat format)
             => Check(GdipDrawString(Handle, text, text.Length, font.Handle, ref layout, format.Handle, brush.Handle), nameof(GdipDrawString));
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeleteGraphics(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeleteGraphics(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class Pen : IDisposable
@@ -178,7 +178,7 @@ public static partial class GdiPlus
         public DashStyle DashStyle { set => Check(GdipSetPenDashStyle(Handle, (int)value), nameof(GdipSetPenDashStyle)); }
         public PenAlignment Alignment { set => Check(GdipSetPenMode(Handle, (int)value), nameof(GdipSetPenMode)); }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeletePen(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeletePen(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class Brush : IDisposable
@@ -200,7 +200,7 @@ public static partial class GdiPlus
             return new Brush(b);
         }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeleteBrush(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeleteBrush(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class FontFamily : IDisposable
@@ -239,7 +239,7 @@ public static partial class GdiPlus
             return em == 0 ? 1.2f : (float)spacing / em;
         }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeleteFontFamily(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeleteFontFamily(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class Font : IDisposable
@@ -253,7 +253,7 @@ public static partial class GdiPlus
             Check(GdipCreateFont(family.Handle, emSize, (int)style, UnitPixel, out Handle), nameof(GdipCreateFont));
         }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeleteFont(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeleteFont(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class Path : IDisposable
@@ -296,7 +296,7 @@ public static partial class GdiPlus
             }
         }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeletePath(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeletePath(Handle); Handle = IntPtr.Zero; } }
     }
 
     public sealed class StringFormat : IDisposable
@@ -325,7 +325,7 @@ public static partial class GdiPlus
         public StringAlignment Alignment { set => Check(GdipSetStringFormatAlign(Handle, (int)value), nameof(GdipSetStringFormatAlign)); }
         public StringAlignment LineAlignment { set => Check(GdipSetStringFormatLineAlign(Handle, (int)value), nameof(GdipSetStringFormatLineAlign)); }
 
-        public void Dispose() { if (Handle != IntPtr.Zero) { GdipDeleteStringFormat(Handle); Handle = IntPtr.Zero; } }
+        public void Dispose() { if (Handle != IntPtr.Zero) { _ = GdipDeleteStringFormat(Handle); Handle = IntPtr.Zero; } }
     }
 
     // ----- native -----

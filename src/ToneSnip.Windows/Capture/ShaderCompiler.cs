@@ -74,10 +74,10 @@ public static unsafe class ShaderCompiler
     private static IntPtr BlobPointer(IntPtr blob) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr>)(*(*(IntPtr**)blob + 3)))(blob);
     private static nuint BlobSize(IntPtr blob) => ((delegate* unmanaged[Stdcall]<IntPtr, nuint>)(*(*(IntPtr**)blob + 4)))(blob);
 
-    [DllImport("d3dcompiler_47.dll", CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport("d3dcompiler_47.dll", CharSet = CharSet.Ansi, ExactSpelling = true, BestFitMapping = false, ThrowOnUnmappableChar = true)]
     private static extern int D3DCompile(byte* srcData, nuint srcDataSize, string sourceName, IntPtr defines, IntPtr include,
         string entryPoint, string target, uint flags1, uint flags2, out IntPtr code, out IntPtr errorMsgs);
 
-    [DllImport("d3dcompiler_47.dll", CharSet = CharSet.Ansi, ExactSpelling = true)]
+    [DllImport("d3dcompiler_47.dll", CharSet = CharSet.Ansi, ExactSpelling = true, BestFitMapping = false, ThrowOnUnmappableChar = true)]
     private static extern int D3DDisassemble(byte* srcData, nuint srcDataSize, uint flags, string? comments, out IntPtr disassembly);
 }

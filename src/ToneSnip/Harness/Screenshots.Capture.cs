@@ -190,7 +190,7 @@ internal static partial class Screenshots
         if (old != IntPtr.Zero) Gdi32.SelectObject(dc, old);
         if (dib != IntPtr.Zero) Gdi32.DeleteObject(dib);
         Gdi32.DeleteDC(dc);
-        User32.ReleaseDC(IntPtr.Zero, screen);
+        _ = User32.ReleaseDC(IntPtr.Zero, screen);
         return img;
     }
 

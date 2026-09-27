@@ -133,7 +133,7 @@ public static partial class SelfTest
             while (PeekMessageW(out Msg m, IntPtr.Zero, 0, 0, 1)) { TranslateMessage(m); DispatchMessageW(m); }
             Thread.Sleep(10);
         }
-        Dwmapi.DwmFlush();
+        _ = Dwmapi.DwmFlush();
     }
 
     private static byte[] Pixel(BgraImage img, int x, int y) => img.Data.AsSpan((y * img.Width + x) * 4, 4).ToArray();

@@ -74,7 +74,7 @@ internal static partial class Screenshots
                 IntPtr dc = User32.GetDC(IntPtr.Zero);
                 int lines;
                 try { lines = Gdi32.GetDIBits(dc, info.Color, 0, (uint)size, bits, ref header, 0 /*DIB_RGB_COLORS*/); }
-                finally { User32.ReleaseDC(IntPtr.Zero, dc); }
+                finally { _ = User32.ReleaseDC(IntPtr.Zero, dc); }
                 if (lines != size) return null;
                 // The icon's colour bitmap is PARGB (CreateIcon draws it that way for the shell); BgraImage is straight.
                 for (int i = 0; i < bits.Length; i += 4)
@@ -187,7 +187,7 @@ internal static partial class Screenshots
             if (old != IntPtr.Zero) Gdi32.SelectObject(dc, old);
             if (dib != IntPtr.Zero) Gdi32.DeleteObject(dib);
             Gdi32.DeleteDC(dc);
-            User32.ReleaseDC(IntPtr.Zero, screen);
+            _ = User32.ReleaseDC(IntPtr.Zero, screen);
         }
         return img;
     }

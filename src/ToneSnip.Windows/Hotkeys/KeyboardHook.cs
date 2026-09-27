@@ -172,7 +172,7 @@ public sealed partial class KeyboardHook : IDisposable
         // goes on to the next hook.
         try
         {
-            int msg = (int)wParam;
+            int msg = (int)wParam.ToInt64();
             bool isDown = msg == WmKeydown || msg == WmSyskeydown, isUp = msg == WmKeyup || msg == WmSyskeyup;
             if (!isDown && !isUp) return CallNextHookEx(_hook, nCode, wParam, lParam);
             int vk = Marshal.ReadInt32(lParam);   // KBDLLHOOKSTRUCT.vkCode

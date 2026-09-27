@@ -17,7 +17,7 @@ internal static partial class HandleCensus
         {
             for (long v = 4; v < 40000; v += 4)
             {
-                var h = (IntPtr)v;
+                var h = new IntPtr(v);
                 if (!GetHandleInformation(h, out _)) continue;
                 if (NtQueryObject(h, 2 /*ObjectTypeInformation*/, buffer, 1024, out _) != 0) continue;
                 // PUBLIC_OBJECT_TYPE_INFORMATION starts with a UNICODE_STRING: Length, MaximumLength, then the buffer.

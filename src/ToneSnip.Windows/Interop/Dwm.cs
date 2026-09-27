@@ -15,7 +15,7 @@ public static class Dwm
     /// forces a composition, so callers wait no longer than <see cref="CompositionBudget"/>. A late flush finishes on
     /// its pool thread without holding anything.
     /// </summary>
-    public static Task FlushTwice() => Task.Run(() => { Dwmapi.DwmFlush(); Dwmapi.DwmFlush(); });
+    public static Task FlushTwice() => Task.Run(() => { _ = Dwmapi.DwmFlush(); _ = Dwmapi.DwmFlush(); });
 
 
     /// <summary>DWMWCP_ROUND (8 px), or DWMWCP_ROUNDSMALL (4 px) for a window drawn at the small radius.</summary>

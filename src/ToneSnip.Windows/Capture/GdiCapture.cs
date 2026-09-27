@@ -20,7 +20,7 @@ public static class GdiCapture
         IntPtr mem = Gdi32.CreateCompatibleDC(screen);
         var bmi = new Gdi32.BitmapInfoHeader { Size = (uint)Marshal.SizeOf<Gdi32.BitmapInfoHeader>(), Width = bounds.Width, Height = -bounds.Height, Planes = 1, BitCount = 32 };
         IntPtr dib = Gdi32.CreateDIBSection(mem, ref bmi, 0, out IntPtr bits, IntPtr.Zero, 0);
-        if (dib == IntPtr.Zero) { Gdi32.DeleteDC(mem); User32.ReleaseDC(IntPtr.Zero, screen); throw new InvalidOperationException("CreateDIBSection failed"); }
+        if (dib == IntPtr.Zero) { Gdi32.DeleteDC(mem); _ = User32.ReleaseDC(IntPtr.Zero, screen); throw new InvalidOperationException("CreateDIBSection failed"); }
         IntPtr old = Gdi32.SelectObject(mem, dib);
         try
         {
@@ -30,7 +30,7 @@ public static class GdiCapture
             Marshal.Copy(bits, data, 0, data.Length);
             for (int i = 3; i < data.Length; i += 4) data[i] = 255;
         }
-        finally { Gdi32.SelectObject(mem, old); Gdi32.DeleteObject(dib); Gdi32.DeleteDC(mem); User32.ReleaseDC(IntPtr.Zero, screen); }
+        finally { Gdi32.SelectObject(mem, old); Gdi32.DeleteObject(dib); Gdi32.DeleteDC(mem); _ = User32.ReleaseDC(IntPtr.Zero, screen); }
     }
 
     private const uint CursorShowing = 0x1, DiNormal = 0x3;

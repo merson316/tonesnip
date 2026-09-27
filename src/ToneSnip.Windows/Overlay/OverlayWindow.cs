@@ -98,7 +98,7 @@ public sealed class OverlayWindow : IDisposable
             _memDc = Gdi32.CreateCompatibleDC(screen);
             _dib = Gdi.CreateDib(screen, bounds.Width, bounds.Height, out _bits);
         }
-        finally { User32.ReleaseDC(IntPtr.Zero, screen); }
+        finally { _ = User32.ReleaseDC(IntPtr.Zero, screen); }
         if (_memDc == IntPtr.Zero || _dib == IntPtr.Zero) { Release(); throw new InvalidOperationException("overlay: could not create the double buffer"); }
         _oldBitmap = Gdi32.SelectObject(_memDc, _dib);
 
@@ -323,7 +323,7 @@ public sealed class OverlayWindow : IDisposable
                 {
                     // Clipped to the update region itself when it was read, so the chrome lands only where the second
                     // pass blits; otherwise to the one rectangle there is.
-                    if (region) Gdi32.SelectClipRgn(_memDc, _updateRgn);
+                    if (region) _ = Gdi32.SelectClipRgn(_memDc, _updateRgn);
                     else ClipTo(_paintRects[0]);
                     _host.DrawChrome(_memDc, _bounds);
                 }
@@ -364,8 +364,8 @@ public sealed class OverlayWindow : IDisposable
     /// <summary>Clips the double buffer's GDI and GDI+ drawing to one rectangle.</summary>
     private void ClipTo(IntRect clip)
     {
-        Gdi32.SelectClipRgn(_memDc, IntPtr.Zero);
-        Gdi32.IntersectClipRect(_memDc, clip.Left, clip.Top, clip.Right, clip.Bottom);
+        _ = Gdi32.SelectClipRgn(_memDc, IntPtr.Zero);
+        _ = Gdi32.IntersectClipRect(_memDc, clip.Left, clip.Top, clip.Right, clip.Bottom);
     }
 
     /// <summary>The annotated buffer replaces the frozen frame as soon as a document exists, so turning the tool row off
@@ -589,8 +589,8 @@ public sealed class OverlayWindow : IDisposable
         Gdi32.RoundRect(_memDc, box.Left, box.Top, box.Right, box.Bottom, radius * 2, radius * 2);
         Gdi32.SelectObject(_memDc, oldPen);
         Gdi32.SelectObject(_memDc, oldBrush);
-        Gdi32.SetBkMode(_memDc, Gdi.TransparentBk);
-        Gdi32.SetTextColor(_memDc, Gdi.Ref(0xFFFFFFFF));
+        _ = Gdi32.SetBkMode(_memDc, Gdi.TransparentBk);
+        _ = Gdi32.SetTextColor(_memDc, Gdi.Ref(0xFFFFFFFF));
         var area = new User32.Rect { Left = box.Left + padX, Top = box.Top + padY, Right = box.Right, Bottom = box.Bottom };
         User32.DrawTextW(_memDc, text, text.Length, ref area, Gdi.DtLeft | Gdi.DtTop | Gdi.DtSingleLine | Gdi.DtNoPrefix);
     }
@@ -647,9 +647,9 @@ public sealed class OverlayWindow : IDisposable
             case Win32.WmKeyDown or Win32.WmSysKeyDown:
                 // A key while another window has the foreground can only have been posted here. Logged, as the trail for
                 // a snip screen that once ignored a posted Escape while it had no foreground.
-                if (User32.GetForegroundWindow() != hwnd) _log?.Debug($"overlay: key 0x{(int)wParam:X2} arrived without the foreground");
+                if (User32.GetForegroundWindow() != hwnd) _log?.Debug($"overlay: key 0x{wParam.ToInt64():X2} arrived without the foreground");
                 // Bit 30 of lParam: the key was already down, so this is an auto-repeat.
-                _host.OnKey((int)wParam, Win32.KeyDown(Win32.VkControl), Win32.KeyDown(Win32.VkShift), Win32.KeyDown(Win32.VkMenu), ((long)lParam & (1L << 30)) != 0);
+                _host.OnKey((int)wParam.ToInt64(), Win32.KeyDown(Win32.VkControl), Win32.KeyDown(Win32.VkShift), Win32.KeyDown(Win32.VkMenu), ((long)lParam & (1L << 30)) != 0);
                 return IntPtr.Zero;                                          // handled: Alt must not open a system menu
             case Win32.WmActivate:
                 if (Win32.LoWord(wParam) != 0) _host.OnActivated(hwnd);      // the host tracks which window has the keyboard

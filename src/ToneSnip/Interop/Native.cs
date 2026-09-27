@@ -65,5 +65,5 @@ public static class Native
     /// </summary>
     public static void SetOwner(IntPtr hwnd, IntPtr owner) => User32.SetWindowLongPtr(hwnd, GwlpHwndParent, owner);
 
-    public static void AddExStyle(IntPtr hwnd, int style) => User32.SetWindowLongW(hwnd, GwlExStyle, User32.GetWindowLongW(hwnd, GwlExStyle) | style);
+    public static void AddExStyle(IntPtr hwnd, int style) => _ = User32.SetWindowLongW(hwnd, GwlExStyle, User32.GetWindowLongW(hwnd, GwlExStyle) | style);
 }

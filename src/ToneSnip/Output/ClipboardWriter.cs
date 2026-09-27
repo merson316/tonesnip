@@ -153,7 +153,7 @@ public static partial class ClipboardWriter
     private static unsafe IntPtr Put(uint format, long length, Fill fill)
     {
         if (length > int.MaxValue) throw new InvalidOperationException("image too large for the clipboard");
-        IntPtr h = GlobalAlloc(GmemMoveable, (UIntPtr)(ulong)length);
+        IntPtr h = GlobalAlloc(GmemMoveable, new UIntPtr((ulong)length));
         if (h == IntPtr.Zero) throw new OutOfMemoryException();
         IntPtr p = GlobalLock(h);
         if (p == IntPtr.Zero) { GlobalFree(h); throw new InvalidOperationException("GlobalLock failed"); }

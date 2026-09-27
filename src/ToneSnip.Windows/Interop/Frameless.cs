@@ -49,7 +49,7 @@ public static partial class Frameless
     {
         if (HasFrame(hwnd)) return true;
         long style = (long)User32.GetWindowLongPtr(hwnd, GwlStyle);
-        User32.SetWindowLongPtr(hwnd, GwlStyle, (IntPtr)(style | WsThickFrame));
+        User32.SetWindowLongPtr(hwnd, GwlStyle, new IntPtr(style | WsThickFrame));
         User32.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoOwnerZOrder | SwpNoActivate | SwpFrameChanged);
         return HasFrame(hwnd);
     }

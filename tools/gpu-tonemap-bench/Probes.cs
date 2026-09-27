@@ -64,7 +64,8 @@ internal sealed unsafe class AdapterMemory : IDisposable
     {
         var list = new List<(string, double)>();
         uint size = 0, count = 0;
-        PdhGetFormattedCounterArrayW(counter, PdhFmtDouble, ref size, out count, IntPtr.Zero);
+        // The sizing call: it fails with PDH_MORE_DATA by design, and only the size it writes back matters.
+        _ = PdhGetFormattedCounterArrayW(counter, PdhFmtDouble, ref size, out count, IntPtr.Zero);
         if (size == 0) return list;
         IntPtr buf = Marshal.AllocHGlobal((int)size);
         try
@@ -82,7 +83,7 @@ internal sealed unsafe class AdapterMemory : IDisposable
         return list;
     }
 
-    public void Dispose() { if (_query != IntPtr.Zero) PdhCloseQuery(_query); _query = IntPtr.Zero; }
+    public void Dispose() { if (_query != IntPtr.Zero) _ = PdhCloseQuery(_query); _query = IntPtr.Zero; }
 
     private const uint PdhFmtDouble = 0x00000200;
     [DllImport("pdh.dll", CharSet = CharSet.Unicode)] private static extern uint PdhOpenQueryW(string? source, IntPtr user, out IntPtr query);

@@ -209,7 +209,7 @@ public sealed partial class TrayMenu
             {
                 MeasureItem m = Marshal.PtrToStructure<MeasureItem>(lParam);
                 if (m.CtlType != OdtMenu) return null;
-                Entry e = EntryFor((int)m.ItemData);
+                Entry e = EntryFor((int)m.ItemData.ToInt64());
                 m.ItemWidth = (uint)_menuWidth;
                 m.ItemHeight = (uint)Scale(e.Kind switch { Kind.Separator => SeparatorHeight, Kind.Spacer => PadHeight, _ => RowHeight });
                 Marshal.StructureToPtr(m, lParam, false);
@@ -316,7 +316,7 @@ public sealed partial class TrayMenu
 
     private void Draw(DrawItem d)
     {
-        Entry e = EntryFor((int)d.ItemData);
+        Entry e = EntryFor((int)d.ItemData.ToInt64());
         User32.Rect r = d.Item;
         User32.FillRect(d.Dc, ref r, _surfaceBrush);
         if (e.Kind == Kind.Spacer) return;
@@ -331,7 +331,7 @@ public sealed partial class TrayMenu
         // The hovered row has its own text colours: in a contrast theme its fill is COLOR_HIGHLIGHT, which needs
         // COLOR_HIGHLIGHTTEXT.
         bool hot = enabled && (d.ItemState & OdsSelected) != 0;
-        if (hot) _highlighted = (int)d.ItemData;
+        if (hot) _highlighted = (int)d.ItemData.ToInt64();
         if (hot)
         {
             IntPtr oldBrush = Gdi32.SelectObject(d.Dc, _hoverBrush);
@@ -384,7 +384,7 @@ public sealed partial class TrayMenu
                 widest = Math.Max(widest, rowWidth + Scale(RightPad));
             }
         }
-        finally { User32.ReleaseDC(IntPtr.Zero, screen); }
+        finally { _ = User32.ReleaseDC(IntPtr.Zero, screen); }
         // The menu manager adds a check gutter to every owner-drawn item's reported width, so subtract it (from the
         // minimum too).
         int gutter = CheckGutter();
