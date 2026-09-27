@@ -62,6 +62,7 @@ public sealed partial class ViewerWindow : Window
         _ui = DispatcherQueue;
         _result = result;
         _savedExposure = result.Exposure;
+        App.EnsureResources();
         InitializeComponent();
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 

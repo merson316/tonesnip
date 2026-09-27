@@ -32,6 +32,8 @@ public class PopupWindow : Window
     /// <param name="smallCorners">DWM's small corner radius, for a root drawn at SmallCornerRadius.</param>
     protected PopupWindow(bool activate, bool smallCorners = false)
     {
+        // Before the derived window's markup loads, which runs after this constructor.
+        App.EnsureResources();
         _activate = activate;
         this.WhenClosed(() => { _closed = true; App.Current.Log.Debug($"popup closed: {GetType().Name}"); });
         Hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);

@@ -135,8 +135,9 @@ public static class ThemeManager
     /// <summary>Sets the Light and Dark Accent and AccentText tokens to the desktop's accent; the colours in
     /// Theme/Dark.xaml and Theme/Light.xaml are the fallback.</summary>
     /// <remarks>The existing brushes are mutated rather than replaced: a ThemeResource holds the dictionary's
-    /// instance, so changing its colour reaches everything on screen.</remarks>
-    private static void ApplyAccentTokens()
+    /// instance, so changing its colour reaches everything on screen. Also called once the application's dictionaries
+    /// are merged (<see cref="App.EnsureResources"/>): until then there are no tokens to set. UI thread.</remarks>
+    internal static void ApplyAccentTokens()
     {
         if (Application.Current?.Resources is not { } app) return;
         // Never "HighContrast": its accent is the user's SystemColorHighlightColor.

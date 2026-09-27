@@ -59,6 +59,7 @@ public partial class SettingsWindow : Window
 
     public SettingsWindow()
     {
+        App.EnsureResources();
         InitializeComponent();
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _ui = DispatcherQueue;

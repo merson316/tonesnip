@@ -1,20 +1,9 @@
 <Application x:Class="ToneSnip.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Empty at startup: the control styles, glyphs and the app's own dictionaries are merged when the first XAML window
+       is made (App.Resources.cs, EnsureResources), so the idle tray app does not hold them. -->
   <Application.Resources>
-    <ResourceDictionary>
-      <ResourceDictionary.MergedDictionaries>
-        <!-- Required by every WinUI control. -->
-        <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls"/>
-        <!-- Icon codepoints. Merged before Controls.xaml, whose templates read them: a dictionary sees only what was
-             merged ahead of it. -->
-        <ResourceDictionary Source="ms-appx:///Theme/Glyphs.xaml"/>
-        <!-- The app's brushes and control styles. -->
-        <ResourceDictionary Source="ms-appx:///Theme/Controls.xaml"/>
-        <!-- BasedOn the SDK's DefaultToggleSwitchStyle, so it is merged at this level, where a StaticResource can see
-             XamlControlsResources. -->
-        <ResourceDictionary Source="ms-appx:///Theme/SettingsToggle.xaml"/>
-      </ResourceDictionary.MergedDictionaries>
-    </ResourceDictionary>
+    <ResourceDictionary/>
   </Application.Resources>
 </Application>
