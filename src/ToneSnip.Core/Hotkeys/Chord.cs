@@ -3,7 +3,7 @@ namespace ToneSnip.Core.Hotkeys;
 /// <summary>A key plus modifier flags, written "Ctrl+Shift+PrintScreen". <see cref="None"/> means unbound.</summary>
 public readonly record struct Chord(int VirtualKey, bool Ctrl, bool Shift, bool Alt, bool Win)
 {
-    public static readonly Chord None = default;
+    public static readonly Chord None;
     public bool IsNone => VirtualKey == 0;
     public bool HasModifier => Ctrl || Shift || Alt || Win;
 

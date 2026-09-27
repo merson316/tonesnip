@@ -53,6 +53,7 @@ internal static partial class Screenshots
     private static List<Core.Output.HistoryEntry> _seededRows = new();
 
     private static readonly List<Shot> Index = new();
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
     private static int _failures;
     private static IntRect _primary, _work;
     private static double _scale = 1.0;
@@ -108,7 +109,7 @@ internal static partial class Screenshots
             // each palette.
             await Section("both", "tray", () => { CaptureTrayGlyphs(dir); CaptureTrayMenu(dir); return Task.CompletedTask; });
 
-            File.WriteAllText(Path.Combine(dir, "index.json"), JsonSerializer.Serialize(Index, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(Path.Combine(dir, "index.json"), JsonSerializer.Serialize(Index, IndentedJson));
             app.Log.Info($"screenshots: {Index.Count} files written, {_failures} failed");
         }
         catch (Exception ex)

@@ -414,7 +414,7 @@ public sealed partial class HistoryFlyout : PopupWindow
     }
 
     /// <summary>The default delay from settings, or 0 if the stored value is not one of the choices.</summary>
-    private int Delay => SnipSettings.Delays.Contains(App.Current.Settings.DefaultDelay) ? App.Current.Settings.DefaultDelay : 0;
+    private static int Delay => SnipSettings.Delays.Contains(App.Current.Settings.DefaultDelay) ? App.Current.Settings.DefaultDelay : 0;
 
     private void OnDelayPicker(object sender, RoutedEventArgs e)
     {

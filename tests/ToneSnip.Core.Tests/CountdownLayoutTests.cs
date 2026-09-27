@@ -40,8 +40,7 @@ public class CountdownLayoutTests
     {
         // A second monitor to the right and above the primary: the inset is from that monitor's own corner.
         var monitor = new IntRect(3440, -422, 1440, 2560);
-        CountdownLayout l = CountdownLayout.For(monitor, scale: 1.0);
-        IntRect at = l.Place(monitor, scale: 1.0, windowWidth: 120, windowHeight: 120);
+        IntRect at = CountdownLayout.Place(monitor, scale: 1.0, windowWidth: 120, windowHeight: 120);
         Assert.Equal(monitor.Right - CountdownLayout.Inset - 120, at.Left);
         Assert.Equal(monitor.Top + CountdownLayout.Inset, at.Top);
         Assert.True(at.Right <= monitor.Right && at.Top >= monitor.Top);

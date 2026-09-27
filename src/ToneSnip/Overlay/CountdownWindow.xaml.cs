@@ -43,7 +43,7 @@ public sealed partial class CountdownWindow : PopupWindow
     private void Place()
     {
         (int w, int h) = ContentSize();
-        PlacePhysical(_layout.Place(_monitor, Scale, w, h));
+        PlacePhysical(CountdownLayout.Place(_monitor, Scale, w, h));
     }
 
     /// <summary>

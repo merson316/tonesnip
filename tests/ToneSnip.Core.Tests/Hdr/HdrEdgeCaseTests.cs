@@ -91,7 +91,7 @@ public class HdrEdgeCaseTests
     [Fact]
     public void A_half_image_whose_size_overflows_is_refused()
     {
-        Assert.ThrowsAny<ArgumentException>(() => new HalfImage(65536, 16384, new ushort[0]));
+        Assert.ThrowsAny<ArgumentException>(() => new HalfImage(65536, 16384, Array.Empty<ushort>()));
     }
 
     [Fact]

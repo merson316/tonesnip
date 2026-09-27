@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace ToneSnip.Core.Output;
 
 /// <summary>
@@ -13,11 +15,13 @@ public sealed record SnipNotice(string Title, string Detail)
     {
         if (savedPath != null)
         {
-            string file = savedPath[(savedPath.LastIndexOfAny(new[] { '\\', '/' }) + 1)..];   // Windows paths, on any test host
+            string file = savedPath[(savedPath.AsSpan().LastIndexOfAny(PathSeparators) + 1)..];   // Windows paths, on any test host
             return new("Snip saved", copied ? $"{file}  ·  copied to clipboard" : file);
         }
         if (saveAttempted) return new("Snip not saved", copied ? "Copied to clipboard; the save failed" : "Nothing was saved or copied");
         if (copied) return new("Snip copied", "Copied to clipboard");
         return copyAttempted ? new("Snip not copied", "The clipboard was busy; nothing was copied") : new("Snip taken", "Not copied or saved");
     }
+
+    private static readonly SearchValues<char> PathSeparators = SearchValues.Create("\\/");
 }

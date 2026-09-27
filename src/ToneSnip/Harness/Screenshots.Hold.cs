@@ -327,7 +327,7 @@ internal static partial class Screenshots
         bool hdr = what.EndsWith("hdr", StringComparison.OrdinalIgnoreCase);
         CaptureResult result = hdr
             ? SyntheticResult(hdr: true)
-            : (app.History.Items.FirstOrDefault() is { } newest ? app.History.ToResult(newest) : null) ?? SyntheticResult(hdr: false);
+            : (app.History.Items.Count > 0 && app.History.Items[0] is { } newest ? app.History.ToResult(newest) : null) ?? SyntheticResult(hdr: false);
         if (what.Equals("editor-front", StringComparison.OrdinalIgnoreCase)) { await HoldEditorFront(result, seconds); return; }
         var win = new Viewer.ViewerWindow(result);
         try

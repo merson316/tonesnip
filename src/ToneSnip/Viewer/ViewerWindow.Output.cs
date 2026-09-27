@@ -106,7 +106,7 @@ public sealed partial class ViewerWindow
     /// Copies the current pixels. The render stays on the UI thread (it reads the surface's buffers); the PNG encode and
     /// clipboard write run on the pool over the private copy <see cref="Output"/> produced.
     /// </summary>
-    private Task CopyAsync() => OneOutputAtATime(async () => { await CopyCore(); return true; });
+    private Task<bool> CopyAsync() => OneOutputAtATime(async () => { await CopyCore(); return true; });
 
     private async Task CopyCore()
     {
@@ -209,7 +209,7 @@ public sealed partial class ViewerWindow
     private void OnPin(object sender, RoutedEventArgs e) => _ = PinAsync();
 
     /// <summary>Pins what Copy would copy, as it is now: a private render, so later edits do not reach the pin.</summary>
-    private Task PinAsync() => OneOutputAtATime(async () =>
+    private Task<bool> PinAsync() => OneOutputAtATime(async () =>
     {
         if (!await ExposureIdle() || _closed) return false;
         BgraImage img = Output();
@@ -249,7 +249,7 @@ public sealed partial class ViewerWindow
     }
 
     /// <summary>The same, for a write with no result to hand back (Save as's SDR branch).</summary>
-    private Task RunEncode(Action work) => RunEncode<object?>(() => { work(); return null; });
+    private Task<object?> RunEncode(Action work) => RunEncode<object?>(() => { work(); return null; });
 
     /// <summary>
     /// Starts the sidecar write on the thread pool from the rendered SDR pixels and the result snapshot

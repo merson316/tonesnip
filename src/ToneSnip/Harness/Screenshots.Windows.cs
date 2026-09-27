@@ -129,7 +129,7 @@ internal static partial class Screenshots
 
     private static async Task CaptureEditor(string dir, string theme)
     {
-        var newest = App.Current.History.Items.FirstOrDefault();
+        var newest = App.Current.History.Items.Count > 0 ? App.Current.History.Items[0] : null;
         CaptureResult result = (newest != null ? App.Current.History.ToResult(newest) : null) ?? SyntheticResult(hdr: false);
         var win = new Viewer.ViewerWindow(result);
         try

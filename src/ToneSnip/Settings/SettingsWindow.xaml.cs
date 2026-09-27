@@ -131,7 +131,7 @@ public partial class SettingsWindow : Window
 
     // ----- pages ----------------------------------------------------------------------------------------------------
 
-    private FrameworkElement? Page(int idx) => idx switch
+    private StackPanel? Page(int idx) => idx switch
     {
         GeneralPage => PageGeneral,
         HotkeysPage => PageHotkeys,

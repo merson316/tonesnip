@@ -60,7 +60,7 @@ public sealed class EditorSurface : UserControl
     /// <summary>Staging for the dirty-rect upload, one native buffer per view size with its Length set per paint.
     /// Win2D requires a SetPixelBytes payload of exactly the rectangle's size, which an <c>IBuffer</c> can give inside a
     /// fixed capacity and an over-sized rented array cannot.</summary>
-    private global::Windows.Storage.Streams.IBuffer? _upload;
+    private global::Windows.Storage.Streams.Buffer? _upload;
     private uint _accent = ShapeRenderer.DefaultAccent;
     private bool _zebra;
     private bool _chrome;                // chrome was drawn last paint, so the next dirty rect needs a handle-sized margin

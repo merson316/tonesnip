@@ -369,7 +369,7 @@ public partial class App : Application
     {
         try
         {
-            HistoryItem? newest = History.Items.FirstOrDefault();
+            HistoryItem? newest = History.Items.Count > 0 ? History.Items[0] : null;
             // ToResult may decode the saved file, so run it off the UI thread.
             CaptureResult? r = (newest != null ? await Task.Run(() => History.ToResult(newest)) : null) ?? LastResult;
             if (r != null) OpenViewer(r);

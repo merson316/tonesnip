@@ -3,7 +3,7 @@ namespace ToneSnip.Core.Geometry;
 /// <summary>Integer rectangle in virtual-desktop pixels. Right and Bottom are exclusive.</summary>
 public readonly record struct IntRect(int Left, int Top, int Width, int Height)
 {
-    public static readonly IntRect Empty = default;
+    public static readonly IntRect Empty;
     public int Right => Left + Width;
     public int Bottom => Top + Height;
     public bool IsEmpty => Width <= 0 || Height <= 0;

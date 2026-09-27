@@ -56,7 +56,7 @@ public class FreeformMaskTests
 
     /// <summary>The per-pixel scanline clear FreeformMask used before it went through FreeformSpans, kept as the
     /// reference the spans must reproduce byte for byte.</summary>
-    private static void ReferenceApply(byte[] data, int width, int height, int bpp, IntRect imageBounds, IReadOnlyList<(int X, int Y)> polygon)
+    private static void ReferenceApply(byte[] data, int width, int height, int bpp, IntRect imageBounds, List<(int X, int Y)> polygon)
     {
         if (polygon.Count < 3) return;
         int n = polygon.Count;

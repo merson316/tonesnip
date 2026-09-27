@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace ToneSnip.Core.Output;
 
 /// <summary>Which snips the Recent filter shows: all, or those of one kind. HDR means saved with an HDR copy, as the
@@ -80,9 +82,12 @@ public sealed record HistoryFilter(string Query = "", HistoryShow Show = History
     private static string? FileName(string? path)
     {
         if (path == null) return null;
-        int cut = path.LastIndexOfAny(new[] { '\\', '/' });
+        int cut = path.AsSpan().LastIndexOfAny(PathSeparators);
         return cut < 0 ? path : path[(cut + 1)..];
     }
+
+    /// <summary>Either separator, whatever the host: history paths are Windows paths, and the tests run on Linux.</summary>
+    private static readonly SearchValues<char> PathSeparators = SearchValues.Create("\\/");
 
     private static bool Contains(string? haystack, string word) => haystack != null && haystack.Contains(word, StringComparison.OrdinalIgnoreCase);
 }

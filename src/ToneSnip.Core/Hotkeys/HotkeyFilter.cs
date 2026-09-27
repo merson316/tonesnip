@@ -3,7 +3,7 @@ namespace ToneSnip.Core.Hotkeys;
 /// <summary>The modifier keys held when a key event arrived, as the hook reads them from the async key state.</summary>
 public readonly record struct KeyMods(bool Ctrl, bool Shift, bool Alt, bool Win)
 {
-    public static readonly KeyMods None = default;
+    public static readonly KeyMods None;
 }
 
 /// <summary>What the hook does with one key event: swallow it or pass it on, and the binding it fired, if any.

@@ -27,7 +27,7 @@ public readonly record struct CountdownLayout(double Size, double FontSize)
 
     /// <summary>The window's rectangle in physical pixels, for a window measured at
     /// <paramref name="windowWidth"/> x <paramref name="windowHeight"/> physical pixels.</summary>
-    public IntRect Place(IntRect monitor, double scale, int windowWidth, int windowHeight)
+    public static IntRect Place(IntRect monitor, double scale, int windowWidth, int windowHeight)
     {
         int inset = (int)Math.Round(Inset * (scale <= 0 ? 1.0 : scale));
         return new IntRect(monitor.Right - inset - windowWidth, monitor.Top + inset, windowWidth, windowHeight);
