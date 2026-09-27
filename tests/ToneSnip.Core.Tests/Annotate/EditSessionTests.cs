@@ -192,6 +192,23 @@ public class EditSessionTests
     }
 
     [Fact]
+    public void Switching_tools_with_nothing_in_progress_repaints_nothing()
+    {
+        // An empty dirty rectangle means the whole view to the hosts, which repainted every monitor per tool click.
+        EditSession s = NewSession(Tool.Pen);
+        var seen = new List<IntRect>();
+        s.Changed += seen.Add;
+        s.Tool = Tool.Arrow;
+        s.Tool = Tool.Rect;
+        Assert.Empty(seen);
+        s.Begin(10, 10, InputMods.None); s.Move(60, 50, InputMods.None);
+        seen.Clear();
+        s.Tool = Tool.Pen;   // a drag in flight is dropped, and only where it was drawn is repainted
+        Assert.False(Assert.Single(seen).IsEmpty);
+        Assert.Null(s.InProgress);
+    }
+
+    [Fact]
     public void A_second_crop_dragged_past_the_first_stays_inside_it()
     {
         // The captured pointer can drag past the canvas edge; the new crop must not restore pixels the first removed.

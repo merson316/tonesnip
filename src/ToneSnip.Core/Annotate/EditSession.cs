@@ -207,8 +207,9 @@ public sealed class EditSession
         Shape? inProgress = InProgress, original = _dragOriginal;
         _start = null; _points = null; InProgress = null; _dragOriginal = null; _handle = Handle.None;
         if (!CropMarquee.IsEmpty) { CropMarquee = IntRect.Empty; MarqueeChanged?.Invoke(); }
+        // Nothing drawn, nothing to repaint: switching tools cancels too, and an empty rectangle would mean the whole
+        // view to the hosts.
         if (inProgress != null || original != null) Raise(original, inProgress);
-        else Changed?.Invoke(IntRect.Empty);
     }
 
     private void UpdateDragShape(int x, int y, InputMods mods)
