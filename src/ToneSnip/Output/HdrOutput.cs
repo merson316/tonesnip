@@ -138,6 +138,13 @@ public static class HdrOutput
                 HdrPngWriter.Write(canvas, stream);
                 length = stream.Length;
             }
+            else if (file == "jxr")
+            {
+                // The encoder writes into the file itself, for the same reason: a lossless JPEG XR of a large snip is
+                // tens of MB, which in memory sat in a COM stream and again in its managed copy.
+                JxrEncoder.Save(canvas, s.Hdr.JxrLossless, s.Hdr.JxrQuality / 100f, tmp);
+                length = new FileInfo(tmp).Length;
+            }
             else
             {
                 byte[] bytes = Encode(canvas, sdrRendered, file, s, white);

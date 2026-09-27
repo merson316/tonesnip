@@ -15,6 +15,11 @@ public static class Bitmaps
     public static byte[] EncodeJpeg(BgraImage img, int quality)
         => WicEncode.Run(Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, BgrOnWhite(img), JpegQuality(quality));
 
+    /// <summary><see cref="EncodeJpeg"/> written straight into a new file at <paramref name="path"/>, replacing one
+    /// there, so the encoded bytes are not held in memory either.</summary>
+    public static void SaveJpeg(BgraImage img, int quality, string path)
+        => WicEncode.ToFile(path, Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, BgrOnWhite(img), JpegQuality(quality));
+
     private static RowsFill BgrOnWhite(BgraImage img) => (top, count, rows) => Flatten.ToBgrOnWhite(img, top, count, rows);
 
     private static Action<IPropertyBag2> JpegQuality(int quality) => bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f);

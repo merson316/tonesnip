@@ -21,6 +21,7 @@ internal static class Wic
     public const uint DecodeCacheOnDemand = 0;
 
     [DllImport("shlwapi.dll")] private static extern IStream SHCreateMemStream(IntPtr pInit, uint cbInit);
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)] private static extern int SHCreateStreamOnFileEx(string file, uint mode, uint attributes, bool create, IntPtr template, out IStream? stream);
     [DllImport("ole32.dll")] private static extern int CoCreateInstance(ref Guid clsid, IntPtr outer, uint ctx, ref Guid iid, out IntPtr ppv);
     [DllImport("ole32.dll")] private static extern int CoInitializeEx(IntPtr reserved, uint coInit);
     [ThreadStatic] private static bool _comReady;
@@ -61,6 +62,17 @@ internal static class Wic
         }
         return s ?? throw new InvalidOperationException("SHCreateMemStream failed");
     }
+
+    /// <summary>A new file at <paramref name="path"/> (replacing one there), as a write-only stream an encoder writes
+    /// into directly.</summary>
+    public static IStream FileStream(string path)
+    {
+        int hr = SHCreateStreamOnFileEx(path, StgmWrite | StgmShareDenyWrite | StgmCreate, FileAttributeNormal, true, IntPtr.Zero, out IStream? s);
+        Check(hr, "SHCreateStreamOnFileEx");
+        return s ?? throw new InvalidOperationException("SHCreateStreamOnFileEx returned no stream");
+    }
+
+    private const uint StgmWrite = 0x1, StgmShareDenyWrite = 0x20, StgmCreate = 0x1000, FileAttributeNormal = 0x80;
 
     public static byte[] ReadAll(IStream s)
     {
@@ -266,7 +278,7 @@ internal interface IWICImagingFactory
 /// </summary>
 public delegate void RowsFill(int top, int count, Span<byte> rows);
 
-/// <summary>Shared encode loop: container + pixel format + options → bytes.</summary>
+/// <summary>Shared encode loop: container + pixel format + options → bytes, or straight into a file.</summary>
 internal static class WicEncode
 {
     /// <summary>The largest band a <see cref="RowsFill"/> is asked for: small enough to stay off the Large Object
@@ -283,6 +295,19 @@ internal static class WicEncode
     public static byte[] Run(Guid container, Guid pixelFormat, int width, int height, int stride, RowsFill fill, Action<IPropertyBag2>? options)
         => InMemory(stream => Encode(stream, container, pixelFormat, width, height, options, frame => WriteBands(frame, height, stride, fill)));
 
+    /// <summary>
+    /// As <see cref="Run(Guid, Guid, int, int, int, Array, Action{IPropertyBag2}?)"/>, but the encoder writes straight
+    /// into a new file at <paramref name="path"/> (replacing one there): the encoded bytes are not held in memory, once in
+    /// a COM memory stream and again in the managed copy read out of it. A failed encode deletes what it wrote.
+    /// </summary>
+    public static void ToFile(string path, Guid container, Guid pixelFormat, int width, int height, int stride, Array pixels, Action<IPropertyBag2>? options)
+        => IntoFile(path, stream => Encode(stream, container, pixelFormat, width, height, options, frame => WriteWhole(frame, height, stride, pixels)));
+
+    /// <summary>As the array form of <see cref="ToFile(string, Guid, Guid, int, int, int, Array, Action{IPropertyBag2}?)"/>,
+    /// with the pixels filled a band at a time.</summary>
+    public static void ToFile(string path, Guid container, Guid pixelFormat, int width, int height, int stride, RowsFill fill, Action<IPropertyBag2>? options)
+        => IntoFile(path, stream => Encode(stream, container, pixelFormat, width, height, options, frame => WriteBands(frame, height, stride, fill)));
+
     private static byte[] InMemory(Action<IStream> encode)
     {
         IStream stream = Wic.MemoryStream();
@@ -292,6 +317,24 @@ internal static class WicEncode
             return Wic.ReadAll(stream);
         }
         finally { Marshal.ReleaseComObject(stream); }
+    }
+
+    private static void IntoFile(string path, Action<IStream> encode)
+    {
+        IStream stream = Wic.FileStream(path);
+        bool written = false;
+        try
+        {
+            encode(stream);
+            stream.Commit(0 /* STGC_DEFAULT */);
+            written = true;
+        }
+        finally
+        {
+            // The encoder has let go of the stream by now (Encode releases it first), so this closes the file.
+            Marshal.ReleaseComObject(stream);
+            if (!written) try { File.Delete(path); } catch { }
+        }
     }
 
     /// <summary>One frame of <paramref name="width"/> x <paramref name="height"/> in <paramref name="pixelFormat"/> into

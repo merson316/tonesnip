@@ -12,7 +12,9 @@ public static class ImageSaver
         Directory.CreateDirectory(folder);
         string ext = format == "jpeg" ? "jpg" : "png";
         string path = FileNaming.Resolve(folder, FileNaming.Build(local, ext), File.Exists);
-        File.WriteAllBytes(path, format == "jpeg" ? Bitmaps.EncodeJpeg(image, jpegQuality) : png ?? Bitmaps.EncodePng(image));
+        // A JPEG is encoded straight into the file: nothing else reads its bytes, so they need not be held in memory.
+        if (format == "jpeg") Bitmaps.SaveJpeg(image, jpegQuality, path);
+        else File.WriteAllBytes(path, png ?? Bitmaps.EncodePng(image));
         return path;
     }
 }
