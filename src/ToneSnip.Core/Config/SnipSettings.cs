@@ -5,27 +5,27 @@ namespace ToneSnip.Core.Config;
 
 public sealed record SnipHotkeys
 {
-    public string Region { get; init; } = "PrintScreen";
-    public string Window { get; init; } = "Ctrl+PrintScreen";
-    public string FullScreenAll { get; init; } = "Shift+PrintScreen";
-    public string ActiveWindow { get; init; } = "Alt+PrintScreen";
+    public string Region { get; set; } = "PrintScreen";
+    public string Window { get; set; } = "Ctrl+PrintScreen";
+    public string FullScreenAll { get; set; } = "Shift+PrintScreen";
+    public string ActiveWindow { get; set; } = "Alt+PrintScreen";
     /// <summary>Opens the recent-snips flyout.</summary>
-    public string History { get; init; } = "Ctrl+Shift+PrintScreen";
-    public bool ReplaceSnippingTool { get; init; }
+    public string History { get; set; } = "Ctrl+Shift+PrintScreen";
+    public bool ReplaceSnippingTool { get; set; }
 }
 
 public sealed record AnnotateSettings
 {
     /// <summary>"accent" or "#RRGGBB".</summary>
-    public string Colour { get; init; } = "accent";
-    public int Width { get; init; } = 4;
-    public int TextSize { get; init; } = 20;
+    public string Colour { get; set; } = "accent";
+    public int Width { get; set; } = 4;
+    public int TextSize { get; set; } = 20;
     /// <summary>New text goes on a filled box of the annotation colour (the text tool's background box).</summary>
-    public bool TextBackground { get; init; }
+    public bool TextBackground { get; set; }
     /// <summary>Blur and Pixelate hide content with a generated pattern instead of the real pixels.</summary>
-    public bool PrivacyMode { get; init; } = true;
+    public bool PrivacyMode { get; set; } = true;
     /// <summary>Freeform snips: cut annotations outside the lasso (true) or let them extend over the transparent area (false).</summary>
-    public bool ClipToLasso { get; init; } = true;
+    public bool ClipToLasso { get; set; } = true;
 
     public ToneSnip.Core.Annotate.Style ToStyle(uint accentArgb)
     {
@@ -44,20 +44,23 @@ public sealed record AnnotateSettings
 public sealed record HdrSettings
 {
     /// <summary>none | jxr | png | jpeg: the HDR copy written next to the SDR file.</summary>
-    public string File { get; init; } = "none";
-    public bool JxrLossless { get; init; } = true;
-    public int JxrQuality { get; init; } = 90;
+    public string File { get; set; } = "none";
+    public bool JxrLossless { get; set; } = true;
+    public int JxrQuality { get; set; } = 90;
     /// <summary>Tonemap HDR frames on the graphics card and keep them there while the overlay is up, reading back only
     /// what is asked for. Off falls back to the CPU path, which copies each frame into memory. No UI: a kill switch,
     /// overridden by TONESNIP_GPU_TONEMAP=0 or 1.</summary>
-    public bool GpuTonemap { get; init; } = true;
+    public bool GpuTonemap { get; set; } = true;
     /// <summary>A copied HDR snip also goes on the clipboard as JPEG XR under "image/vnd.ms-photo", beside the SDR
     /// bitmap and PNG. Off by default: no mainstream app reads an HDR clipboard format yet, and the encode costs time
     /// and keeps the snip's half-float crops until the copy is made.</summary>
-    public bool Clipboard { get; init; }
+    public bool Clipboard { get; set; }
 }
 
 /// <summary>Persistent settings of the snipping tool (%LOCALAPPDATA%\tonesnip\settings.json).</summary>
+/// <remarks>Read and written through generated code (<see cref="SnipSettingsJson"/>), which needs every setting here and
+/// in the nested records to be <c>{ get; set; }</c>: an init-only one loses its default when the file leaves it out.
+/// Change them with <c>with</c>, as before.</remarks>
 public sealed record SnipSettings
 {
     public static readonly string[] Formats = { "png", "jpeg" };
@@ -77,51 +80,51 @@ public sealed record SnipSettings
     /// notification (which also lands in the notification centre). <see cref="ShowToast"/> gates both.</summary>
     public static readonly string[] Notifications = { "tonesnip", "windows" };
 
-    public int Version { get; init; } = 2;
-    public SnipHotkeys Hotkeys { get; init; } = new();
-    public string Tonemap { get; init; } = "desktop";
-    public float Exposure { get; init; } = 1f;
-    public float Knee { get; init; } = 1f;
-    public float? SdrWhiteNits { get; init; }
-    public float? PeakNits { get; init; }
-    public bool AutoExposure { get; init; }
-    public bool CopyToClipboard { get; init; } = true;
-    public bool AutoSave { get; init; } = true;
+    public int Version { get; set; } = 2;
+    public SnipHotkeys Hotkeys { get; set; } = new();
+    public string Tonemap { get; set; } = "desktop";
+    public float Exposure { get; set; } = 1f;
+    public float Knee { get; set; } = 1f;
+    public float? SdrWhiteNits { get; set; }
+    public float? PeakNits { get; set; }
+    public bool AutoExposure { get; set; }
+    public bool CopyToClipboard { get; set; } = true;
+    public bool AutoSave { get; set; } = true;
     /// <summary>null = Pictures\Screenshots.</summary>
-    public string? SaveFolder { get; init; }
-    public string Format { get; init; } = "png";
-    public int JpegQuality { get; init; } = 90;
-    public bool ShowToast { get; init; } = true;
+    public string? SaveFolder { get; set; }
+    public string Format { get; set; } = "png";
+    public int JpegQuality { get; set; } = 90;
+    public bool ShowToast { get; set; } = true;
     /// <summary>tonesnip | windows. The card is the default: it is the app's own window and needs no AUMID registration.</summary>
-    public string Notification { get; init; } = "tonesnip";
+    public string Notification { get; set; } = "tonesnip";
     public static readonly string[] AfterSelects = { "save", "annotate", "annotateFirst", "edit" };
     /// <summary>What happens after a selection: save | annotate | annotateFirst | edit (open the editor after saving).</summary>
-    public string AfterSelect { get; init; } = "save";
-    public AnnotateSettings Annotate { get; init; } = new();
-    public int DefaultDelay { get; init; }
-    public string Theme { get; init; } = "auto";
+    public string AfterSelect { get; set; } = "save";
+    public AnnotateSettings Annotate { get; set; } = new();
+    public int DefaultDelay { get; set; }
+    public string Theme { get; set; } = "auto";
     /// <summary>How the recent-snips flyout lists its snips: row | grid. A change applies the next time it opens.</summary>
-    public string RecentFlyoutLayout { get; init; } = "row";
+    public string RecentFlyoutLayout { get; set; } = "row";
     /// <summary>How many snips the Recent list shows; one of <see cref="HistoryLimits"/>. Lowering it drops the oldest
     /// rows and their thumbnails at once; the snips' own files are never touched.</summary>
-    public int HistoryLimit { get; init; } = Output.HistoryList.DefaultMax;
+    public int HistoryLimit { get; set; } = Output.HistoryList.DefaultMax;
     /// <summary>normal | viewfinder | guides. Normal is the default: the outline 1.0.1 had. A change applies to the next snip.</summary>
-    public string SelectionFrame { get; init; } = "normal";
+    public string SelectionFrame { get; set; } = "normal";
     /// <summary>colour | mono | accent. Monochrome is the default: the Windows 11 convention for a tray glyph.</summary>
-    public string TrayIcon { get; init; } = "mono";
-    public bool ShowNitsReadout { get; init; } = true;
+    public string TrayIcon { get; set; } = "mono";
+    public bool ShowNitsReadout { get; set; } = true;
     /// <summary>hex | rgb: how the colour picker (C in the overlay, the editor's picker) writes the colour it copies.</summary>
-    public string ColorFormat { get; init; } = "hex";
+    public string ColorFormat { get; set; } = "hex";
     /// <summary>Include the mouse pointer in what is captured: an instant snip's image, and the frozen screen a
     /// selection snip starts from (the pointer as it was when the snip began, not the overlay's own crosshair). Off by
     /// default, as in Snipping Tool. Monitors that fall back to GDI never show it.</summary>
-    public bool CaptureCursor { get; init; }
-    public bool StartWithWindows { get; init; }
+    public bool CaptureCursor { get; set; }
+    public bool StartWithWindows { get; set; }
     /// <summary>Whether a snip removed from the Recent list goes to the Recycle Bin (with its HDR copy) rather than
     /// being deleted outright; on by default because a hover delete button is easy to mis-click. The cached thumbnail
     /// under %LOCALAPPDATA% is always deleted.</summary>
-    public bool DeleteToRecycleBin { get; init; } = true;
-    public HdrSettings Hdr { get; init; } = new();
+    public bool DeleteToRecycleBin { get; set; } = true;
+    public HdrSettings Hdr { get; set; } = new();
 
     /// <summary>
     /// The folder under Pictures a snip is saved to when none is set. The harness build uses its own folder so its

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace ToneSnip.Core.Config;
 
@@ -28,7 +29,12 @@ public static class JsonFile
     /// Writes to a uniquely named temporary file, flushes it to disk, and moves it over <paramref name="path"/>. Saves
     /// of one file are serialised; the flush keeps a power loss after the move from leaving an empty file.
     /// </summary>
-    public static void Save<T>(string path, T value)
+    public static void Save<T>(string path, T value) => Save(path, stream => JsonSerializer.Serialize(stream, value, Options));
+
+    /// <summary><see cref="Save{T}(string, T)"/> through generated metadata (<see cref="SnipSettingsJson"/>).</summary>
+    public static void Save<T>(string path, T value, JsonTypeInfo<T> type) => Save(path, stream => JsonSerializer.Serialize(stream, value, type));
+
+    private static void Save(string path, Action<Stream> write)
     {
         string? dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
@@ -39,7 +45,7 @@ public static class JsonFile
             {
                 using (var stream = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
-                    JsonSerializer.Serialize(stream, value, Options);
+                    write(stream);
                     stream.Flush(flushToDisk: true);
                 }
                 File.Move(tmp, path, overwrite: true);

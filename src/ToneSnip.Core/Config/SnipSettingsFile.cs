@@ -29,7 +29,7 @@ public static class SnipSettingsFile
         catch (JsonException e) { return Unreadable(path, $"cannot read {path}: {e.Message}"); }
 
         SnipSettings? parsed;
-        try { parsed = JsonSerializer.Deserialize<SnipSettings>(text, JsonFile.Options); }
+        try { parsed = JsonSerializer.Deserialize(text, SnipSettingsJson.Default.SnipSettings); }
         catch (JsonException e) { return Unreadable(path, $"cannot read {path}: {e.Message}"); }
         if (parsed == null) return Unreadable(path, $"{path} is empty");
         SnipSettings clean = parsed.Sanitized(out List<string> fixes);
@@ -84,5 +84,5 @@ public static class SnipSettingsFile
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
-    public static void Save(string path, SnipSettings settings) => JsonFile.Save(path, settings);
+    public static void Save(string path, SnipSettings settings) => JsonFile.Save(path, settings, SnipSettingsJson.Default.SnipSettings);
 }
