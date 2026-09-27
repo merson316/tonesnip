@@ -364,7 +364,9 @@ public sealed partial class ViewerWindow
             await RunEncode(() =>
             {
                 png = !jpeg || clip ? Bitmaps.EncodePng(img) : null;   // a JPEG save with no clipboard needs no PNG at all
-                File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(img, quality) : png!);
+                // A JPEG goes straight into the file, as ImageSaver writes a snip's: nothing else reads its bytes.
+                if (jpeg) Bitmaps.ReplaceJpeg(img, quality, path);
+                else File.WriteAllBytes(path, png!);
                 if (clip) ClipboardWriter.Set(img, png!, App.Current.Log);
             });
             // The file is written, so the Save has succeeded even if the window has since closed; only the lines that
@@ -540,7 +542,8 @@ public sealed partial class ViewerWindow
             await RunEncode(() =>
             {
                 png = jpeg ? null : Bitmaps.EncodePng(img);
-                File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(img, quality) : png!);
+                if (jpeg) Bitmaps.ReplaceJpeg(img, quality, path);   // the picker may have chosen a file to replace
+                else File.WriteAllBytes(path, png!);
             });
             // The file is written, so the Save as has succeeded and its history row must be recorded even if the window
             // has closed; only the lines that touch elements are guarded.

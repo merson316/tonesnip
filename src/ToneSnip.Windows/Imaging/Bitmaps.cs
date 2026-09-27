@@ -20,6 +20,20 @@ public static class Bitmaps
     public static void SaveJpeg(BgraImage img, int quality, string path)
         => WicEncode.ToFile(path, Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, BgrOnWhite(img), JpegQuality(quality));
 
+    /// <summary><see cref="SaveJpeg"/> for a path that may already hold a file the user wants kept if this fails, as when
+    /// the editor saves over its snip: the JPEG is encoded next to it and moved into place, so a failed encode leaves the
+    /// old file as it was rather than deleted or truncated.</summary>
+    public static void ReplaceJpeg(BgraImage img, int quality, string path)
+    {
+        string tmp = path + ".tmp";
+        try
+        {
+            SaveJpeg(img, quality, tmp);
+            File.Move(tmp, path, overwrite: true);   // atomic on one volume
+        }
+        catch { try { File.Delete(tmp); } catch { } throw; }
+    }
+
     private static RowsFill BgrOnWhite(BgraImage img) => (top, count, rows) => Flatten.ToBgrOnWhite(img, top, count, rows);
 
     private static Action<IPropertyBag2> JpegQuality(int quality) => bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f);

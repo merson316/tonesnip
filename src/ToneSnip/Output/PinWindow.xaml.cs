@@ -315,7 +315,12 @@ public sealed partial class PinWindow : PopupWindow
             string path = file.Path;
             int quality = App.Current.Settings.JpegQuality;
             bool jpeg = path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
-            await Task.Run(() => File.WriteAllBytes(path, jpeg ? Bitmaps.EncodeJpeg(Decode(), quality) : _png));
+            await Task.Run(() =>
+            {
+                // A JPEG is encoded straight into the file, as the editor's Save as does; a PNG is the held bytes.
+                if (jpeg) Bitmaps.ReplaceJpeg(Decode(), quality, path);
+                else File.WriteAllBytes(path, _png);
+            });
             App.Current.Log.Info("pin saved " + path);
         }
         catch (Exception ex) { App.Current.Log.Warn("pin save as: " + ex.Message); }

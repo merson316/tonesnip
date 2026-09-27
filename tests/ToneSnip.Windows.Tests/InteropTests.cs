@@ -83,6 +83,23 @@ public class InteropTests
         Assert.All(Enumerable.Range(0, 16 * 16), i => Assert.True(back.Data[i * 4] >= 250 && back.Data[i * 4 + 1] >= 250 && back.Data[i * 4 + 2] >= 250));
     }
 
+    /// <summary>The editor's Save over its own JPEG: the new pixels replace the file, and no .tmp is left beside it.</summary>
+    [Fact]
+    public void A_replaced_jpeg_holds_the_new_image_and_leaves_no_temporary_file()
+    {
+        string dir = Directory.CreateTempSubdirectory("tonesnip-test-").FullName;
+        try
+        {
+            string path = Path.Combine(dir, "snip.jpg");
+            File.WriteAllBytes(path, [1, 2, 3]);
+            Bitmaps.ReplaceJpeg(Pattern(40, 30, false), 90, path);
+            BgraImage back = Bitmaps.Decode(File.ReadAllBytes(path));
+            Assert.Equal((40, 30), (back.Width, back.Height));
+            Assert.Equal(["snip.jpg"], Directory.GetFiles(dir).Select(Path.GetFileName));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     [Fact]
     public void Garbage_is_refused_rather_than_decoded()
     {
