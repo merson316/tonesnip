@@ -121,12 +121,20 @@ public partial class App : Application
             CapturedOutput? hdr = o.FirstOrDefault(x => x.ReadableHdr != null);
             if (hdr?.ReadableHdr is { } frame)
             {
-                // The Settings preview is 860 DIP wide, so aim for about 1290 physical pixels (150 % scale).
-                int step = Math.Max(1, (int)Math.Round(frame.Width / 1290.0));
-                try { PreviewFrame = new Settings.PreviewSnapshot(frame.Downsample(step), hdr.Info); }
-                catch (Core.Hdr.HdrFrameLostException) { }   // logged where it was found; the last preview stays
-                // Anything else (the device busy past its budget, out of memory) costs only the preview, not the snip.
-                catch (Exception e) { Log.Warn("settings preview: the HDR frame was not downsampled: " + e.Message); }
+                // Off the grab, which runs this handler before it returns: the overlay, or a full-screen snip's build,
+                // does not wait for a preview. The snip may release the frame before this runs (an Escape straight
+                // away); the last preview then stays.
+                OutputInfo info = hdr.Info;
+                _ = Task.Run(() =>
+                {
+                    // The Settings preview is 860 DIP wide, so aim for about 1290 physical pixels (150 % scale).
+                    int step = Math.Max(1, (int)Math.Round(frame.Width / 1290.0));
+                    try { PreviewFrame = new Settings.PreviewSnapshot(frame.Downsample(step), info); }
+                    catch (ObjectDisposedException) { }   // released by the snip first
+                    catch (Core.Hdr.HdrFrameLostException) { }   // logged where it was found
+                    // Anything else (the device busy past its budget, out of memory) costs only the preview, not the snip.
+                    catch (Exception e) { Log.Warn("settings preview: the HDR frame was not downsampled: " + e.Message); }
+                });
             }
         };
 #if TONESNIP_HARNESS
