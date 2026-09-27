@@ -107,12 +107,15 @@ public static class ShapeRenderer
     public static int? DragGhostId(EditSession session) => session.InProgress != null && session.Tool == Tool.Select ? session.Doc.SelectedId : null;
 
     /// <param name="suppressId">Shape left out of the draw pass (not the redaction pass); see <see cref="DragGhostId"/>.</param>
+    /// <param name="live">The shape in hand (<see cref="EditSession.InProgress"/>). A spotlight or magnifier in hand is
+    /// shown live: it stands in for <paramref name="suppressId"/> in the dim and the lenses, or joins them when new, so
+    /// dragging one shows the result rather than an outline. Its border is still drawn as chrome.</param>
     /// <param name="redactions">False skips the pixel passes entirely (redaction growth loop, tile cache, prune, and
     /// the spotlight dim): the caller applies its own (e.g. <see cref="ToneSnip.Core.Hdr.HdrRedaction"/> and
     /// <see cref="Emphasis"/> on the linear-light canvas) and only wants the drawn shapes.</param>
     /// <returns>The viewport-relative rectangle actually repainted (may be larger than <paramref name="dirty"/> when a
     /// redaction it touches needed to grow the area); <see cref="IntRect.Empty"/> if nothing was painted.</returns>
-    public static IntRect Render(AnnotationDoc doc, BgraImage baseImg, IntRect viewport, BgraImage target, IntRect? dirty = null, uint accentArgb = DefaultAccent, int? suppressId = null, bool redactions = true)
+    public static IntRect Render(AnnotationDoc doc, BgraImage baseImg, IntRect viewport, BgraImage target, IntRect? dirty = null, uint accentArgb = DefaultAccent, int? suppressId = null, bool redactions = true, Shape? live = null)
     {
         if (baseImg.Width != target.Width || baseImg.Height != target.Height) throw new ArgumentException("base and target must match");
         IntRect local = new IntRect(0, 0, target.Width, target.Height);
@@ -123,7 +126,8 @@ public static class ShapeRenderer
         {
             // A redaction's own pixels depend on its full rect (mean, jitter grid, blur edges), so an incremental repaint
             // that only redacts the dirty slice would differ from a full render. Grow the area to fully cover every
-            // redaction it touches, transitively, before copying the base or redacting anything.
+            // redaction it touches, transitively, before copying the base or redacting anything. A magnifier's lens
+            // needs no growth: it reads its source from the base and the redaction tiles, not from the target.
             bool grew = true;
             while (grew)
             {
@@ -142,9 +146,14 @@ public static class ShapeRenderer
             foreach (Shape s in doc.Shapes)
                 if (s is RedactShape r) { count++; if (r.Rect.IntersectsWith(areaSrc)) Redact(cache, r, baseImg, target, viewport); }
             if (cache.Count > count) Prune(cache, doc);
-            // After the redactions, so a redaction outside the spotlight is dimmed with everything else; before the
-            // drawn shapes, which stay at full strength so an arrow can point into the light from the dark.
-            Emphasis.Spotlight(doc.Shapes, target, viewport, area);
+            // After the redactions, so a redaction outside the spotlight is dimmed with everything else, and a lens
+            // shows redacted pixels; before the drawn shapes, which stay at full strength so an arrow can point into
+            // the light from the dark. The lenses are read before the dim and written after it, so a callout stays
+            // bright wherever it sits.
+            IReadOnlyList<Shape> emphasis = WithLive(doc.Shapes, suppressId, live);
+            List<Emphasis.LensTile<byte>>? lenses = Emphasis.ReadLenses(emphasis, from => SourcePixels(doc, cache, baseImg, viewport, from), viewport, areaSrc);
+            Emphasis.Spotlight(emphasis, target, viewport, area);
+            Emphasis.WriteLenses(lenses, target.Data, target.Width);
         }
         using Surface g = new(target, area);
         (TextResources text, bool owned) = Text();
@@ -154,6 +163,40 @@ public static class ShapeRenderer
         }
         finally { if (owned) text.Dispose(); }
         return area;
+    }
+
+    /// <summary>The document's shapes for the pixel passes, with a spotlight or magnifier in hand in place of the one it
+    /// was dragged from, or added when it is new. The document's own list when nothing is in hand.</summary>
+    private static IReadOnlyList<Shape> WithLive(IReadOnlyList<Shape> shapes, int? suppressId, Shape? live)
+    {
+        if (live is not (SpotlightShape or MagnifierShape)) return shapes;
+        var list = new List<Shape>(shapes.Count + 1);
+        bool replaced = false;
+        foreach (Shape s in shapes)
+        {
+            if (s.Id == suppressId) { list.Add(live); replaced = true; }
+            else list.Add(s);
+        }
+        if (!replaced) list.Add(live);
+        return list;
+    }
+
+    /// <summary>
+    /// A rectangle of the viewport (source-frame pixels) as it is after the redactions and before anything else: the
+    /// base, with each redaction's cached tile over it in document order, as <see cref="Render"/> lays them down. What a
+    /// magnifier's lens shows, read without touching the target, so a lens repaints on its own.
+    /// </summary>
+    private static byte[] SourcePixels(AnnotationDoc doc, Dictionary<int, CachedTile> cache, BgraImage baseImg, IntRect viewport, IntRect from)
+    {
+        byte[] rows = Emphasis.Crop(baseImg.Data, baseImg.Width, from.Offset(-viewport.Left, -viewport.Top));
+        foreach (Shape s in doc.Shapes)
+        {
+            if (s is not RedactShape r || !r.Rect.IntersectsWith(from) || TileFor(cache, r, baseImg, viewport) is not CachedTile c) continue;
+            IntRect hit = r.Rect.Intersect(viewport), both = hit.Intersect(from);
+            for (int y = both.Top; y < both.Bottom; y++)
+                Buffer.BlockCopy(c.Tile.Data, ((y - hit.Top) * hit.Width + both.Left - hit.Left) * 4, rows, ((y - from.Top) * from.Width + both.Left - from.Left) * 4, both.Width * 4);
+        }
+        return rows;
     }
 
     // ----- redaction tile cache -----
@@ -174,8 +217,18 @@ public static class ShapeRenderer
 
     private static void Redact(Dictionary<int, CachedTile> cache, RedactShape r, BgraImage baseImg, BgraImage target, IntRect viewport)
     {
+        if (TileFor(cache, r, baseImg, viewport) is not CachedTile c) return;
+        IntRect local = r.Rect.Intersect(viewport).Offset(-viewport.Left, -viewport.Top);
+        for (int y = 0; y < local.Height; y++)
+            Buffer.BlockCopy(c.Tile.Data, y * local.Width * 4, target.Data, ((local.Top + y) * target.Width + local.Left) * 4, local.Width * 4);
+    }
+
+    /// <summary>The redacted pixels of <paramref name="r"/> within the viewport, from the cache or computed into it; null
+    /// when it is off the viewport.</summary>
+    private static CachedTile? TileFor(Dictionary<int, CachedTile> cache, RedactShape r, BgraImage baseImg, IntRect viewport)
+    {
         IntRect hit = r.Rect.Intersect(viewport);
-        if (hit.IsEmpty) return;
+        if (hit.IsEmpty) return null;
         IntRect local = hit.Offset(-viewport.Left, -viewport.Top);
         cache.TryGetValue(r.Id, out CachedTile? c);
         bool fits = c != null && c.Tile.Width == local.Width && c.Tile.Height == local.Height;
@@ -193,8 +246,7 @@ public static class ShapeRenderer
             c = new CachedTile(r, baseImg, viewport, tile);
             cache[r.Id] = c;
         }
-        for (int y = 0; y < local.Height; y++)
-            Buffer.BlockCopy(c!.Tile.Data, y * local.Width * 4, target.Data, ((local.Top + y) * target.Width + local.Left) * 4, local.Width * 4);
+        return c;
     }
 
     /// <summary>Drops tiles for redactions the document no longer has (deleted, or undone).</summary>
@@ -260,12 +312,19 @@ public static class ShapeRenderer
         Shape? sel = session.InProgress ?? session.Doc.Selected;
         if (sel != null && session.Tool == Tool.Select)
         {
-            IntRect b = sel.Bounds;
             using Gp.Pen pen = new(0xDCFFFFFF, 1f);
             pen.DashStyle = Gp.DashStyle.Dash;
             using Gp.Pen dark = new(0xA0000000, 3f);
-            Gp.RectF rb = Rect(b, viewport);
-            gr.DrawRectangle(dark, rb.X, rb.Y, rb.W, rb.H); gr.DrawRectangle(pen, rb.X, rb.Y, rb.W, rb.H);
+            // A magnifier is outlined part by part: one box round source and lens would cross the picture between
+            // them, outside the areas a move of it repaints.
+            IntRect[] outlines = sel is MagnifierShape mg
+                ? new[] { Grow(mg.Source, mg.Width / 2 + 1), Grow(mg.Lens, mg.Width / 2 + 1) }
+                : new[] { sel.Bounds };
+            foreach (IntRect b in outlines)
+            {
+                Gp.RectF rb = Rect(b, viewport);
+                gr.DrawRectangle(dark, rb.X, rb.Y, rb.W, rb.H); gr.DrawRectangle(pen, rb.X, rb.Y, rb.W, rb.H);
+            }
             using Gp.Brush fill = Gp.Brush.Solid(0xFFFFFFFF); using Gp.Pen edge = new(accentArgb, 1.5f);
             foreach ((Handle _, int hx, int hy) in Handles.Of(sel))
             {
@@ -426,6 +485,21 @@ public static class ShapeRenderer
                 g.DrawPath(outline, path); g.FillPath(br, path);
                 break;
             }
+            case MagnifierShape m:
+            {
+                uint c = ResolveColor(m.Color, accent);
+                using Gp.Pen thin = new(c, m.ThinWidth);
+                Gp.RectF src = Rect(m.Source, vp);
+                g.DrawRectangle(thin, src.X, src.Y, src.W, src.H);
+                if (m.Connector() is var ((x1, y1), (x2, y2))) g.DrawLine(thin, x1 - vp.Left, y1 - vp.Top, x2 - vp.Left, y2 - vp.Top);
+                // Centred on the lens's edge, and at least 2 px, so it covers the stair-steps of the copied pixels'
+                // rounded corners (Emphasis.InRounded) on both sides.
+                using Gp.Pen border = new(c, Math.Max(2, m.Width));
+                using Gp.Path lens = new();
+                lens.AddRoundedRectangle(Rect(m.Lens, vp), m.LensRadius);
+                g.DrawPath(border, lens);
+                break;
+            }
             case CounterShape c:
             {
                 var r = new Gp.RectF(c.X - vp.Left - c.Radius, c.Y - vp.Top - c.Radius, 2 * c.Radius, 2 * c.Radius);
@@ -438,6 +512,7 @@ public static class ShapeRenderer
         }
     }
 
+    private static IntRect Grow(IntRect r, int by) => IntRect.FromLtrb(r.Left - by, r.Top - by, r.Right + by, r.Bottom + by);
     private static Gp.RectF Rect(IntRect r, IntRect vp) => new(r.Left - vp.Left, r.Top - vp.Top, r.Width, r.Height);
     /// <summary>The colour with a different alpha.</summary>
     private static uint Alpha(uint a, uint argb) => (a << 24) | (argb & 0x00FFFFFF);

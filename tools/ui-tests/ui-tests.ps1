@@ -814,6 +814,7 @@ if (Should-Run 'editor') {
         Test-UI "editor: annotate on brings up the tool row" { winapp ui wait-for 'Tools_Pen' -a $id -t 4000 }
         Shot $id 'editor-annotate'
         Test-AnnotateTool $id 's' 'Tools_Spotlight' 'Spotlight'
+        Test-AnnotateTool $id 'm' 'Tools_Magnifier' 'Magnifier'
         Test-UI "editor: the 'a' accelerator toggles annotate off" {
             winapp ui send-keys 'a' -a $id --via send-input | Out-Null
             Start-Sleep -Milliseconds 800
@@ -1249,7 +1250,7 @@ if (Should-Run 'toolbar-annotate') {
         $p = Start-Hold 'toolbar-annotate' 190
         $id = $p.Id
         # Tools_DoneButton is not checked: only the editor's annotate flow shows it.
-        foreach ($el in 'Tools_Pen','Tools_Arrow','Tools_Spotlight','Tools_ColourPicker','Tools_WidthPicker','Tools_ExposurePicker','Tools_ZebraToggle') {
+        foreach ($el in 'Tools_Pen','Tools_Arrow','Tools_Spotlight','Tools_Magnifier','Tools_ColourPicker','Tools_WidthPicker','Tools_ExposurePicker','Tools_ZebraToggle') {
             Test-UI "toolbar-annotate: $el exists" { winapp ui wait-for $el -a $id -t 4000 }
         }
         Shot $id 'toolbar-annotate'

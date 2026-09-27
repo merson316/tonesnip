@@ -57,8 +57,11 @@ public static class HdrOutput
         if (doc != null)
         {
             foreach (Shape sh in doc.Shapes) if (sh is RedactShape red) HdrRedaction.Apply(red, canvas, viewport, white);
-            // In the SDR render's order: redactions, then the dim, then the drawn shapes on top at full strength.
+            // In the SDR render's order: redactions, the lenses read, the dim, the lenses written, then the drawn
+            // shapes on top at full strength (see Emphasis).
+            List<Emphasis.LensTile<ushort>>? lenses = Emphasis.ReadLenses(doc.Shapes, canvas.Data, canvas.Width, viewport, viewport);
             Emphasis.Spotlight(doc.Shapes, canvas, viewport);
+            Emphasis.WriteLenses(lenses, canvas.Data, canvas.Width);
             if (doc.Shapes.Any(x => !x.IsRedaction && x is not SpotlightShape))   // a spotlight draws nothing of its own
             {
                 var layer = BgraImage.Blank(viewport.Width, viewport.Height);   // transparent: base and target are the same buffer

@@ -23,6 +23,8 @@
   <x:String x:Key="GlyphText">&#xE8D2;</x:String>
   <x:String x:Key="GlyphCounter">&#xF146;</x:String>
   <x:String x:Key="GlyphSpotlight">&#xE754;</x:String>
+  <!-- Zoom, the plain magnifying glass: the editor's zoom buttons use ZoomIn and ZoomOut, which carry a sign. -->
+  <x:String x:Key="GlyphMagnifier">&#xE71E;</x:String>
   <x:String x:Key="GlyphBlur">&#xED1A;</x:String>
   <x:String x:Key="GlyphPixelate">&#xF0E2;</x:String>
   <x:String x:Key="GlyphCrop">&#xE7A8;</x:String>

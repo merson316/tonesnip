@@ -2,7 +2,9 @@ using ToneSnip.Core.Geometry;
 
 namespace ToneSnip.Core.Annotate;
 
-public enum Handle { None, N, NE, E, SE, S, SW, W, NW, Start, End }
+/// <summary>Drag handles. Start and End are a line's ends (End also moves a magnifier's lens, which has no visible
+/// handle for that); the Lens corners change a magnifier's zoom.</summary>
+public enum Handle { None, N, NE, E, SE, S, SW, W, NW, Start, End, LensNW, LensNE, LensSE, LensSW }
 
 public static class Handles
 {
@@ -14,8 +16,19 @@ public static class Handles
         BoxShape b => OfRect(b.Rect),
         RedactShape r => OfRect(r.Rect),
         SpotlightShape sp => OfRect(sp.Rect),
+        MagnifierShape m => OfMagnifier(m),
         _ => Array.Empty<(Handle, int, int)>(),
     };
+
+    /// <summary>The source's eight, then the lens's four corners.</summary>
+    private static (Handle, int, int)[] OfMagnifier(MagnifierShape m)
+    {
+        IntRect l = m.Lens;
+        return OfRect(m.Source).Concat(new[]
+        {
+            (Handle.LensNW, l.Left, l.Top), (Handle.LensNE, l.Right - 1, l.Top), (Handle.LensSE, l.Right - 1, l.Bottom - 1), (Handle.LensSW, l.Left, l.Bottom - 1),
+        }).ToArray();
+    }
 
     private static (Handle, int, int)[] OfRect(IntRect r)
     {

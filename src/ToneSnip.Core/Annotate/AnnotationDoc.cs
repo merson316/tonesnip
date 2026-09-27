@@ -57,24 +57,32 @@ public sealed class AnnotationDoc
         return d;
     }
 
-    public void Add(Shape s) { Commit(_state with { Shapes = Shapes.Append(s).ToArray() }); Changed?.Invoke(Dirty(s)); }
+    public void Add(Shape s)
+    {
+        bool whole = FirstOrLastSpotlight(s);
+        Commit(_state with { Shapes = Shapes.Append(s).ToArray() });
+        Raise(whole, null, s);
+    }
 
     public void Replace(Shape s)
     {
         int i = IndexOf(s.Id); if (i < 0) return;
-        IntRect dirty = Shapes[i].AffectsWholeImage || s.AffectsWholeImage ? IntRect.Empty : Shapes[i].DirtyBounds.Union(s.DirtyBounds);
+        Shape before = Shapes[i];
         Shape[] next = Shapes.ToArray(); next[i] = s;
         Commit(_state with { Shapes = next });
-        Changed?.Invoke(dirty);
+        // A moved or resized spotlight changes only its own old and new areas: outside both the picture was dimmed
+        // and still is.
+        Raise(false, before, s);
     }
 
     public void Remove(int id)
     {
         int i = IndexOf(id); if (i < 0) return;
-        IntRect dirty = Dirty(Shapes[i]);
+        Shape gone = Shapes[i];
+        bool whole = FirstOrLastSpotlight(gone);
         Commit(_state with { Shapes = Shapes.Where(s => s.Id != id).ToArray() });
         if (SelectedId == id) SelectedId = null;
-        Changed?.Invoke(dirty);
+        Raise(whole, gone, null);
     }
 
     public void SetCrop(IntRect crop) { Commit(_state with { Crop = crop }); Changed?.Invoke(IntRect.Empty); }
@@ -106,9 +114,30 @@ public sealed class AnnotationDoc
 
     public Shape? HitTop(int x, int y) { for (int i = Shapes.Count - 1; i >= 0; i--) if (Shapes[i].HitTest(x, y)) return Shapes[i]; return null; }
 
-    /// <summary>What an added or removed shape repaints: its own bounds, or everything for one that dims the rest of
-    /// the picture.</summary>
-    private static IntRect Dirty(Shape s) => s.AffectsWholeImage ? IntRect.Empty : s.DirtyBounds;
+    /// <summary>Adding the first spotlight dims the whole picture and removing the last undims it; any other spotlight
+    /// only lights or darkens its own rectangle. Asked before the edit, when <paramref name="s"/> is the only one.</summary>
+    private bool FirstOrLastSpotlight(Shape s)
+    {
+        if (s is not SpotlightShape) return false;
+        foreach (Shape other in Shapes) if (other is SpotlightShape && other.Id != s.Id) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Raises <see cref="Changed"/> for an edit, part by part (<see cref="DirtyRegion"/>), or once with Empty for the
+    /// whole picture. A redaction also repaints the lens of every magnifier whose source it overlaps, since a lens
+    /// shows its source's pixels redacted.
+    /// </summary>
+    private void Raise(bool whole, Shape? before, Shape? after)
+    {
+        if (whole) { Changed?.Invoke(IntRect.Empty); return; }
+        List<IntRect> dirty = DirtyRegion.Of(before, after);
+        foreach (Shape? r in new[] { before, after })
+            if (r is { IsRedaction: true })
+                foreach (Shape s in Shapes)
+                    if (s is MagnifierShape m && m.Source.IntersectsWith(r.Bounds)) dirty.Add(m.Lens);
+        foreach (IntRect r in DirtyRegion.Merge(dirty)) Changed?.Invoke(r);
+    }
 
     private int IndexOf(int id) { for (int i = 0; i < Shapes.Count; i++) if (Shapes[i].Id == id) return i; return -1; }
 

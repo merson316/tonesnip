@@ -71,16 +71,44 @@ public class EmphasisTests
     }
 
     [Fact]
-    public void Adding_moving_and_removing_a_spotlight_repaints_everything()
+    public void Only_the_first_and_last_spotlight_repaint_everything_and_a_move_repaints_its_old_and_new_areas()
     {
         var d = new AnnotationDoc();
         var seen = new List<IntRect>();
         d.Changed += seen.Add;
-        d.Add(new SpotlightShape(d.NewId(), new IntRect(10, 10, 20, 20)));
-        d.Replace(new SpotlightShape(1, new IntRect(15, 10, 20, 20)));
-        d.Remove(1);
-        d.Add(new BoxShape(d.NewId(), new IntRect(0, 0, 10, 10), 2, 1, false, false));
-        Assert.Equal(new[] { true, true, true, false }, seen.Select(r => r.IsEmpty));
+        d.Add(new SpotlightShape(d.NewId(), new IntRect(10, 10, 20, 20)));     // the first: everything darkens
+        Assert.True(Assert.Single(seen).IsEmpty);
+        seen.Clear();
+        d.Add(new SpotlightShape(d.NewId(), new IntRect(200, 10, 20, 20)));    // a second: only its own rectangle
+        Assert.Equal(new IntRect(200, 10, 20, 20), Assert.Single(seen));
+        seen.Clear();
+        d.Replace(new SpotlightShape(1, new IntRect(100, 100, 20, 20)));       // moved far: both ends, not the box round them
+        Assert.Equal(2, seen.Count);
+        Assert.Contains(new IntRect(10, 10, 20, 20), seen); Assert.Contains(new IntRect(100, 100, 20, 20), seen);
+        seen.Clear();
+        d.Remove(2);
+        Assert.Equal(new IntRect(200, 10, 20, 20), Assert.Single(seen));
+        seen.Clear();
+        d.Remove(1);                                                           // the last: everything brightens
+        Assert.True(Assert.Single(seen).IsEmpty);
+    }
+
+    [Fact]
+    public void A_spotlight_in_hand_repaints_everything_only_when_it_is_the_first()
+    {
+        var s = new EditSession(new AnnotationDoc()) { Tool = Tool.Spotlight };
+        var seen = new List<IntRect>();
+        s.Changed += seen.Add;
+        s.Begin(10, 10, InputMods.None); s.Move(50, 40, InputMods.None);
+        Assert.True(seen[0].IsEmpty);                     // the press already holds a spotlight
+        Assert.Single(seen, r => r.IsEmpty);
+        seen.Clear();
+        s.Move(60, 45, InputMods.None);
+        Assert.DoesNotContain(seen, r => r.IsEmpty);
+        s.End(60, 45, InputMods.None);
+        seen.Clear();
+        s.Begin(200, 200, InputMods.None); s.Move(260, 240, InputMods.None);   // a second: its own area
+        Assert.DoesNotContain(seen, r => r.IsEmpty);
     }
 
     [Fact]

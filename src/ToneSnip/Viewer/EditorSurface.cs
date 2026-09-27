@@ -224,7 +224,8 @@ public sealed class EditorSurface : UserControl
         // re-stamped so new shapes drawn here cannot collide with them.
         if (result.Doc != null) foreach (Shape s in result.Doc.Shapes) doc.Add(s.Moved(-result.Region.Left, -result.Region.Top) with { Id = doc.NewId() });
         doc.MarkSaved();   // shapes carried over from a saved snip are already baked in; the editor should not open showing "edited"
-        Session = new EditSession(doc) { Tool = Tool.Select };
+        // A lens has to land on the picture (the crop, once there is one) to be seen or saved.
+        Session = new EditSession(doc) { Tool = Tool.Select, LensArea = _ => View };
         Session.Changed += OnChanged;
         Session.ToolChanged += ApplyCursor;
         View = new IntRect(0, 0, _original.Width, _original.Height);
@@ -270,26 +271,80 @@ public sealed class EditorSurface : UserControl
     private void OnChanged(IntRect dirty)
     {
         if (_original == null) return;
-        if (dirty.IsEmpty && View != CurrentCrop()) { Rebuild(); return; }   // crop applied or undone: the view changed size
+        if (dirty.IsEmpty)
+        {
+            _pendingDirty.Clear();   // a whole repaint covers whatever was waiting
+            if (View != CurrentCrop()) { Rebuild(); return; }   // crop applied or undone: the view changed size
+            Paint(IntRect.Empty);
+            return;
+        }
+        // One edit can report several rectangles (a magnifier's source, lens and line), so they are collected and
+        // painted together once the input that caused them is handled: one chrome pass and one frame, not one each.
+        _pendingDirty.Add(dirty);
+        if (_paintQueued) return;
+        _paintQueued = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.High, PaintPending);
+        if (!_paintQueued) PaintPending();
+    }
+
+    /// <summary>Rectangles reported since the last paint, and whether a paint of them is queued.</summary>
+    private readonly List<IntRect> _pendingDirty = new();
+    private bool _paintQueued;
+
+    private void PaintPending()
+    {
+        _paintQueued = false;
+        if (_pendingDirty.Count == 0 || _released) return;
+        IntRect[] dirty = _pendingDirty.ToArray();
+        _pendingDirty.Clear();
         Paint(dirty);
     }
 
     /// <summary>Renders shapes for a source-frame dirty rect (Empty = all) into the target, draws chrome, and uploads the changed pixels.</summary>
-    private void Paint(IntRect dirty)
+    private void Paint(IntRect dirty) => Paint(new[] { dirty });
+
+    /// <summary>
+    /// <see cref="Paint(IntRect)"/> for several source-frame rectangles at once: each is rendered, then the chrome is
+    /// drawn and the frame invalidated once for all of them.
+    /// </summary>
+    private void Paint(IntRect[] dirty)
     {
         if (_baseView == null || _target == null) return;
         long started = Stopwatch.GetTimestamp();
-        IntRect local = dirty.IsEmpty ? ViewLocal : dirty.Intersect(View).Offset(-View.Left, -View.Top);
-        if (local.IsEmpty) return;   // the change was entirely outside the visible crop
         // Chrome is painted over the target, so last frame's handles survive outside the dirty rect unless the base is
         // recopied there too. Handles ring a shape's bounds, so a handle-sized margin covers them.
         bool chrome = Session.InProgress != null || (Session.Tool == Tool.Select && Session.Doc.Selected != null) || !Session.CropMarquee.IsEmpty;
-        if (chrome || _chrome) local = PadToView(local);
+        bool pad = chrome || _chrome;
         _chrome = chrome;
-        IntRect painted = ShapeRenderer.Render(Session.Doc, _baseView, View, _target, local, _accent, ShapeRenderer.DragGhostId(Session));
+        var uploads = new List<IntRect>(dirty.Length);
+        foreach (IntRect d in dirty)
+        {
+            IntRect local = d.IsEmpty ? ViewLocal : d.Intersect(View).Offset(-View.Left, -View.Top);
+            if (local.IsEmpty) continue;   // the change was entirely outside the visible crop
+            if (pad) local = PadToView(local);
+            IntRect painted = PaintArea(local);
+            if (!painted.IsEmpty) uploads.Add(painted);
+        }
+        if (uploads.Count == 0) return;
+        ShapeRenderer.Chrome(Session, View, _target, _accent);   // whole view: chrome is cheap and handles move
+        // Chrome stays inside the padded dirty rects, except a crop marquee's dimming, which covers the whole view;
+        // that case (and the frame that clears it) uploads the whole view.
+        bool marquee = !Session.CropMarquee.IsEmpty;
+        if (marquee || _marquee) Upload(ViewLocal);
+        else foreach (IntRect r in Core.Annotate.DirtyRegion.Merge(uploads)) Upload(r);
+        _marquee = marquee;
+        _canvas.Invalidate();
+        double ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
+        if (ms > PaintBudgetMs) App.Current.Log.Debug($"paint {ms:F0} ms");
+        Rendered?.Invoke();
+    }
+
+    /// <summary>Renders one view-local rectangle (shapes, lasso, zebra) into the target, and returns what it covered.</summary>
+    private IntRect PaintArea(IntRect local)
+    {
+        IntRect painted = ShapeRenderer.Render(Session.Doc, _baseView!, View, _target!, local, _accent, ShapeRenderer.DragGhostId(Session), live: Session.InProgress);
         if (painted.IsEmpty) painted = local;
         // Only what this paint re-rendered: the rest of the target was cut by the paint that rendered it.
-        ApplyLasso(_target, painted.Union(local));
+        ApplyLasso(_target!, painted.Union(local));
         if (_zebra && _result != null && _result.Crops.Count > 0)
         {
             // Built once per loaded snip. Each crop uses its own monitor's SDR white and the exposure it was actually
@@ -301,18 +356,9 @@ public sealed class EditorSurface : UserControl
                 return (new[] { (c.Bounds.Offset(-_result.Region.Left, -_result.Region.Top), c.Image) }, white / 80f, c.BaseExposure);
             }).ToArray();
             foreach (((IntRect Bounds, HalfImage Half)[] crop, float white, float baseExposure) in _zebraCrops)
-                ShapeRenderer.Zebra(_target, View, crop, white, baseExposure * Session.Doc.Exposure, painted);
+                ShapeRenderer.Zebra(_target!, View, crop, white, baseExposure * Session.Doc.Exposure, painted);
         }
-        ShapeRenderer.Chrome(Session, View, _target, _accent);   // whole view: chrome is cheap and handles move
-        // Chrome stays inside the padded dirty rect, except a crop marquee's dimming, which covers the whole view; that
-        // case (and the frame that clears it) uploads the whole view.
-        bool marquee = !Session.CropMarquee.IsEmpty;
-        Upload(marquee || _marquee ? ViewLocal : painted.Intersect(ViewLocal));
-        _marquee = marquee;
-        _canvas.Invalidate();
-        double ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
-        if (ms > PaintBudgetMs) App.Current.Log.Debug($"paint {ms:F0} ms");
-        Rendered?.Invoke();
+        return painted.Union(local).Intersect(ViewLocal);
     }
 
     /// <summary>Copies one rectangle of <c>_target</c> into the GPU bitmap through the reused staging buffer.</summary>

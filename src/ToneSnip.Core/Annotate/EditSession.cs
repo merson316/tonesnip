@@ -29,6 +29,10 @@ public sealed class EditSession
     public event Action? ToolChanged;
     public event Action? TextRequested;
 
+    /// <summary>Where a magnifier's lens must stay, placed or dragged, given its source rectangle: the host's picture,
+    /// or the monitor the source is on, since a lens can only show pixels its own viewport holds. Null sets no limit.</summary>
+    public Func<IntRect, IntRect>? LensArea { get; set; }
+
     public Tool Tool
     {
         get => _tool;
@@ -57,6 +61,9 @@ public sealed class EditSession
             case Tool.Select:
                 _handle = HandleAt(x, y);
                 if (_handle == Handle.None) { Shape? hit = Doc.HitTop(x, y); Doc.Select(hit?.Id); if (hit == null) return false; }
+                // A magnifier's lens has no handle of its own: a press anywhere in it moves the lens alone, and a
+                // press on the source (or the line) moves the whole callout.
+                if (_handle == Handle.None && Doc.Selected is MagnifierShape m && m.Lens.Contains(x, y)) _handle = Handle.End;
                 _dragOriginal = Doc.Selected; _start = (x, y); return true;
             case Tool.Text:
                 _start = (x, y); return true;
@@ -83,8 +90,10 @@ public sealed class EditSession
                 // Equal the original and would commit a no-op edit.
                 Shape moved = dx == 0 && dy == 0 ? _dragOriginal
                     : _handle == Handle.None ? _dragOriginal.Moved(dx, dy) : _dragOriginal.Resized(_handle, dx, dy) ?? _dragOriginal;
-                IntRect dirty = (InProgress ?? _dragOriginal).DirtyBounds.Union(moved.DirtyBounds);
-                InProgress = moved; Changed?.Invoke(Pad(dirty)); return;
+                // A magnifier's lens stays where a new one may be placed, however the callout is dragged or zoomed.
+                if (moved != _dragOriginal && moved is MagnifierShape mg && LensArea is { } area) moved = mg.ClampedTo(area(mg.Source));
+                Shape before = InProgress ?? _dragOriginal;
+                InProgress = moved; Raise(before, moved); return;
             case Tool.Pen: case Tool.Highlighter:
                 if (_points != null && (Math.Abs(_points[^1].X - x) + Math.Abs(_points[^1].Y - y) >= 2))
                 {
@@ -111,7 +120,7 @@ public sealed class EditSession
                 InProgress = null; _dragOriginal = null; _handle = Handle.None;
                 if (moved == null || original == null) return;
                 if (!moved.Equals(original)) Doc.Replace(moved);
-                else Changed?.Invoke(Pad(moved.DirtyBounds.Union(original.DirtyBounds)));   // dragged back to where it started
+                else Raise(original, moved);   // dragged back to where it started
                 return;
             }
             case Tool.Text:
@@ -135,9 +144,10 @@ public sealed class EditSession
                     LineShape l => Math.Abs(l.X2 - l.X1) + Math.Abs(l.Y2 - l.Y1) < 4,
                     BoxShape b => b.Rect.Width < 4 || b.Rect.Height < 4,
                     RedactShape r => r.Rect.Width < 4 || r.Rect.Height < 4,
+                    MagnifierShape mg => mg.Source.Width < 4 || mg.Source.Height < 4,
                     _ => made.Bounds.Width < 4 || made.Bounds.Height < 4,
                 };
-                if (tiny) { Changed?.Invoke(Pad(made.DirtyBounds)); return; }
+                if (tiny) { Raise(made, null); return; }
                 Doc.Add(made with { Id = Doc.NewId() }); return;
         }
     }
@@ -186,16 +196,17 @@ public sealed class EditSession
     {
         // Both ends of an abandoned move matter: the copy that was being dragged, and the home the real shape was
         // hidden from while it was (hosts suppress the original under an in-progress Select drag).
-        IntRect dirty = (InProgress?.DirtyBounds ?? IntRect.Empty).Union(_dragOriginal?.DirtyBounds ?? IntRect.Empty);
+        Shape? inProgress = InProgress, original = _dragOriginal;
         _start = null; _points = null; InProgress = null; _dragOriginal = null; _handle = Handle.None;
-        if (!CropMarquee.IsEmpty) { CropMarquee = IntRect.Empty; dirty = IntRect.Empty; }
-        Changed?.Invoke(dirty.IsEmpty ? IntRect.Empty : Pad(dirty));
+        if (!CropMarquee.IsEmpty) { CropMarquee = IntRect.Empty; Changed?.Invoke(IntRect.Empty); return; }
+        if (inProgress != null || original != null) Raise(original, inProgress);
+        else Changed?.Invoke(IntRect.Empty);
     }
 
     private void UpdateDragShape(int x, int y, InputMods mods)
     {
         if (_start is not (int sx, int sy)) return;
-        IntRect old = InProgress?.DirtyBounds ?? IntRect.Empty;
+        Shape? old = InProgress;
         bool shift = mods.HasFlag(InputMods.Shift);
         Style st = Doc.Current;
         switch (_tool)
@@ -210,10 +221,27 @@ public sealed class EditSession
                 InProgress = new RedactShape(0, DragRect(sx, sy, x, y, shift), st.Width, _tool == Tool.Blur, Doc.Private, seed); break;
             case Tool.Spotlight:
                 InProgress = new SpotlightShape(0, DragRect(sx, sy, x, y, shift)); break;
+            case Tool.Magnifier:
+                IntRect source = DragRect(sx, sy, x, y, shift);
+                IntRect lensArea = LensArea?.Invoke(source) ?? IntRect.Empty;
+                (int lx, int ly) = MagnifierShape.PlaceLens(source, lensArea);
+                InProgress = new MagnifierShape(0, source, lx, ly, st.Width, st.Color).ClampedTo(lensArea); break;
             case Tool.Crop:
                 CropMarquee = DragRect(sx, sy, x, y, shift); Changed?.Invoke(IntRect.Empty); return;
         }
-        if (InProgress != null) Changed?.Invoke(Pad(old.Union(InProgress.DirtyBounds)));
+        if (InProgress != null) Raise(old, InProgress);
+    }
+
+    /// <summary>
+    /// Repaints what a shape in hand covered and covers now, part by part (<see cref="DirtyRegion"/>), with room for the
+    /// handles. A spotlight in hand is dimmed around live (hosts pass <see cref="InProgress"/> to the renderer), so the
+    /// first one on a picture that had none, and its going again, repaint everything.
+    /// </summary>
+    private void Raise(Shape? before, Shape? after)
+    {
+        bool newSpotlight = _dragOriginal == null && (before ?? after) is SpotlightShape && (before == null || after == null);
+        if (newSpotlight && !Doc.Shapes.Any(s => s is SpotlightShape)) { Changed?.Invoke(IntRect.Empty); return; }
+        foreach (IntRect r in DirtyRegion.Of(before, after, HandleSize)) Changed?.Invoke(r);
     }
 
     private static IntRect DragRect(int sx, int sy, int x, int y, bool square)
@@ -239,6 +267,7 @@ public sealed class EditSession
         TextShape t => t with { Size = st.TextSize, Color = st.Color, Boxed = st.TextBox },
         CounterShape c => c with { Size = st.TextSize, Color = st.Color },
         RedactShape r => r with { Strength = st.Width },
+        MagnifierShape m => m with { Width = st.Width, Color = st.Color },
         _ => s,
     };
 
@@ -247,6 +276,4 @@ public sealed class EditSession
         int n = pts.Count; (int x1, int y1) = pts[Math.Max(0, n - 2)]; (int x2, int y2) = pts[n - 1]; int pad = width + 2;
         return IntRect.FromLtrb(Math.Min(x1, x2) - pad, Math.Min(y1, y2) - pad, Math.Max(x1, x2) + pad + 1, Math.Max(y1, y2) + pad + 1);
     }
-
-    private static IntRect Pad(IntRect r) => r.IsEmpty ? r : IntRect.FromLtrb(r.Left - HandleSize, r.Top - HandleSize, r.Right + HandleSize, r.Bottom + HandleSize);
 }

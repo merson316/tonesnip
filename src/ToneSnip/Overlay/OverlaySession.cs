@@ -122,6 +122,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                     _edit = new EditSession(doc) { Tool = Tool.Pen };
                     _edit.Changed += dirty => { foreach (OverlayWindow w in _windows) w.RenderDirty(dirty); };
                     _edit.TextRequested += () => _ = AskText();
+                    _edit.LensArea = LensArea;
                 }
             }
             ToolbarChanged?.Invoke();
@@ -304,7 +305,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
 
     private IntRect RenderShapesCore(BgraImage baseImg, IntRect monitor, BgraImage target, IntRect? dirty)
         => _edit is { } edit
-            ? Annotate.ShapeRenderer.Render(edit.Doc, baseImg, monitor, target, dirty, Accent, Annotate.ShapeRenderer.DragGhostId(edit))
+            ? Annotate.ShapeRenderer.Render(edit.Doc, baseImg, monitor, target, dirty, Accent, Annotate.ShapeRenderer.DragGhostId(edit), live: edit.InProgress)
             : IntRect.Empty;
 
     private Action<IntPtr, IntRect>? _drawChrome;
@@ -589,6 +590,17 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         _windowList ??= WindowFinder.TopLevel(_ownHwnds);
         foreach (WindowInfo w in _windowList) if (w.Bounds.Contains(x, y)) return w;
         return null;
+    }
+
+    /// <summary>Where a new magnifier's lens may go: on the monitor holding the middle of its source, since each
+    /// monitor's back buffer is rendered from its own frame alone, and inside the selection when there is one, which is
+    /// what gets saved.</summary>
+    private IntRect LensArea(IntRect source)
+    {
+        IntRect monitor = MonitorAt(source.Left + source.Width / 2, source.Top + source.Height / 2);
+        if (monitor.IsEmpty) monitor = desktop;
+        IntRect inSelection = _pendingSelection.Intersect(monitor);
+        return inSelection.IsEmpty ? monitor : inSelection;
     }
 
     /// <summary>The bounds of the monitor holding a point, or Empty. A loop, not LINQ: this runs on every mouse move.</summary>

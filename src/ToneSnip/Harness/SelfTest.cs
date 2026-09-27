@@ -265,8 +265,8 @@ public static partial class SelfTest
             }
 
             // The emphasis shapes, kept out of the pinned document above so its fingerprint stays put: a spotlight
-            // dims the whole picture outside it, and boxed text fills a box. A dirty-rect repaint must still match a
-            // full one tile by tile.
+            // dims the whole picture outside it, boxed text fills a box, and a magnifier's lens copies pixels from
+            // elsewhere. A dirty-rect repaint must still match a full one tile by tile.
             if (!EmphasisCheck()) ok = 0;
 
             // Last, because it grabs again and so overwrites the pooled frames the checks above read.
@@ -389,8 +389,9 @@ public static partial class SelfTest
     }
 
     /// <summary>
-    /// The emphasis shapes through the SDR rasterizer: deterministic, every one leaving marks, the spotlight dimming
-    /// outside itself and not inside, and a repaint in small dirty tiles matching the full render. Prints a fingerprint
+    /// The emphasis shapes through the SDR rasterizer: deterministic, the spotlight dimming outside itself and not
+    /// inside, the text box filled, the lens copying its source, and a repaint in small dirty tiles matching the full
+    /// render. Prints a fingerprint
     /// (not pinned: it covers GDI+ text).
     /// </summary>
     private static bool EmphasisCheck()
@@ -403,6 +404,8 @@ public static partial class SelfTest
         doc.Add(new Core.Annotate.SpotlightShape(doc.NewId(), new IntRect(90, 60, 40, 30)));
         doc.Add(new Core.Annotate.TextShape(doc.NewId(), 140, 20, "Boxed", 14, 0xFFFFF100, Boxed: true));
         doc.Add(new Core.Annotate.RedactShape(doc.NewId(), new IntRect(10, 100, 40, 30), 4, true, true, 9));
+        // Over the redaction (the lens must show the redacted pixels) with its lens out in the dark.
+        doc.Add(new Core.Annotate.MagnifierShape(doc.NewId(), new IntRect(30, 110, 20, 12), 175, 100, 2, 0xFFFF4A4A));
         BgraImage t1 = BgraImage.Blank(w, h), t2 = BgraImage.Blank(w, h), t3 = BgraImage.Blank(w, h);
         Annotate.ShapeRenderer.Render(doc, baseImg, viewport, t1);
         Annotate.ShapeRenderer.Render(doc, baseImg, viewport, t2);
@@ -412,8 +415,56 @@ public static partial class SelfTest
         bool Changed(int x, int y) { int i = (y * w + x) * 4; return t1.Data[i] != baseImg.Data[i] || t1.Data[i + 1] != baseImg.Data[i + 1] || t1.Data[i + 2] != baseImg.Data[i + 2]; }
         bool lit = !Changed(50, 40) && !Changed(110, 80), dimmed = Changed(200, 120) && Changed(5, 5);
         bool boxed = Changed(141, 21);   // inside the box, left of the first letter's ink
-        Console.WriteLine($"emphasis: deterministic={same}, tiledMatchesFull={tiled}, spotlightLit={lit}, outsideDimmed={dimmed}, textBoxFilled={boxed}, hash={Hash(t1.Data)}");
-        return same && tiled && lit && dimmed && boxed;
+        // The lens's middle pixel doubles its source's middle pixel, redacted but undimmed: the source, out in the
+        // dark, is that pixel dimmed.
+        int li = (100 * w + 175) * 4, si = (116 * w + 40) * 4;
+        bool lens = Changed(175, 100);
+        for (int c = 0; c < 3; c++) lens &= Core.Imaging.Emphasis.Dim(t1.Data[li + c]) == t1.Data[si + c];
+        bool dragged = DraggedMatchesFull(doc, baseImg, viewport, t1);
+        Console.WriteLine($"emphasis: deterministic={same}, tiledMatchesFull={tiled}, spotlightLit={lit}, outsideDimmed={dimmed}, textBoxFilled={boxed}, lensCopiesSource={lens}, draggedMatchesFull={dragged}, hash={Hash(t1.Data)}");
+        return same && tiled && lit && dimmed && boxed && lens && dragged;
+    }
+
+    /// <summary>
+    /// Drags a spotlight, a magnifier's lens, a lens corner and the whole callout through an <see cref="Core.Annotate.EditSession"/>,
+    /// repainting only what each move reports as a host does (the shape in hand shown live), and checks after every move
+    /// and release that the picture equals a full render of the same state. <paramref name="painted"/> starts as a full
+    /// render of the document.
+    /// </summary>
+    private static bool DraggedMatchesFull(Core.Annotate.AnnotationDoc doc, BgraImage baseImg, IntRect viewport, BgraImage painted)
+    {
+        var session = new Core.Annotate.EditSession(doc) { Tool = Core.Annotate.Tool.Select, LensArea = _ => viewport };
+        BgraImage full = BgraImage.Blank(viewport.Width, viewport.Height);
+        session.Changed += dirty => Annotate.ShapeRenderer.Render(doc, baseImg, viewport, painted, dirty.IsEmpty ? null : dirty,
+            Annotate.ShapeRenderer.DefaultAccent, Annotate.ShapeRenderer.DragGhostId(session), live: session.InProgress);
+        bool ok = true;
+        void Check()
+        {
+            Annotate.ShapeRenderer.Render(doc, baseImg, viewport, full, null, Annotate.ShapeRenderer.DefaultAccent, Annotate.ShapeRenderer.DragGhostId(session), live: session.InProgress);
+            ok &= full.Data.AsSpan().SequenceEqual(painted.Data);
+        }
+        Core.Annotate.MagnifierShape Mag() => doc.Shapes.OfType<Core.Annotate.MagnifierShape>().First();
+        // Press points, read as each drag starts: inside the first spotlight, inside the lens, on the lens's
+        // bottom-right handle, on the source.
+        var drags = new Func<(int X, int Y, int Dx, int Dy)>[]
+        {
+            () => (50, 40, 40, 30),
+            () => (Mag().Lens.Left + Mag().Lens.Width / 2, Mag().Lens.Top + 5, -60, -30),
+            () => (Mag().Lens.Right - 1, Mag().Lens.Bottom - 1, 25, 10),
+            () => (Mag().Source.Left + 5, Mag().Source.Top + 2, 30, -20),
+        };
+        foreach (Func<(int X, int Y, int Dx, int Dy)> drag in drags)
+        {
+            (int x, int y, int dx, int dy) = drag();
+            doc.Select(doc.HitTop(x, y)?.Id);   // selected first, so a press on a handle takes the handle
+            if (!session.Begin(x, y, Core.Annotate.InputMods.None)) { ok = false; continue; }
+            for (int i = 1; i <= 4; i++) { session.Move(x + dx * i / 4, y + dy * i / 4, Core.Annotate.InputMods.None); Check(); }
+            session.End(x + dx, y + dy, Core.Annotate.InputMods.None);
+            Check();
+            doc.Select(null);
+        }
+        session.Detach();
+        return ok && doc.Shapes.OfType<Core.Annotate.MagnifierShape>().First().Zoom > Core.Annotate.MagnifierShape.DefaultZoom;
     }
 
     /// <summary>

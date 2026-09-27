@@ -93,17 +93,22 @@ public class AnnotationDocTests
     }
 
     [Fact]
-    public void Changed_reports_the_union_of_old_and_new_bounds()
+    public void Changed_reports_the_old_and_new_bounds()
     {
         var d = new AnnotationDoc();
-        IntRect last = IntRect.Empty;
-        d.Changed += r => last = r;
+        var seen = new List<IntRect>();
+        d.Changed += seen.Add;
         d.Add(Box(d.NewId()));
-        Assert.Equal(Box(1).Bounds, last);
-        d.Replace(Box(1, 100));
-        Assert.Equal(Box(1).Bounds.Union(Box(1, 100).Bounds), last);
+        Assert.Equal(Box(1).Bounds, Assert.Single(seen));
+        seen.Clear();
+        d.Replace(Box(1, 100));   // far apart: each end on its own, not the box round both
+        Assert.Equal(new[] { Box(1).Bounds, Box(1, 100).Bounds }, seen);
+        seen.Clear();
+        d.Replace(Box(1, 101));   // overlapping: one rectangle round both
+        Assert.Equal(Box(1, 100).Bounds.Union(Box(1, 101).Bounds), Assert.Single(seen));
+        seen.Clear();
         d.Undo();
-        Assert.Equal(IntRect.Empty, last);   // undo/redo: everything
+        Assert.Equal(IntRect.Empty, Assert.Single(seen));   // undo/redo: everything
     }
 
     [Fact]
