@@ -4,6 +4,7 @@ using ToneSnip.App.Capture;
 using ToneSnip.App.Interop;
 using ToneSnip.Core.Capture;
 using ToneSnip.Core.Config;
+using ToneSnip.Core.Diagnostics;
 using ToneSnip.Core.Geometry;
 using ToneSnip.Core.Imaging;
 using ToneSnip.Windows.Display;
@@ -19,8 +20,9 @@ namespace ToneSnip.App;
 /// <c>cycles</c> times and prints the process footprint after each. Complements <see cref="LeakTest"/>: full-monitor
 /// frames live on the Large Object Heap, so growth can happen without any object surviving its close.
 /// <para>
-/// Passes when the last cycle's private bytes are within <see cref="PlateauPercent"/> % of cycle 2's, nothing from
-/// cycle 1 is still rooted after a forced compacting collect, and every ownership check holds.
+/// Passes when the median private bytes of the last cycles are within <see cref="PlateauPercent"/> % of the early
+/// cycles' median (<see cref="MemoryPlateau"/>; cycle 1 is warm-up), nothing from cycle 1 is still rooted after a forced
+/// compacting collect, and every ownership check holds.
 /// </para>
 /// <para>
 /// It opens real overlay windows, so it runs behind <see cref="HarnessGuard"/>; it takes no mutex, tray, hook or host
@@ -29,7 +31,8 @@ namespace ToneSnip.App;
 /// </summary>
 internal static class MemTest
 {
-    /// <summary>How far the last cycle's private bytes may sit above cycle 2's and still count as a plateau.</summary>
+    /// <summary>How far the late cycles' median private bytes may sit above the early cycles' and still count as a
+    /// plateau.</summary>
     private const double PlateauPercent = 15.0;
 
     private static int _cycles = 6;
@@ -79,11 +82,11 @@ internal static class MemTest
 
             var tracked = new List<(string What, WeakReference<object> Ref)>();
             var pixels = new List<(string What, WeakReference<object> Ref)>();
-            var privates = new long[_cycles + 1];
+            var privates = new long[_cycles];
             for (int i = 1; i <= _cycles; i++)
             {
                 await Cycle(i, i == 1 ? tracked : null, i == 1 ? pixels : null);
-                privates[i] = Report(i);
+                privates[i - 1] = Report(i);
                 if (i == 1 || i == _cycles || i % 50 == 0) Census($"cycle {i}");
             }
 
@@ -115,9 +118,12 @@ internal static class MemTest
             long released = Report("released");
             Line($"memtest: {Mb(pooled)} MB of pooled buffers released, private {Mb(settled)} -> {Mb(released)} MB");
 
-            double growth = privates[2] == 0 ? 0 : (privates[_cycles] - privates[2]) * 100.0 / privates[2];
-            bool plateau = growth <= PlateauPercent;
-            Line($"memtest: cycle 2 private {Mb(privates[2])} MB, cycle {_cycles} private {Mb(privates[_cycles])} MB, {(growth >= 0 ? "+" : "")}{growth:F1} % - {(plateau ? "PLATEAU" : "RAMP")}");
+            // Medians, not single cycles: a real capture or a late collection can put a 40-60 MB spike on any one
+            // cycle, which read as a ramp when it landed on the last one and hid one when it landed on cycle 2.
+            MemoryPlateau.Verdict v = MemoryPlateau.Judge(privates, PlateauPercent);
+            bool plateau = v.Plateau;
+            Line($"memtest: median private of cycles {Span(v.EarlyFirst, v.Window)} {Mb(v.EarlyMedian)} MB, of cycles {Span(v.LateFirst, v.Window)} {Mb(v.LateMedian)} MB, " +
+                 $"{(v.GrowthPercent >= 0 ? "+" : "")}{v.GrowthPercent:F1} % - {(plateau ? "PLATEAU" : "RAMP")}");
             if (rooted > 0) Line($"memtest: {rooted} of cycle 1's session objects are still rooted");
             bool pass = plateau && rooted == 0 && _ownershipFailures == 0;
             Line(pass ? "memtest: PASS" : "memtest: FAIL");
@@ -325,6 +331,8 @@ internal static class MemTest
     }
 
     private static string Mb(long bytes) => (bytes / (1024.0 * 1024.0)).ToString("0.0");
+
+    private static string Span(int first, int count) => count == 1 ? $"{first}" : $"{first}-{first + count - 1}";
 
     private static void Line(string text)
     {
