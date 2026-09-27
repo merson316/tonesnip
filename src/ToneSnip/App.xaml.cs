@@ -156,6 +156,8 @@ public partial class App : Application
         Toasts.Lookup = FindSnipAsync;
         History = new SnipHistory(Log, () => Settings.ResolvedSaveFolder(AppPaths.Pictures), () => Settings.DeleteToRecycleBin, Settings.HistoryLimit);
         History.SweepOrphanThumbs();
+        // Drops the rows whose file went while the app was not running, so they are gone before Recent first opens.
+        _ = History.ProbeAsync();
         // A lower cap prunes at once rather than at the next snip, so the thumbnails it frees go now.
         SettingsChanged += () => RunOnUi(() => History.ApplyLimit(Settings.HistoryLimit));
         Output.Completed += r =>
@@ -378,7 +380,7 @@ public partial class App : Application
     {
         try
         {
-            HistoryItem? newest = History.Items.Count > 0 ? History.Items[0] : null;
+            HistoryItem? newest = History.Items.FirstOrDefault(i => !i.Unreachable);
             // ToResult may decode the saved file, so run it off the UI thread.
             CaptureResult? r = (newest != null ? await Task.Run(() => History.ToResult(newest)) : null) ?? LastResult;
             if (r != null) OpenViewer(r);

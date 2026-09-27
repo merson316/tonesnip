@@ -13,10 +13,11 @@ public sealed class HistoryItem(HistoryEntry entry)
 {
     public HistoryEntry Entry { get; set; } = entry;
     public CaptureResult? Result { get; set; }
-    /// <summary>Whether the snip's file was missing when last probed. Cached and refreshed off the UI thread by
-    /// <see cref="SnipHistory.ProbeAsync"/>, since File.Exists can stall on a network share.</summary>
-    public bool FileMissing { get; internal set; }
-    /// <summary>Whether deleting the file would reach the Recycle Bin. Cached with <see cref="FileMissing"/>; true until
+    /// <summary>Whether the snip's drive or share could not be reached when last probed (unplugged, offline).
+    /// Such a row is kept but left out of <see cref="SnipHistory.Shown"/> until it is back. Refreshed off the UI
+    /// thread by <see cref="SnipHistory.ProbeAsync"/>, since File.Exists can stall on a network share.</summary>
+    public bool Unreachable { get; internal set; }
+    /// <summary>Whether deleting the file would reach the Recycle Bin. Cached with <see cref="Unreachable"/>; true until
     /// probed.</summary>
     public bool RecycleBinCovers { get; internal set; } = true;
     /// <summary>Whether <see cref="HistoryEntry.Thumb"/> is still being written on the thread pool. The flyout shows
@@ -43,6 +44,8 @@ public sealed class SnipHistory
     private HistoryList _list;
     private readonly List<HistoryItem> _items = new();
     public IReadOnlyList<HistoryItem> Items => _items;
+    /// <summary>The rows Recent shows: every item but those whose drive or share is out of reach.</summary>
+    public IReadOnlyList<HistoryItem> Shown => _items.Where(i => !i.Unreachable).ToList();
     public event Action? Changed;
 
     /// <param name="saveFolder">Read at delete time, since the save folder can change while the app runs.</param>
@@ -68,28 +71,70 @@ public sealed class SnipHistory
     }
 
     /// <summary>
-    /// Checks each row's file (exists, Recycle Bin available) on the thread pool, applies the results on the calling
-    /// (UI) thread, and raises <see cref="Changed"/> if any changed.
+    /// Checks each row's file (<see cref="HistoryList.Probe"/>, Recycle Bin available) on the thread pool and applies the
+    /// results on the calling (UI) thread: a row whose file was moved or deleted is dropped with its thumbnail, a row
+    /// whose drive or share cannot be reached is hidden until it can, and <see cref="Changed"/> is raised if anything
+    /// changed.
     /// </summary>
-    public async Task ProbeAsync()
+    public Task ProbeAsync() => _probing is { IsCompleted: false } running ? running : _probing = Probe();
+
+    /// <summary>The probe under way, which a second caller joins rather than starting another: a stalled network share
+    /// would otherwise tie up one pool thread per call.</summary>
+    private Task? _probing;
+
+    private async Task Probe()
     {
         HistoryItem[] items = _items.ToArray();
-        (bool Missing, bool Covers)[] found = await Task.Run(() => items.Select(i =>
+        Probed[] found = await Task.Run(() => Examine(items));
+        Apply(items, found);
+    }
+
+    /// <summary>What <see cref="Examine"/> found for one row, with the path it looked at.</summary>
+    private readonly record struct Probed(string? Path, HistoryProbe Verdict, bool Covers);
+
+    /// <summary>The disk half of <see cref="ProbeAsync"/>: may stall on a network share, so never on the UI thread
+    /// outside the harness.</summary>
+    private static Probed[] Examine(HistoryItem[] items) => items.Select(i =>
+    {
+        string? path = i.Entry.Path;
+        try
         {
-            string? path = i.Entry.Path;
-            if (!PathGuard.IsSafeAbsolute(path)) return (path != null, false);
-            try { return (!File.Exists(path), Shell.RecycleBinCovers(path)); }
-            catch { return (true, false); }
-        }).ToArray());
-        bool moved = false;
+            HistoryProbe verdict = HistoryList.Probe(path, File.Exists, Directory.Exists);
+            return new Probed(path, verdict, verdict == HistoryProbe.Keep && PathGuard.IsSafeAbsolute(path) && Shell.RecycleBinCovers(path!));
+        }
+        // A probe that failed proves nothing about the file, so the row is hidden rather than dropped.
+        catch { return new Probed(path, HistoryProbe.Hide, false); }
+    }).ToArray();
+
+    /// <summary>The UI-thread half of <see cref="ProbeAsync"/>.</summary>
+    private void Apply(HistoryItem[] items, Probed[] found)
+    {
+        bool changed = false;
+        List<HistoryItem> gone = new();
         for (int n = 0; n < items.Length; n++)
         {
-            if (items[n].FileMissing == found[n].Missing && items[n].RecycleBinCovers == found[n].Covers) continue;
-            items[n].FileMissing = found[n].Missing;
-            items[n].RecycleBinCovers = found[n].Covers;
-            moved = true;
+            HistoryItem item = items[n];
+            // A row deleted, or saved to another file, while the probe ran has a stale verdict.
+            if (!_items.Contains(item) || !string.Equals(item.Entry.Path, found[n].Path, StringComparison.OrdinalIgnoreCase)) continue;
+            if (found[n].Verdict == HistoryProbe.Remove) { gone.Add(item); continue; }
+            bool hide = found[n].Verdict == HistoryProbe.Hide;
+            if (item.Unreachable == hide && item.RecycleBinCovers == found[n].Covers) continue;
+            item.Unreachable = hide;
+            item.RecycleBinCovers = found[n].Covers;
+            changed = true;
         }
-        if (moved) Changed?.Invoke();
+        bool listed = false;
+        // Only the thumbnail is the app's own; an HDR copy left behind by the moved or deleted file is the user's.
+        foreach (HistoryItem item in gone)
+        {
+            DeleteOwn(item.Entry.Thumb, Png);
+            listed |= _list.Remove(item.Entry.Id);
+            _items.Remove(item);
+        }
+        if (gone.Count > 0) _log.Info($"history: {gone.Count} row(s) dropped, their files were moved or deleted");
+        // Harness rows are in memory only (SeedForHarness), so they leave nothing to save.
+        if (listed) Save();
+        else if (changed || gone.Count > 0) Changed?.Invoke();
     }
 
     /// <summary>
@@ -134,8 +179,12 @@ public sealed class SnipHistory
         _items.Clear();
         // _list is what Save() writes, so a seeded run has nothing to persist.
         _list = new HistoryList();
+        // The harness wrote these files itself, so their folder is trusted as any folder a snip was saved into is, and
+        // the probe below deletes a dropped row's thumbnail rather than refusing it.
+        foreach (HistoryEntry e in entries) { _items.Add(new HistoryItem(e)); Wrote(e.Path); }
         // Probed synchronously so a screenshot does not race ProbeAsync.
-        foreach (HistoryEntry e in entries) _items.Add(new HistoryItem(e) { FileMissing = e.Path != null && !File.Exists(e.Path) });
+        HistoryItem[] items = _items.ToArray();
+        Apply(items, Examine(items));
         Changed?.Invoke();
     }
 #endif

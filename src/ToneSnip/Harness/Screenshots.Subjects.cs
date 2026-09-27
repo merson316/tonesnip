@@ -44,14 +44,24 @@ internal static partial class Screenshots
                 HarnessData.Row row = HarnessData.Rows[i];
                 BgraImage img = SyntheticImage(row.Width, row.Height);
                 string name = HarnessData.FileName(row);
-                string png = Path.Combine(dir, name);
+                // The folder-gone row's folders are never created; the offline row sits on a drive letter nothing uses,
+                // as a snip on an unplugged drive would.
+                string png = Path.Combine(row.Lost switch
+                {
+                    HarnessData.Lost.FolderGone => Path.Combine(dir, "deleted", "folder"),
+                    HarnessData.Lost.Offline => Path.Combine(UnusedDrive(), "Screenshots"),
+                    _ => dir,
+                }, name);
                 string thumb = Path.Combine(dir, $"thumb-{i + 1}.png");
-                // The "file moved or deleted" row has no PNG; every row, missing or not, keeps its thumbnail.
-                if (row.Missing) { try { File.Delete(png); } catch { /* already absent */ } }
+                // A lost row has no PNG; every row keeps its thumbnail, which the probe deletes with the gone row.
+                if (row.Lost == HarnessData.Lost.Gone) { try { File.Delete(png); } catch { /* already absent */ } }
+                else if (row.Lost != HarnessData.Lost.No) { /* its folder or drive is not there, so neither is the file */ }
                 else File.WriteAllBytes(png, Bitmaps.EncodePng(img));
                 File.WriteAllBytes(thumb, Bitmaps.EncodePng(Bitmaps.Thumbnail(img, Output.SnipHistory.ThumbMaxEdge)));
-                // The HDR copy is named but not written: its badge and format tag come from the path alone.
+                // The HDR copy is named but not written: its badge and format tag come from the path alone. The gone
+                // row's is written, as a stand-in, so a UI test can see that dropping the row leaves the user's file.
                 string? hdrPath = row.HdrFile == null ? null : Output.HdrOutput.PathFor(png, row.HdrFile);
+                if (row.Lost == HarnessData.Lost.Gone && hdrPath != null) File.WriteAllBytes(hdrPath, new byte[] { 0x49, 0x49, 0xBC, 0x01 });
                 entries.Add(new Core.Output.HistoryEntry($"harness{i + 1}", row.Copied ? null : png,
                                                          HarnessData.TakenUtc(row), row.Width, row.Height, row.Hdr, thumb,
                                                          row.Copied ? null : hdrPath, row.Kind, row.Text));
@@ -62,6 +72,15 @@ internal static partial class Screenshots
         _seededRows = entries;
         app.History.SeedForHarness(entries);
         app.Log.Info($"screenshots: seeded {entries.Count} synthetic history rows from {dir}, ages measured from {HarnessData.ReferenceUtc:yyyy-MM-dd HH:mm:ss}Z");
+    }
+
+    /// <summary>The root of the last drive letter no drive uses, mapped network drives included, so a path on it reads
+    /// as an unplugged drive.</summary>
+    private static string UnusedDrive()
+    {
+        var used = new HashSet<char>(DriveInfo.GetDrives().Select(d => char.ToUpperInvariant(d.Name[0])));
+        for (char c = 'Z'; c > 'C'; c--) if (!used.Contains(c)) return c + @":\";
+        throw new InvalidOperationException("every drive letter is in use");
     }
 
     /// <summary>

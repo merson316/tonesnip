@@ -1176,7 +1176,8 @@ if (Should-Run 'flyout') {
         # --- search and filter. The seeded history has ten rows (HarnessData.Rows): one window snip, one pin, one
         # Copy text snip whose text starts "Quarterly figures", three rows with an HDR copy (tagged HDR) and two HDR
         # captures saved as SDR only (tagged SDR, and filtered as SDR), and nine within the past 7 days of the
-        # frozen clock. Flyout_FilterCount reads "<shown> of 10 snips" while a filter is on.
+        # frozen clock. Flyout_FilterCount reads "<shown> of 10 snips" while a filter is on: three more seeded rows are
+        # never shown or counted (see the January search below).
         $id = Ensure-Flyout 'flyout-row' 200
         foreach ($el in 'Flyout_SearchButton','Flyout_FilterButton') {
             Test-UI "flyout-row: $el exists" { winapp ui wait-for $el -a $id -t 4000 }
@@ -1219,6 +1220,25 @@ if (Should-Run 'flyout') {
             winapp ui wait-for 'Flyout_FilterCount' -a $id -t 1200 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0) { throw "the filter count is still showing after Clear filters" }
             $global:LASTEXITCODE = 0
+        }
+        # HarnessData seeds three more rows, dated January 2026 (every shown row is later): one whose file was deleted
+        # from a folder that is still there, which the probe drops with its thumbnail but not its HDR copy (the user's
+        # file); one whose folders were deleted too, on a drive that is there, which is dropped as well; and one on a
+        # drive letter nothing uses, as on an unplugged drive, which is kept but not shown.
+        Test-UI "flyout-row: snips whose file or folder is gone are dropped, one on a missing drive is hidden but kept" {
+            Search-Flyout $id '2026-01'
+            $count = Get-Prop $id 'Flyout_FilterCount' 'Name'
+            $rows = @(Get-Elements $id -Interactive | Where-Object { $_.type -match '^(ListItem|DataItem)$' })
+            Write-Host "        count '$count', $($rows.Count) row(s): $(@($rows | ForEach-Object { $_.name }) -join ' | ')" -ForegroundColor DarkGray
+            if ($count -ne '0 of 10 snips') { throw "the count reads '$count', not '0 of 10 snips'" }
+            if ($rows.Count -ne 0) { throw "$($rows.Count) row(s) from January are showing" }
+            $seed = Join-Path ([IO.Path]::GetTempPath()) 'tonesnip-harness-history'
+            if (Test-Path (Join-Path $seed 'thumb-11.png')) { throw "the dropped row's thumbnail is still in $seed" }
+            if (-not (Get-ChildItem $seed -Filter 'Snip 2026-01-23 *.jxr' -ErrorAction SilentlyContinue)) { throw "the dropped row's HDR copy was deleted from $seed" }
+            if (Test-Path (Join-Path $seed 'thumb-12.png')) { throw "the folder-gone row's thumbnail is still in $seed" }
+            if (-not (Test-Path (Join-Path $seed 'thumb-13.png'))) { throw "the missing-drive row's thumbnail was deleted: the row was dropped, not kept" }
+            winapp ui invoke 'Flyout_ClearFilters' -a $id | Out-Null
+            Start-Sleep -Milliseconds 900
         }
         Test-UI "flyout-row: a second click on the search button puts the box away and ends the search" {
             Search-Flyout $id 'quarterly'

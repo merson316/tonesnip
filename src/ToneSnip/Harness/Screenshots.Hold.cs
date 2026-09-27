@@ -530,7 +530,7 @@ internal static partial class Screenshots
     /// </summary>
     private static (CaptureResult Result, string Thumb) ToastSubject(bool saved)
     {
-        Output.HistoryItem? newest = App.Current.History.Items.FirstOrDefault(i => !i.FileMissing);
+        Output.HistoryItem? newest = App.Current.History.Items.FirstOrDefault(i => !i.Unreachable);
         CaptureResult result = (newest != null ? App.Current.History.ToResult(newest) : null) ?? SyntheticResult(hdr: false);
         string thumb = newest?.Entry.Thumb ?? "";
         if (saved) result.SavedPath ??= Path.Combine(AppPaths.Pictures, Core.Config.SnipSettings.DefaultSaveFolderName, "Snip 2026-09-06 142233.png");

@@ -137,11 +137,11 @@ public sealed partial class HistoryFlyout
     /// <summary>
     /// Shows the search and filter buttons once there is a snip to find, the search box while it is out, the count and
     /// Clear link while a filter is on, and each button filled while its row is open or it is narrowing the list.
-    /// <paramref name="total"/> is every snip in the history.
+    /// <paramref name="total"/> is every snip the history shows (<c>SnipHistory.Shown</c>).
     /// </summary>
     private void ShowFilterState(int? total = null)
     {
-        int all = total ?? App.Current.History.Items.Count;
+        int all = total ?? App.Current.History.Shown.Count;
         // Kept while a filter is on, even if the last snip goes, so the way back to all of them stays.
         bool findable = all > 0 || _filter.IsActive;
         FindButtons.Visibility = findable ? Visibility.Visible : Visibility.Collapsed;

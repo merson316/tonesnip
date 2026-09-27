@@ -225,7 +225,7 @@
                   <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock Text="{x:Bind ShownTitle, Mode=OneWay}" Style="{StaticResource Body}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                               Opacity="{x:Bind ShownTitleOpacity, Mode=OneWay}" VerticalAlignment="Center"/>
+                               VerticalAlignment="Center"/>
                     <!-- The badges keep their width and the name ellipsises into the rest. -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="6,0,0,0" VerticalAlignment="Center"
                                 Visibility="{x:Bind RestingVisibility, Mode=OneWay}">
@@ -300,8 +300,8 @@
                   <Border Background="{x:Bind ConfirmFill, Mode=OneWay}" CornerRadius="{StaticResource SmallCornerRadius}"
                           AutomationProperties.AccessibilityView="Raw">
                     <Button x:Name="ConfirmDeleteBtn" Style="{StaticResource ConfirmDelete}" Foreground="{x:Bind ConfirmForeground, Mode=OneWay}"
-                            Content="{x:Bind ConfirmLabel, Mode=OneWay}" Click="OnConfirmDelete" Tag="{x:Bind}"
-                            AutomationProperties.AutomationId="Flyout_RowConfirmDelete" AutomationProperties.Name="{x:Bind ConfirmLabel, Mode=OneWay}">
+                            Content="Delete" Click="OnConfirmDelete" Tag="{x:Bind}"
+                            AutomationProperties.AutomationId="Flyout_RowConfirmDelete" AutomationProperties.Name="Delete">
                       <Button.Resources>
                         <ResourceDictionary>
                           <ResourceDictionary.MergedDictionaries>
@@ -432,8 +432,8 @@
                       <Border Background="{x:Bind ConfirmFill, Mode=OneWay}" CornerRadius="{StaticResource SmallCornerRadius}"
                               AutomationProperties.AccessibilityView="Raw">
                         <Button x:Name="ConfirmDeleteBtn" Style="{StaticResource ConfirmDelete}" Foreground="{x:Bind ConfirmForeground, Mode=OneWay}"
-                                Content="{x:Bind ConfirmLabel, Mode=OneWay}" Click="OnConfirmDelete" Tag="{x:Bind}"
-                                AutomationProperties.AutomationId="Flyout_RowConfirmDelete" AutomationProperties.Name="{x:Bind ConfirmLabel, Mode=OneWay}">
+                                Content="Delete" Click="OnConfirmDelete" Tag="{x:Bind}"
+                                AutomationProperties.AutomationId="Flyout_RowConfirmDelete" AutomationProperties.Name="Delete">
                           <Button.Resources>
                             <ResourceDictionary>
                               <ResourceDictionary.MergedDictionaries>
@@ -453,7 +453,7 @@
                 <!-- 6 rather than 8: the caption line box adds visual space above the text. -->
                 <StackPanel Grid.Row="1" Margin="0,6,0,0">
                   <TextBlock Text="{x:Bind ShownTitle, Mode=OneWay}" Style="{StaticResource Caption}" Foreground="{ThemeResource TextPrimary}"
-                             TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Opacity="{x:Bind ShownTitleOpacity, Mode=OneWay}"/>
+                             TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                   <TextBlock Text="{x:Bind ShownSubtitle, Mode=OneWay}" Style="{StaticResource Caption}"
                              TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>

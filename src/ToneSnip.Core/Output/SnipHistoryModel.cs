@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ToneSnip.Core.Config;
 
 namespace ToneSnip.Core.Output;
 
@@ -13,6 +14,17 @@ public enum HistoryKind { None = 0, Window = 1, Pin = 2, Text = 4 }
 /// search can find it; it is capped at <see cref="HistoryList.MaxText"/> characters.</summary>
 public sealed record HistoryEntry(string Id, string? Path, DateTime TakenUtc, int Width, int Height, bool Hdr, string Thumb, string? HdrPath = null,
                                   HistoryKind Kind = HistoryKind.None, string? Text = null);
+
+/// <summary>What the Recent probe does with a row after looking for its saved file (<see cref="HistoryList.Probe"/>).</summary>
+public enum HistoryProbe
+{
+    /// <summary>Shown: the file is there, or the snip was never saved.</summary>
+    Keep,
+    /// <summary>Dropped from the history: the file is gone from a drive or share that can still be reached.</summary>
+    Remove,
+    /// <summary>Kept but not shown: the drive or share itself cannot be reached (unplugged, offline).</summary>
+    Hide,
+}
 
 /// <summary>Newest-first list of recent snips, capped; the file-side effects (thumbnail deletion) are left to the caller.</summary>
 public sealed class HistoryList
@@ -84,6 +96,39 @@ public sealed class HistoryList
     {
         var named = new HashSet<string>(entries.Select(e => e.Thumb), StringComparer.OrdinalIgnoreCase);
         return files.Where(f => !named.Contains(f)).ToList();
+    }
+
+    /// <summary>
+    /// Decides a row's fate from its saved file. A row with no file (copied only, a pin, a Copy text snip) is kept. A
+    /// file that is missing is taken as moved or deleted when its drive or share can still be reached, even if its
+    /// folder has gone too: File.Exists is also false for a file on an unplugged drive or an offline share, and such a
+    /// row must come back with its drive, so it is hidden instead. A path that fails
+    /// <see cref="PathGuard.IsSafeAbsolute"/> (a hand-edited history.json) can never be opened, so it is removed without
+    /// touching the disk.
+    /// </summary>
+    /// <param name="fileExists">File.Exists, or a stand-in in tests. Called only with a safe path.</param>
+    /// <param name="folderExists">Directory.Exists, or a stand-in in tests. Called only with the path's root: a drive
+    /// (<c>C:\</c>) or a share (<c>\\server\share</c>).</param>
+    public static HistoryProbe Probe(string? path, Func<string, bool> fileExists, Func<string, bool> folderExists)
+    {
+        if (path == null) return HistoryProbe.Keep;
+        if (!PathGuard.IsSafeAbsolute(path)) return HistoryProbe.Remove;
+        if (fileExists(path)) return HistoryProbe.Keep;
+        // A reachable root is an ancestor that exists, so whatever is missing below it was really moved or deleted.
+        return folderExists(RootOf(path)) ? HistoryProbe.Remove : HistoryProbe.Hide;
+    }
+
+    /// <summary>The drive (<c>C:\</c>), share (<c>\\server\share</c>) or POSIX root a safe path starts from. Parsed by
+    /// hand, as in <see cref="PathGuard"/>, so it answers the Windows way on the Linux test host too.</summary>
+    private static string RootOf(string path)
+    {
+        if (path[0] == '/') return "/";
+        if (path[1] == ':') return path[..2] + "\\";
+        // \\server\share: IsSafeAbsolute has checked that the server is named.
+        int server = path.AsSpan(2).IndexOfAny('\\', '/') + 2;
+        if (server < 2) return path;
+        int share = path.AsSpan(server + 1).IndexOfAny('\\', '/');
+        return share < 0 ? path : path[..(server + 1 + share)];
     }
 
     /// <summary>"just now", "3 min ago", "2 h ago", "yesterday", "5 days ago", or a short date beyond a month.</summary>

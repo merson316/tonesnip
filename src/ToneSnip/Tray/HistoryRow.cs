@@ -29,8 +29,6 @@ public sealed class HistoryRow : INotifyPropertyChanged
     /// <summary>The entry the bindings last reflected, so a refresh can skip unchanged rows. The item itself is
     /// mutated in place on re-save, so the entry record is compared instead.</summary>
     private HistoryEntry _seen;
-    /// <summary>Whether the file was missing at the last update.</summary>
-    private bool _missing;
     /// <summary>Whether the file's drive had a Recycle Bin at the last update, which decides the delete wording.</summary>
     private bool _covers;
     /// <summary>Whether the thumbnail file was still being written at the last update.</summary>
@@ -47,7 +45,6 @@ public sealed class HistoryRow : INotifyPropertyChanged
         Item = item;
         _style = style;
         _seen = item.Entry;
-        _missing = item.FileMissing;
         _covers = item.RecycleBinCovers;
         _thumbPending = item.ThumbPending;
         // No thumbnail yet: the flyout asks for it once a container shows the row (LoadThumb), so opening the flyout
@@ -69,15 +66,13 @@ public sealed class HistoryRow : INotifyPropertyChanged
     {
         Item = item;
         HistoryEntry now = item.Entry;
-        bool missing = item.FileMissing;
         bool covers = item.RecycleBinCovers;
         bool pending = item.ThumbPending;
-        if (_seen == now && missing == _missing && covers == _covers && pending == _thumbPending) return;
+        if (_seen == now && covers == _covers && pending == _thumbPending) return;
         // The editor writes a new thumbnail file per save, so a new path means a new bitmap; a new snip's file exists
         // only once its pending write has landed.
         bool rewritten = !pending && (_thumbPending || !string.Equals(_seen.Thumb, now.Thumb, StringComparison.OrdinalIgnoreCase));
         _seen = now;
-        _missing = missing;
         _covers = covers;
         _thumbPending = pending;
         if (rewritten)
@@ -87,9 +82,9 @@ public sealed class HistoryRow : INotifyPropertyChanged
         }
         foreach (string p in new[]
                  {
-                     nameof(Title), nameof(TitleOpacity), nameof(Subtitle), nameof(AccessibleName), nameof(HdrVisibility),
+                     nameof(Title), nameof(Subtitle), nameof(AccessibleName), nameof(HdrVisibility),
                      nameof(SdrVisibility), nameof(HdrFileVisibility), nameof(HdrFileText), nameof(KindText), nameof(KindVisibility), nameof(FolderVisibility),
-                     nameof(DeleteTip), nameof(ShownTitle), nameof(ShownTitleOpacity), nameof(ShownSubtitle), nameof(ConfirmLabel),
+                     nameof(DeleteTip), nameof(ShownTitle), nameof(ShownSubtitle),
                  })
             Raise(p);
         if (rewritten) { Raise(nameof(ThumbSource)); Raise(nameof(PlaceholderVisibility)); }
@@ -97,12 +92,10 @@ public sealed class HistoryRow : INotifyPropertyChanged
 
     /// <summary>The file's name; for a snip never saved, the first line of its text (a Copy text snip), "Pinned" (a pin
     /// from the snip screen) or "Copied only".</summary>
-    public string Title => Item.FileMissing ? "File moved or deleted"
-        : Item.Entry.Path != null ? Path.GetFileName(Item.Entry.Path)
+    public string Title => Item.Entry.Path != null ? Path.GetFileName(Item.Entry.Path)
         : Item.Entry.Text is { } text ? FirstLine(text)
         : Item.Entry.Kind.HasFlag(HistoryKind.Pin) ? "Pinned"
         : "Copied only";
-    public double TitleOpacity => Item.FileMissing ? 0.55 : 1.0;
     /// <summary>The row's screen-reader name, including what the Raw badges show, e.g. "Snip 120326.png, HDR, JXR,
     /// Window, 6 min ago · 1920 × 1080".</summary>
     public string AccessibleName => string.Join(", ", new[] { Title, Item.Entry.HdrPath != null ? "HDR" : "SDR", HdrFileText, KindText, Subtitle }.Where(p => p.Length > 0));
@@ -137,7 +130,7 @@ public sealed class HistoryRow : INotifyPropertyChanged
     public Visibility SdrVisibility => Item.Entry.HdrPath == null ? Visibility.Visible : Visibility.Collapsed;
     public Visibility HdrFileVisibility => Item.Entry.HdrPath != null ? Visibility.Visible : Visibility.Collapsed;
     public string HdrFileText => Item.Entry.HdrPath == null ? "" : HdrOutput.FormatOf(Item.Entry.HdrPath) switch { "jxr" => "JXR", "png" => "HDR PNG", "jpeg" => "HDR JPG", _ => "HDR file" };
-    public Visibility FolderVisibility => Item.Entry.Path != null && !Item.FileMissing ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility FolderVisibility => Item.Entry.Path != null ? Visibility.Visible : Visibility.Collapsed;
     public Brush HoverSolid => _style.HoverSolid;
     public Brush HoverFade => _style.HoverFade;
     public Brush DeleteGlyph => _style.Glyph;
@@ -146,8 +139,7 @@ public sealed class HistoryRow : INotifyPropertyChanged
     public Brush ConfirmForeground => _style.ArmedGlyph;
     /// <summary>The delete button's tooltip and accessible name, saying where the file goes. A settings change while
     /// the flyout is open shows at the next refresh.</summary>
-    public string DeleteTip => Item.FileMissing ? "Remove from list"
-        : WillRecycle ? "Delete to the Recycle Bin" : "Delete";
+    public string DeleteTip => WillRecycle ? "Delete to the Recycle Bin" : "Delete";
 
     /// <summary>The setting is on and the file's drive has a Recycle Bin; removable and network drives delete outright.</summary>
     private bool WillRecycle => App.Current.Settings.DeleteToRecycleBin && Item.RecycleBinCovers;
@@ -163,17 +155,14 @@ public sealed class HistoryRow : INotifyPropertyChanged
         {
             if (_deleteArmed == value) return;
             _deleteArmed = value;
-            foreach (string p in new[] { nameof(ShownTitle), nameof(ShownTitleOpacity), nameof(ShownSubtitle), nameof(RestingVisibility), nameof(ConfirmVisibility) }) Raise(p);
+            foreach (string p in new[] { nameof(ShownTitle), nameof(ShownSubtitle), nameof(RestingVisibility), nameof(ConfirmVisibility) }) Raise(p);
         }
     }
 
-    public string ShownTitle => !_deleteArmed ? Title : Item.FileMissing ? "Remove from list?" : "Delete this snip?";
-    public double ShownTitleOpacity => _deleteArmed ? 1.0 : TitleOpacity;
+    public string ShownTitle => !_deleteArmed ? Title : "Delete this snip?";
     /// <summary>Kept short: in the row layout the prompt buttons share its line.</summary>
     public string ShownSubtitle => !_deleteArmed ? Subtitle
-        : Item.FileMissing ? "The file is already gone"
         : WillRecycle ? "Goes to the Recycle Bin" : "Deleted permanently";
-    public string ConfirmLabel => Item.FileMissing ? "Remove" : "Delete";
     /// <summary>The badges and the action strip, shown except while the row is asking.</summary>
     public Visibility RestingVisibility => _deleteArmed ? Visibility.Collapsed : Visibility.Visible;
     public Visibility ConfirmVisibility => _deleteArmed ? Visibility.Visible : Visibility.Collapsed;

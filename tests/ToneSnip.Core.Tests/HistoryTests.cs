@@ -144,4 +144,64 @@ public class OrphanThumbTests
         var entries = new[] { new ToneSnip.Core.Output.HistoryEntry("a", null, DateTime.UtcNow, 1, 1, false, @"C:\App\THUMBS\A.png") };
         Assert.Empty(ToneSnip.Core.Output.HistoryList.OrphanThumbs(new[] { @"C:\App\thumbs\a.png" }, entries));
     }
+
+    /// <summary>A disk holding only <paramref name="present"/> (files and folders alike), recording what was asked.</summary>
+    private static (Func<string, bool> File, Func<string, bool> Folder, List<string> Asked) Disk(params string[] present)
+    {
+        var asked = new List<string>();
+        bool Has(string p) { asked.Add(p); return present.Contains(p, StringComparer.OrdinalIgnoreCase); }
+        return (Has, Has, asked);
+    }
+
+    [Fact]
+    public void Probe_keeps_a_file_that_is_there()
+    {
+        var d = Disk(@"C:\Shots\a.png", @"C:\Shots");
+        Assert.Equal(HistoryProbe.Keep, HistoryList.Probe(@"C:\Shots\a.png", d.File, d.Folder));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Shots\a.png", @"C:\")]                           // the folder is still there
+    [InlineData(@"C:\a.png", @"C:\")]
+    [InlineData(@"C:\Old\Shots\a.png", @"C:\")]                       // the folder was deleted too
+    [InlineData(@"C:\Users\me\Pictures\2025\Trip\Day 3\a.png", @"C:\")]   // several levels deleted
+    [InlineData(@"\\nas\share\Shots\a.png", @"\\nas\share")]
+    [InlineData(@"\\nas\share\a.png", @"\\nas\share")]
+    public void Probe_removes_a_missing_file_whose_drive_or_share_is_there(string path, string root)
+    {
+        var d = Disk(@"C:\", @"C:\Shots", @"\\nas\share", @"\\nas\share\Shots");
+        Assert.Equal(HistoryProbe.Remove, HistoryList.Probe(path, d.File, d.Folder));
+        Assert.Equal(new[] { path, root }, d.Asked);
+    }
+
+    [Theory]
+    [InlineData(@"E:\Shots\a.png", @"E:\")]                           // an unplugged drive
+    [InlineData(@"E:\a.png", @"E:\")]
+    [InlineData(@"\\nas\share\Shots\a.png", @"\\nas\share")]          // an offline share
+    [InlineData(@"\\other\pics\a.png", @"\\other\pics")]              // a server that is not on the network
+    public void Probe_hides_but_keeps_a_row_whose_drive_or_share_cannot_be_reached(string path, string root)
+    {
+        var d = Disk(@"C:\", @"C:\Shots");
+        Assert.Equal(HistoryProbe.Hide, HistoryList.Probe(path, d.File, d.Folder));
+        Assert.Equal(new[] { path, root }, d.Asked);
+    }
+
+    [Fact]
+    public void Probe_keeps_a_snip_that_was_never_saved_without_touching_the_disk()
+    {
+        var d = Disk();
+        Assert.Equal(HistoryProbe.Keep, HistoryList.Probe(null, d.File, d.Folder));
+        Assert.Empty(d.Asked);
+    }
+
+    [Theory]
+    [InlineData(@"Shots\a.png")]
+    [InlineData(@"\\?\C:\Shots\a.png")]
+    [InlineData(@"C:\Shots\CON.png")]
+    public void Probe_removes_an_unsafe_path_without_touching_the_disk(string path)
+    {
+        var d = Disk(path, @"C:\Shots");
+        Assert.Equal(HistoryProbe.Remove, HistoryList.Probe(path, d.File, d.Folder));
+        Assert.Empty(d.Asked);
+    }
 }

@@ -35,6 +35,9 @@ public sealed partial class HistoryFlyout : PopupWindow
     private const double FadeMs = 120;
 
     private readonly DispatcherQueueTimer _watch;
+    /// <summary>Probes the history again while the card is open, so a snip whose file goes meanwhile leaves the list and
+    /// one whose drive comes back returns to it.</summary>
+    private readonly DispatcherQueueTimer _reprobe;
     private readonly DateTime _shown = DateTime.UtcNow;
     /// <summary>The list for the chosen layout; the other stays collapsed and unbound.</summary>
     private readonly ListViewBase _items;
@@ -106,12 +109,20 @@ public sealed partial class HistoryFlyout : PopupWindow
         _watch.Tick += OnWatch;
         _watch.Start();
         App.Current.History.Changed += OnHistoryChanged;
-        // Checks file existence and Recycle Bin coverage off the UI thread; changes arrive through History.Changed.
+        // Checks file existence and Recycle Bin coverage off the UI thread, dropping the rows whose file was moved or
+        // deleted; changes arrive through History.Changed.
         _ = App.Current.History.ProbeAsync();
+        _reprobe = DispatcherQueue.CreateTimer();
+        _reprobe.Interval = TimeSpan.FromSeconds(3);
+        _reprobe.IsRepeating = true;
+        _reprobe.Tick += OnReprobe;
+        _reprobe.Start();
         this.WhenClosed(() =>
         {
             _watch.Stop();
             _watch.Tick -= OnWatch;
+            _reprobe.Stop();
+            _reprobe.Tick -= OnReprobe;
             _bandFade?.Stop();
             foreach (Storyboard fade in _actionFades.Values) fade.Stop();
             _actionFades.Clear();
@@ -145,6 +156,15 @@ public sealed partial class HistoryFlyout : PopupWindow
     {
         if (User32.GetForegroundWindow() == Hwnd) { _held = true; return; }
         if (_held || (DateTime.UtcNow - _shown).TotalMilliseconds > 1500) { timer.Stop(); Dismiss(); }
+    }
+
+    private static void OnReprobe(DispatcherQueueTimer timer, object args) => _ = App.Current.History.ProbeAsync();
+
+    /// <summary>A row's file could not be read: probes at once, which drops the row if the file was moved or deleted,
+    /// rather than leaving a dead row until the next tick.</summary>
+    private static void Unreadable(HistoryItem item)
+    {
+        if (item.Entry.Path != null) _ = App.Current.History.ProbeAsync();
     }
 
     private void OnHistoryChanged()
@@ -227,7 +247,8 @@ public sealed partial class HistoryFlyout : PopupWindow
     {
         if (IsClosed) return;
         _style ??= NewRowStyle();
-        IReadOnlyList<HistoryItem> history = App.Current.History.Items;
+        // Rows whose drive or share is out of reach are left out, and counted out, until it is back.
+        IReadOnlyList<HistoryItem> history = App.Current.History.Shown;
         Func<HistoryEntry, bool> passes = FilterPredicate();
         List<HistoryItem> items = history.Where(i => passes(i.Entry)).ToList();
         bool membership = false;
@@ -496,11 +517,15 @@ public sealed partial class HistoryFlyout : PopupWindow
         try
         {
             HistoryItem item = r.Item;
+            bool copied = false;
             await ClipboardWriter.Enqueue(() =>
             {
                 bool hdr = OutputPipeline.CopiesHdr(App.Current.Settings);
-                if (App.Current.History.LoadForCopy(item, hdr) is { } loaded) ClipboardWriter.Set(loaded.Image, loaded.Png, App.Current.Log, loaded.Jxr);
+                if (App.Current.History.LoadForCopy(item, hdr) is not { } loaded) return;
+                ClipboardWriter.Set(loaded.Image, loaded.Png, App.Current.Log, loaded.Jxr);
+                copied = true;
             });
+            if (!copied) Unreadable(item);
         }
         catch (Exception ex) { App.Current.Log.Warn("history copy: " + ex.Message); }
         finally { _working = false; }
@@ -522,7 +547,7 @@ public sealed partial class HistoryFlyout : PopupWindow
         {
             HistoryItem item = r.Item;
             CaptureResult? result = await Task.Run(() => App.Current.History.ToResult(item));
-            if (result == null) return;
+            if (result == null) { Unreadable(item); return; }
             Dismiss();
             App.Current.OpenViewer(result, annotate);
         }
@@ -543,7 +568,7 @@ public sealed partial class HistoryFlyout : PopupWindow
         {
             HistoryItem item = r.Item;
             CaptureResult? result = await Task.Run(() => App.Current.History.ToResult(item));
-            if (result == null) return;
+            if (result == null) { Unreadable(item); return; }
             Dismiss();
             await App.Current.PinAsync(result);
         }
@@ -559,7 +584,7 @@ public sealed partial class HistoryFlyout : PopupWindow
         try
         {
             HistoryItem item = r.Item;
-            if (await Task.Run(() => App.Current.History.Load(item)) is not { } img) return;
+            if (await Task.Run(() => App.Current.History.Load(item)) is not { } img) { Unreadable(item); return; }
             // Kept on the row, so the search finds it from now on.
             App.Current.History.SetText(item, await App.Current.CopyTextAsync(img));
         }
