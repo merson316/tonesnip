@@ -55,6 +55,8 @@
   <x:String x:Key="GlyphShowInFolder">&#xE838;</x:String>
   <x:String x:Key="GlyphDelete">&#xE74D;</x:String>
   <x:String x:Key="GlyphThumbnail">&#xE91B;</x:String>
+  <x:String x:Key="GlyphSearch">&#xE721;</x:String>
+  <x:String x:Key="GlyphFilter">&#xE71C;</x:String>
 
   <!-- Settings: the nav pane -->
   <x:String x:Key="GlyphGeneral">&#xE713;</x:String>

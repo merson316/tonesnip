@@ -49,6 +49,11 @@
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="VerticalContentAlignment" Value="Stretch"/>
       </Style>
+      <!-- A filter choice: the delay chip's look, a little narrower so six fit across the card. -->
+      <Style x:Key="FilterChip" TargetType="ToggleButton" BasedOn="{StaticResource DelayChip}">
+        <Setter Property="Padding" Value="8,0"/>
+        <Setter Property="Height" Value="32"/>
+      </Style>
       <!-- The grid layout's cell; the 2 px margin on each side makes the 4 px gap. -->
       <Style x:Key="HistoryCellContainer" TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
         <Setter Property="Width" Value="172"/>
@@ -60,6 +65,7 @@
     </Border.Resources>
     <Border.KeyboardAccelerators>
       <KeyboardAccelerator Key="Escape" Invoked="OnEscape"/>
+      <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="OnFindAccelerator"/>
     </Border.KeyboardAccelerators>
     <StackPanel>
       <!-- Collapsed swatches that expose this window's theme brushes to code; a lookup in Application.Resources
@@ -72,19 +78,37 @@
         <Border x:Name="TokError" Background="{ThemeResource Error}"/>
         <Border x:Name="TokAccentText" Background="{ThemeResource AccentText}"/>
       </Grid>
-      <!-- Header: capture modes (clicking one starts a snip), the delay pill and the settings button. -->
+      <!-- Header: capture modes (clicking one starts a snip), search and filter, the delay pill and the settings
+           button. -->
       <Grid Height="48" Padding="8,8,8,8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
         </Grid.ColumnDefinitions>
         <controls:ModeGroup x:Name="Modes" VerticalAlignment="Center" AutomationProperties.AutomationId="Flyout_Modes"
                             AutomationProperties.Name="Capture mode"/>
+        <!-- Search and filter, shown once there is a snip to find. Each opens its row below the header; ShowFilterState
+             fills a button while its row is open or it is narrowing the list, and extends its accessible name to say
+             which. -->
+        <StackPanel x:Name="FindButtons" Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                    Visibility="Collapsed">
+          <Button x:Name="SearchBtn" Style="{StaticResource GlyphButton}"
+                  AutomationProperties.AutomationId="Flyout_SearchButton" AutomationProperties.Name="Search"
+                  Foreground="{ThemeResource TextSecondary}" ToolTipService.ToolTip="Search (Ctrl+F)" Click="OnSearchButton">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSearch}" FontSize="16"/>
+          </Button>
+          <Button x:Name="FilterBtn" Style="{StaticResource GlyphButton}"
+                  AutomationProperties.AutomationId="Flyout_FilterButton" AutomationProperties.Name="Filter"
+                  Foreground="{ThemeResource TextSecondary}" ToolTipService.ToolTip="Filter by kind and date" Click="OnFilterButton">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphFilter}" FontSize="16"/>
+          </Button>
+        </StackPanel>
         <!-- The DelayPill template supplies the glyph. ShowDelay extends the accessible name to include the value,
              e.g. "Delay, 3 seconds". -->
-        <Button x:Name="DelayBtn" Grid.Column="2" Style="{StaticResource DelayPill}" VerticalAlignment="Center" Margin="4,0,4,0"
+        <Button x:Name="DelayBtn" Grid.Column="3" Style="{StaticResource DelayPill}" VerticalAlignment="Center" Margin="4,0,4,0"
                 AutomationProperties.AutomationId="Flyout_DelayPill" AutomationProperties.Name="Delay"
                 ToolTipService.ToolTip="Delay before the snip" Click="OnDelayPicker"/>
-        <Button x:Name="SettingsBtn" Grid.Column="3" Style="{StaticResource GlyphButton}"
+        <Button x:Name="SettingsBtn" Grid.Column="4" Style="{StaticResource GlyphButton}"
                 AutomationProperties.AutomationId="Flyout_SettingsButton" AutomationProperties.Name="Settings"
                 Foreground="{ThemeResource TextSecondary}" ToolTipService.ToolTip="Settings" Click="OnSettings">
           <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSettings}" FontSize="16"/>
@@ -96,7 +120,62 @@
            card closes when it loses the foreground. -->
       <controls:DelayBand x:Name="DelayRow" Visibility="Collapsed" AutomationProperties.AutomationId="Flyout_DelayBand" IdPrefix="Flyout"
                           AutomationProperties.Name="Delay"/>
-      <Grid>
+      <!-- The search box, opened by the search button or Ctrl+F. It has no suggestion list: its popup would be a
+           window of its own, and this card closes when it loses the foreground. For the same reason the filters open
+           inline, as the delay band does, rather than in a menu. -->
+      <Grid x:Name="SearchRow" Padding="8,8,8,0" Visibility="Collapsed">
+        <AutoSuggestBox x:Name="Search" PlaceholderText="Search names and text" VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="Flyout_Search" AutomationProperties.Name="Search recent snips"
+                        ToolTipService.ToolTip="Search file names and copied text. Esc clears it, then closes it"
+                        TextChanged="OnSearchChanged" KeyDown="OnSearchKey" PreviewKeyDown="OnSearchPreviewKey">
+          <AutoSuggestBox.QueryIcon>
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphSearch}" FontSize="12"/>
+          </AutoSuggestBox.QueryIcon>
+        </AutoSuggestBox>
+      </Grid>
+      <!-- The filters: what kind of snip, and how recent. Each line is a single-select set, grouped by its parent. -->
+      <Border x:Name="FilterBand" Style="{StaticResource Band}" Height="Auto" Margin="4,8,4,0" Visibility="Collapsed">
+        <StackPanel Spacing="4" XYFocusKeyboardNavigation="Enabled">
+          <StackPanel x:Name="ShowChips" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+            <RadioButton Style="{StaticResource FilterChip}" Content="All" Tag="All" Click="OnShowChip" IsChecked="True"
+                         AutomationProperties.AutomationId="Flyout_ShowAll" AutomationProperties.Name="All kinds" ToolTipService.ToolTip="All kinds"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="HDR" Tag="Hdr" Click="OnShowChip"
+                         AutomationProperties.AutomationId="Flyout_ShowHdr" AutomationProperties.Name="HDR snips"
+                         ToolTipService.ToolTip="Snips saved with an HDR copy"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="SDR" Tag="Sdr" Click="OnShowChip"
+                         AutomationProperties.AutomationId="Flyout_ShowSdr" AutomationProperties.Name="SDR snips" ToolTipService.ToolTip="Snips with no HDR copy"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="Window" Tag="Window" Click="OnShowChip"
+                         AutomationProperties.AutomationId="Flyout_ShowWindow" AutomationProperties.Name="Window snips" ToolTipService.ToolTip="Window snips"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="Pin" Tag="Pin" Click="OnShowChip"
+                         AutomationProperties.AutomationId="Flyout_ShowPin" AutomationProperties.Name="Pins" ToolTipService.ToolTip="Pins made on the snip screen"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="Text" Tag="Text" Click="OnShowChip"
+                         AutomationProperties.AutomationId="Flyout_ShowText" AutomationProperties.Name="Copy text snips" ToolTipService.ToolTip="Copy text snips"/>
+          </StackPanel>
+          <StackPanel x:Name="AgeChips" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+            <RadioButton Style="{StaticResource FilterChip}" Content="Any time" Tag="Any" Click="OnAgeChip" IsChecked="True"
+                         AutomationProperties.AutomationId="Flyout_AgeAny" AutomationProperties.Name="Any time" ToolTipService.ToolTip="Any time"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="Today" Tag="Today" Click="OnAgeChip"
+                         AutomationProperties.AutomationId="Flyout_AgeToday" AutomationProperties.Name="Today" ToolTipService.ToolTip="Taken today"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="7 days" Tag="Week" Click="OnAgeChip"
+                         AutomationProperties.AutomationId="Flyout_AgeWeek" AutomationProperties.Name="Past 7 days" ToolTipService.ToolTip="Taken in the past 7 days"/>
+            <RadioButton Style="{StaticResource FilterChip}" Content="30 days" Tag="Month" Click="OnAgeChip"
+                         AutomationProperties.AutomationId="Flyout_AgeMonth" AutomationProperties.Name="Past 30 days" ToolTipService.ToolTip="Taken in the past 30 days"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+      <!-- How many snips the filter leaves, and the way back to all of them. Shown while a filter is on. -->
+      <Grid x:Name="FilterSummary" Padding="12,4,8,0" Visibility="Collapsed">
+        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="FilterCount" Style="{StaticResource Caption}" VerticalAlignment="Center" TextWrapping="NoWrap"
+                   TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="Flyout_FilterCount"
+                   AutomationProperties.LiveSetting="Polite"/>
+        <HyperlinkButton x:Name="ClearFilters" Grid.Column="1" Style="{StaticResource FooterLink}" Content="Clear filters"
+                         AutomationProperties.AutomationId="Flyout_ClearFilters" AutomationProperties.Name="Clear filters"
+                         ToolTipService.ToolTip="Show every recent snip" Click="OnClearFilters"/>
+      </Grid>
+      <!-- The list or the empty text. While the search box, the filters or their count are out, KeepCardSize fixes
+           its height so they take their room from the list rather than growing the card. -->
+      <Grid x:Name="Body">
         <TextBlock x:Name="Empty" Style="{StaticResource Caption}" Margin="12,8,12,16" TextWrapping="Wrap"/>
         <!-- Row layout (default). PointerMoved shares PointerEntered's handler: after a wheel scroll no PointerEntered
              arrives for the row now under the pointer. IsItemClickEnabled is on only so hover works: with SelectionMode

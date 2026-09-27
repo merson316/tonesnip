@@ -232,6 +232,16 @@ public sealed class SnipHistory
         Save();
     }
 
+    /// <summary>Keeps text recognised in a row's snip (Copy text on the row), so the search finds it from then on.
+    /// Text already kept is not replaced.</summary>
+    public void SetText(HistoryItem item, string? text)
+    {
+        if (item.Entry.Text != null || HistoryList.ClipText(text) is not { } kept || !_items.Contains(item)) return;
+        item.Entry = item.Entry with { Text = kept };
+        _list.Update(item.Entry);
+        Save();
+    }
+
     public void Remove(HistoryItem item, bool deleteFile)
     {
         // The snip and its sidecar may go to the Recycle Bin; the thumbnail is the app's cache and is deleted outright.

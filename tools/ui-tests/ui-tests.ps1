@@ -449,6 +449,51 @@ function Ensure-Flyout {
 }
 
 <#
+    A screenshot can take the foreground from the flyout, which then closes as it would for a click elsewhere.
+    Reopens it if so and runs $Restore on the new one to put back what the next test needs (a search, the filter
+    band, a delete prompt). Returns the flyout's pid.
+#>
+function Resume-Flyout {
+    param([int]$TargetPid, [string]$What, [scriptblock]$Restore)
+    $id = Ensure-Flyout $What 200
+    if ($id -ne $TargetPid) {
+        Write-Note "$What closed during the screenshot; reopened and restored"
+        & $Restore $id
+    }
+    return $id
+}
+
+# Whether an element with exactly this automationId is on screen. A selector is also a text search, so 'wait-for
+# Flyout_Search' is answered by Flyout_SearchButton while the box itself is put away.
+function Test-HasId {
+    param([int]$TargetPid, [string]$Id, [int]$WaitMs = 0)
+    $deadline = (Get-Date).AddMilliseconds($WaitMs)
+    do {
+        if (@(Get-Elements $TargetPid -Interactive | Where-Object { $_.automationId -eq $Id }).Count -gt 0) { return $true }
+        if ((Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
+# Types a search into the Recent card, opening its search box first when it is put away: through UIA when the box
+# takes a value, else as guarded keystrokes.
+function Search-Flyout {
+    param([int]$TargetPid, [string]$Text)
+    if (-not (Test-HasId $TargetPid 'Flyout_Search')) {
+        winapp ui invoke 'Flyout_SearchButton' -a $TargetPid | Out-Null
+        Start-Sleep -Milliseconds 700
+    }
+    winapp ui set-value 'Flyout_Search' $Text -a $TargetPid 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        # The search box may not expose ValuePattern on its own id; type it instead (guarded input).
+        winapp ui focus 'Flyout_Search' -a $TargetPid | Out-Null
+        Start-Sleep -Milliseconds 300
+        foreach ($c in $Text.ToCharArray()) { winapp ui send-keys "$c" -a $TargetPid --via send-input | Out-Null }
+    }
+    Start-Sleep -Milliseconds 900
+}
+
+<#
     History row containers are stamped Flyout_Row1, Flyout_Row2, ... from their index (by
     OnContainerContentChanging, and again by StampRowIds once settled), so a client can address row N.
 #>
@@ -491,6 +536,54 @@ function Test-RowIds {
             winapp ui wait-for $a -a $TargetPid -t 2500 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "$a no longer resolves" }
         }
+    }
+}
+
+# The card's window as "x,y,w,h" (or ",,w,h" when list-windows gives no position).
+function Get-CardBounds {
+    param([int]$TargetPid)
+    $ws = @(Get-Json @('list-windows', '-a', "$TargetPid", '--json'))
+    $w = @($ws | Where-Object { $_.title -ne 'PopupHost' -and $_.width -gt 1 } |
+           Sort-Object -Property { [int]$_.width * [int]$_.height } -Descending)[0]
+    if (-not $w) { return $null }
+    if ($w.rect) { return "$($w.rect.left),$($w.rect.top),$($w.rect.right - $w.rect.left),$($w.rect.bottom - $w.rect.top)" }
+    $x = if ($null -ne $w.x) { $w.x } else { $w.left }
+    $y = if ($null -ne $w.y) { $w.y } else { $w.top }
+    return "$x,$y,$($w.width),$($w.height)"
+}
+
+<#
+    Opening the search box, the filter band and the count line must not change the card: the list gives up the room
+    and scrolls. The card is anchored at the bottom, so growth would also move the header, which is checked too.
+    Every step leaves the card open; the last puts it back as it started.
+#>
+function Test-CardSteady {
+    param([int]$TargetPid, [string]$Layout)
+    Test-UI "${Layout}: search and filter keep the card's size and place" {
+        $want = Get-CardBounds $TargetPid
+        $head = Get-Rect $TargetPid 'Flyout_SettingsButton'
+        if (-not $want -or -not $head) { throw "no bounds for the card or its settings button" }
+        Write-Host "        card $want, settings button at y $($head.Y)" -ForegroundColor DarkGray
+        $steps = @(
+            @{ what = 'search box out';        act = { winapp ui invoke 'Flyout_SearchButton' -a $TargetPid | Out-Null } },
+            @{ what = 'filter band out';       act = { winapp ui invoke 'Flyout_FilterButton' -a $TargetPid | Out-Null } },
+            @{ what = 'HDR filter and count';  act = { winapp ui invoke 'Flyout_ShowHdr' -a $TargetPid | Out-Null } },
+            @{ what = 'no match, empty text';  act = { Search-Flyout $TargetPid 'zzzq' } },
+            @{ what = 'filter band put away';  act = { winapp ui invoke 'Flyout_FilterButton' -a $TargetPid | Out-Null } },
+            @{ what = 'Clear filters';         act = { winapp ui invoke 'Flyout_ClearFilters' -a $TargetPid | Out-Null } },
+            @{ what = 'search box put away';   act = { winapp ui invoke 'Flyout_SearchButton' -a $TargetPid | Out-Null } })
+        foreach ($s in $steps) {
+            & $s.act
+            Start-Sleep -Milliseconds 900
+            if ($script:flyProc.HasExited) { throw "the card closed at '$($s.what)'" }
+            $got = Get-CardBounds $TargetPid
+            $h = Get-Rect $TargetPid 'Flyout_SettingsButton'
+            Write-Host "        $($s.what): card $got, settings button at y $($h.Y)" -ForegroundColor DarkGray
+            if ($got -ne $want) { throw "'$($s.what)' changed the card from $want to $got" }
+            if (-not $h -or $h.Y -ne $head.Y) { throw "'$($s.what)' moved the header from y $($head.Y) to y $($h.Y)" }
+        }
+        if (Test-HasId $TargetPid 'Flyout_Search') { throw "the search box is still out at the end" }
+        $global:LASTEXITCODE = 0
     }
 }
 
@@ -1033,6 +1126,158 @@ if (Should-Run 'flyout') {
         $id = Ensure-Flyout 'flyout-row' 200
         Test-A11y $id 'flyout-row'
 
+        # --- search and filter. The seeded history has ten rows (HarnessData.Rows): one window snip, one pin, one
+        # Copy text snip whose text starts "Quarterly figures", three rows with an HDR copy (tagged HDR) and two HDR
+        # captures saved as SDR only (tagged SDR, and filtered as SDR), and nine within the past 7 days of the
+        # frozen clock. Flyout_FilterCount reads "<shown> of 10 snips" while a filter is on.
+        $id = Ensure-Flyout 'flyout-row' 200
+        foreach ($el in 'Flyout_SearchButton','Flyout_FilterButton') {
+            Test-UI "flyout-row: $el exists" { winapp ui wait-for $el -a $id -t 4000 }
+        }
+        Test-UI "flyout-row: the search box is put away until asked for" {
+            if (Test-HasId $id 'Flyout_Search') { throw "Flyout_Search is showing before the search button was used" }
+            $tip = Get-Prop $id 'Flyout_SearchButton' 'HelpText'
+            Write-Host "        search button tooltip '$tip'" -ForegroundColor DarkGray
+        }
+        Test-UI "flyout-row: the search button opens the search box" {
+            winapp ui invoke 'Flyout_SearchButton' -a $id
+            if ($LASTEXITCODE -ne 0) { throw "the search button could not be invoked" }
+            if (-not (Test-HasId $id 'Flyout_Search' 3000)) { throw "no search box came out" }
+            $focus = Get-Prop $id 'Flyout_Search' 'HasKeyboardFocus'
+            Write-Host "        search box has the keyboard: $focus" -ForegroundColor DarkGray
+        }
+        Test-UI "flyout-row: no filter count while nothing is filtered" {
+            winapp ui wait-for 'Flyout_FilterCount' -a $id -t 1200 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { throw "Flyout_FilterCount is showing with no filter on" }
+            $global:LASTEXITCODE = 0
+        }
+        Test-UI "flyout-row: searching for recognised text leaves only its row" {
+            Search-Flyout $id 'quarterly'
+            $count = Get-Prop $id 'Flyout_FilterCount' 'Name'
+            $rows = @(Get-Elements $id -Interactive | Where-Object { $_.type -match '^(ListItem|DataItem)$' })
+            Write-Host "        count '$count', $($rows.Count) row(s): $(@($rows | ForEach-Object { $_.name }) -join ' | ')" -ForegroundColor DarkGray
+            if ($count -ne '1 of 10 snips') { throw "the count reads '$count', not '1 of 10 snips'" }
+            if ($rows.Count -ne 1 -or $rows[0].name -notmatch 'Quarterly figures') { throw "expected the one Quarterly figures row, found $($rows.Count)" }
+            $name = Get-Prop $id 'Flyout_SearchButton' 'Name'
+            if ($name -ne 'Search, on') { throw "the search button is named '$name', not 'Search, on'" }
+        }
+        Shot $id 'flyout-row-search'
+        $id = Resume-Flyout $id 'flyout-row' { param($p) Search-Flyout $p 'quarterly' }
+        Test-UI "flyout-row: Clear filters brings every row back" {
+            winapp ui invoke 'Flyout_ClearFilters' -a $id
+            if ($LASTEXITCODE -ne 0) { throw "Clear filters could not be invoked" }
+            Start-Sleep -Milliseconds 900
+            $rows = @(Get-Elements $id -Interactive | Where-Object { $_.type -match '^(ListItem|DataItem)$' }).Count
+            if ($rows -lt 5) { throw "only $rows row(s) after clearing" }
+            winapp ui wait-for 'Flyout_FilterCount' -a $id -t 1200 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { throw "the filter count is still showing after Clear filters" }
+            $global:LASTEXITCODE = 0
+        }
+        Test-UI "flyout-row: a second click on the search button puts the box away and ends the search" {
+            Search-Flyout $id 'quarterly'
+            winapp ui invoke 'Flyout_SearchButton' -a $id
+            if ($LASTEXITCODE -ne 0) { throw "the search button could not be invoked" }
+            Start-Sleep -Milliseconds 900
+            if (Test-HasId $id 'Flyout_Search') { throw "the search box is still showing" }
+            winapp ui wait-for 'Flyout_FilterCount' -a $id -t 1200 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { throw "the search is still narrowing the list" }
+            $global:LASTEXITCODE = 0
+            $name = Get-Prop $id 'Flyout_SearchButton' 'Name'
+            if ($name -ne 'Search') { throw "the search button is still named '$name'" }
+        }
+        Test-UI "flyout-row: Ctrl+F opens the search box" {
+            winapp ui focus 'Flyout_SearchButton' -a $id | Out-Null
+            Start-Sleep -Milliseconds 300
+            winapp ui send-keys 'ctrl+f' -a $id --via send-input | Out-Null
+            if (-not (Test-HasId $id 'Flyout_Search' 3000)) { throw "no search box came out" }
+        }
+        Test-UI "flyout-row: Escape in the empty search box puts it away and keeps the card" {
+            Start-Sleep -Milliseconds 400
+            winapp ui send-keys 'escape' -a $id --via send-input | Out-Null
+            Start-Sleep -Milliseconds 900
+            if (Test-HasId $id 'Flyout_Search') { throw "the search box is still showing" }
+            winapp ui wait-for 'Flyout_OpenFolder' -a $id -t 2000
+            if ($LASTEXITCODE -ne 0) { throw "the card closed rather than the search box" }
+            $focus = Get-Prop $id 'Flyout_SearchButton' 'HasKeyboardFocus'
+            if ("$focus" -ne 'True') { throw "the search button does not have the keyboard ($focus)" }
+        }
+
+        $id = Ensure-Flyout 'flyout-row' 200
+        Test-UI "flyout-row: the filter button opens its band" {
+            winapp ui invoke 'Flyout_FilterButton' -a $id
+            if ($LASTEXITCODE -ne 0) { throw "the filter button could not be invoked" }
+            Start-Sleep -Milliseconds 900
+            if ($script:flyProc.HasExited) { throw "the flyout dismissed itself on the filter click" }
+            foreach ($chip in 'Flyout_ShowAll','Flyout_ShowHdr','Flyout_ShowSdr','Flyout_ShowWindow','Flyout_ShowPin','Flyout_ShowText',
+                              'Flyout_AgeAny','Flyout_AgeToday','Flyout_AgeWeek','Flyout_AgeMonth') {
+                $name = Get-Prop $id $chip 'Name'
+                if (-not $name) { throw "$chip is missing or has no Name" }
+            }
+        }
+        Shot $id 'flyout-row-filterband'
+        $id = Resume-Flyout $id 'flyout-row' { param($p) winapp ui invoke 'Flyout_FilterButton' -a $p | Out-Null; Start-Sleep -Milliseconds 900 }
+        foreach ($case in @(
+            @{ chip = 'Flyout_ShowWindow'; want = '1 of 10 snips'; row = 'Window' },
+            @{ chip = 'Flyout_ShowPin';    want = '1 of 10 snips'; row = 'Pinned' },
+            @{ chip = 'Flyout_ShowSdr';    want = '7 of 10 snips'; row = ''; tag = 'SDR' },
+            @{ chip = 'Flyout_ShowHdr';    want = '3 of 10 snips'; row = ''; tag = 'HDR' })) {
+            Test-UI "flyout-row: $($case.chip) filters to $($case.want)" {
+                winapp ui invoke $case.chip -a $id
+                if ($LASTEXITCODE -ne 0) { throw "$($case.chip) could not be invoked" }
+                Start-Sleep -Milliseconds 900
+                $count = Get-Prop $id 'Flyout_FilterCount' 'Name'
+                Write-Host "        $($case.chip): '$count'" -ForegroundColor DarkGray
+                if ($count -ne $case.want) { throw "the count reads '$count', not '$($case.want)'" }
+                if ($case.row) {
+                    $rows = @(Get-Elements $id -Interactive | Where-Object { $_.type -match '^(ListItem|DataItem)$' })
+                    if ($rows.Count -ne 1 -or $rows[0].name -notmatch $case.row) { throw "expected one row naming '$($case.row)', found $($rows.Count): $(@($rows | ForEach-Object { $_.name }) -join ' | ')" }
+                }
+                if ($case.tag) {
+                    # The kind filters match the rows' HDR/SDR tag, which is in each row's name: an HDR capture saved
+                    # as SDR only is tagged SDR, so it must not come up under HDR.
+                    $rows = @(Get-Elements $id -Interactive | Where-Object { $_.type -match '^(ListItem|DataItem)$' })
+                    if ($rows.Count -eq 0) { throw "no rows under $($case.chip)" }
+                    $odd = @($rows | Where-Object { $_.name -notmatch ", $($case.tag)(,|$)" })
+                    if ($odd.Count -gt 0) { throw "row(s) not tagged $($case.tag): $(@($odd | ForEach-Object { $_.name }) -join ' | ')" }
+                }
+            }
+        }
+        Test-UI "flyout-row: kind and age combine (HDR, past 7 days)" {
+            winapp ui invoke 'Flyout_AgeWeek' -a $id
+            Start-Sleep -Milliseconds 900
+            $count = Get-Prop $id 'Flyout_FilterCount' 'Name'
+            if ($count -ne '3 of 10 snips') { throw "the count reads '$count', not '3 of 10 snips'" }
+            winapp ui invoke 'Flyout_ShowAll' -a $id
+            Start-Sleep -Milliseconds 900
+            $count = Get-Prop $id 'Flyout_FilterCount' 'Name'
+            if ($count -ne '9 of 10 snips') { throw "past 7 days reads '$count', not '9 of 10 snips'" }
+        }
+        Test-UI "flyout-row: the filter button says a filter is on" {
+            $name = Get-Prop $id 'Flyout_FilterButton' 'Name'
+            if ($name -ne 'Filter, on') { throw "the button is named '$name'" }
+        }
+        Shot $id 'flyout-row-filtered'
+        # Kind is back to All; the age filter alone is on.
+        $id = Resume-Flyout $id 'flyout-row' {
+            param($p)
+            winapp ui invoke 'Flyout_FilterButton' -a $p | Out-Null
+            Start-Sleep -Milliseconds 700
+            winapp ui invoke 'Flyout_AgeWeek' -a $p | Out-Null
+            Start-Sleep -Milliseconds 700
+        }
+        Test-UI "flyout-row: Any time and All end the filter" {
+            winapp ui invoke 'Flyout_AgeAny' -a $id
+            Start-Sleep -Milliseconds 900
+            winapp ui wait-for 'Flyout_FilterCount' -a $id -t 1200 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { throw "the filter count is still showing" }
+            $global:LASTEXITCODE = 0
+            $name = Get-Prop $id 'Flyout_FilterButton' 'Name'
+            if ($name -ne 'Filter') { throw "the button is still named '$name'" }
+        }
+
+        $id = Ensure-Flyout 'flyout-row' 200
+        Test-CardSteady $id 'flyout-row'
+
         # The delete is PROMPTED ONLY, last because the prompt changes the row. Confirming would delete a real
         # file, so Cancel is pressed instead and must put the row back.
         $id = Ensure-Flyout 'flyout-row' 200
@@ -1053,6 +1298,12 @@ if (Should-Run 'flyout') {
             if ($confirm -ne 1 -or $cancel -ne 1) { throw "expected one Delete and one Cancel in the prompt, found $confirm and $cancel" }
         }
         Shot $id 'flyout-row-delete-prompt'
+        $id = Resume-Flyout $id 'flyout-row' {
+            param($p)
+            winapp ui hover 'Flyout_RowOpen' -a $p --dwell-time 1200 2>&1 | Out-Null
+            winapp ui invoke 'Flyout_RowDelete' -a $p | Out-Null
+            Start-Sleep -Milliseconds 1000
+        }
         Test-UI "flyout-row: Cancel puts the row back" {
             winapp ui invoke 'Flyout_RowCancelDelete' -a $id
             if ($LASTEXITCODE -ne 0) { throw "Cancel could not be invoked" }
@@ -1080,6 +1331,8 @@ if (Should-Run 'flyout-grid') {
         Shot $id 'flyout-grid-hover'
         $id = Ensure-Flyout 'flyout-grid' 150
         Test-A11y $id 'flyout-grid'
+        $id = Ensure-Flyout 'flyout-grid' 150
+        Test-CardSteady $id 'flyout-grid'
 
         # --- Flyout_RowFolder: does it reveal the file in Explorer? Last in the section, because Explorer
         #     taking the foreground dismisses the flyout.

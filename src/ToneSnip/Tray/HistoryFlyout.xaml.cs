@@ -161,6 +161,9 @@ public sealed partial class HistoryFlyout : PopupWindow
             _placed = true;
             Refresh();
             Surface.UpdateLayout();
+            // Before the first frame, so a short list opens at the size it keeps when the find rows come out.
+            ReserveFindRoom();
+            Surface.UpdateLayout();
             Place();
             FocusFirstRow();
             // Fade only: the card is the window, so there is no slide.
@@ -195,8 +198,8 @@ public sealed partial class HistoryFlyout : PopupWindow
         if (work.IsEmpty) return;
         double scale = Native.ScaleAt(work);
         if (scale <= 0) scale = 1.0;
-        // DIPs: header, hairline, footer, and the 12 px placement inset at each end.
-        const double Chrome = 48 + 1 + 40 + 24;
+        // DIPs: header, hairline, search row, footer, and the 12 px placement inset at each end.
+        const double Chrome = 48 + 1 + 40 + 40 + 24;
         // A floor of about four rows (or one row of cells); a negative MaxHeight would not lay out.
         double room = Math.Max(160, work.Height / scale - Chrome);
         List.MaxHeight = Math.Min(List.MaxHeight, room);
@@ -217,12 +220,16 @@ public sealed partial class HistoryFlyout : PopupWindow
     }
 
     /// <summary>Diffs the rows against the history by id: removes, inserts and moves rows and updates survivors in place,
-    /// so containers (with their hover, focus and armed delete) are not rebuilt on every snip.</summary>
-    private void Refresh()
+    /// so containers (with their hover, focus and armed delete) are not rebuilt on every snip. Only the snips that pass
+    /// the search and filter are rows.</summary>
+    /// <param name="filterOnly">The filter changed, not the history, so the folder need not be counted again.</param>
+    private void Refresh(bool filterOnly = false)
     {
         if (IsClosed) return;
         _style ??= NewRowStyle();
-        IReadOnlyList<HistoryItem> items = App.Current.History.Items;
+        IReadOnlyList<HistoryItem> history = App.Current.History.Items;
+        Func<HistoryEntry, bool> passes = FilterPredicate();
+        List<HistoryItem> items = history.Where(i => passes(i.Entry)).ToList();
         bool membership = false;
         for (int i = _rows.Count - 1; i >= 0; i--)
         {
@@ -240,13 +247,15 @@ public sealed partial class HistoryFlyout : PopupWindow
             _rows[i].Update(item);
         }
         Empty.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        Empty.Text = $"Your snips will show up here. Press {App.Current.Settings.Hotkeys.Region} for a region snip.";
+        Empty.Text = history.Count > 0 ? "No recent snips match."
+            : $"Your snips will show up here. Press {App.Current.Settings.Hotkeys.Region} for a region snip.";
+        ShowFilterState(history.Count);
         // The folder is scanned once per open, and again only when a snip lands or is deleted: the probe's and the
-        // thumbnail writes' changes do not change what the folder holds.
-        if (!_scanned || membership) RefreshTotals();
+        // thumbnail writes' changes, and the filter's, do not change what the folder holds.
+        if (!_scanned || (membership && !filterOnly)) RefreshTotals();
         // Once containers settle: re-sync focus (a delete moves it), renumber the row ids and load the thumbnails of
         // the rows on screen.
-        DispatcherQueue.TryEnqueue(() => { StampRowIds(); SyncFocus(); LoadRealizedThumbs(); });
+        DispatcherQueue.TryEnqueue(() => { StampRowIds(); SyncFocus(); LoadRealizedThumbs(); ReserveFindRoom(); });
     }
 
     /// <summary>
@@ -381,7 +390,8 @@ public sealed partial class HistoryFlyout : PopupWindow
         return Color.FromArgb(255, Mix(a.R, b.R), Mix(a.G, b.G), Mix(a.B, b.B));
     }
 
-    /// <summary>Escape cancels an open delete prompt, otherwise closes the card.</summary>
+    /// <summary>Escape cancels an open delete prompt, then clears a search being typed and puts the empty search box
+    /// away, and otherwise closes the card.</summary>
     private void OnEscape(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
@@ -392,6 +402,7 @@ public sealed partial class HistoryFlyout : PopupWindow
             if (inside) FocusRow(r, FocusState.Keyboard);
             return;
         }
+        if (EscapeSearch()) return;
         Dismiss();
     }
 
@@ -547,7 +558,9 @@ public sealed partial class HistoryFlyout : PopupWindow
         try
         {
             HistoryItem item = r.Item;
-            if (await Task.Run(() => App.Current.History.Load(item)) is { } img) await App.Current.CopyTextAsync(img);
+            if (await Task.Run(() => App.Current.History.Load(item)) is not { } img) return;
+            // Kept on the row, so the search finds it from now on.
+            App.Current.History.SetText(item, await App.Current.CopyTextAsync(img));
         }
         catch (Exception ex) { App.Current.Log.Warn("history copy text: " + ex.Message); }
         finally { _working = false; }

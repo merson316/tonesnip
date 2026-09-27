@@ -123,9 +123,9 @@ public sealed class HistoryRow : INotifyPropertyChanged
 
 #if TONESNIP_HARNESS
     /// <summary>The wall clock, or a fixed time in screenshot harness modes so relative times are reproducible.</summary>
-    private static DateTime NowUtc => HarnessData.HistoryRowNowUtc ?? DateTime.UtcNow;
+    internal static DateTime NowUtc => HarnessData.HistoryRowNowUtc ?? DateTime.UtcNow;
 #else
-    private static DateTime NowUtc => DateTime.UtcNow;
+    internal static DateTime NowUtc => DateTime.UtcNow;
 #endif
 
     // Badges describe the files on disk: the main file is always SDR, so only a row with an HDR copy is badged HDR.

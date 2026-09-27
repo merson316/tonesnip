@@ -3,7 +3,7 @@ using ToneSnip.Core.Config;
 namespace ToneSnip.App;
 
 /// <summary>
-/// The fixed data every shot-taking harness mode runs with: the same eight history rows, the same settings and one
+/// The fixed data every shot-taking harness mode runs with: the same ten history rows, the same settings and one
 /// frozen instant for relative ages, so runs are comparable across machines and over time.
 /// <para>Nothing here is written to <see cref="AppPaths.Dir"/>: rows go through <c>SnipHistory.SeedForHarness</c>
 /// (in memory only) and settings through <c>App.ApplySettings</c>, which is an in-memory update in screenshot
