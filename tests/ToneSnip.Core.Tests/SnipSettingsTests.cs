@@ -197,6 +197,15 @@ public class SnipSettingsTests
     }
 
     [Fact]
+    public void Saving_a_style_keeps_the_settings_a_style_does_not_carry()
+    {
+        var cur = new AnnotateSettings { PrivacyMode = false, ClipToLasso = false };
+        AnnotateSettings saved = cur.WithStyle(new ToneSnip.Core.Annotate.Style(0xFFE53935, 8, 28, TextBox: true), 0xFF123456);
+        Assert.False(saved.PrivacyMode); Assert.False(saved.ClipToLasso);
+        Assert.Equal("#E53935", saved.Colour); Assert.Equal(8, saved.Width); Assert.Equal(28, saved.TextSize); Assert.True(saved.TextBackground);
+    }
+
+    [Fact]
     public void Annotate_defaults_and_style_round_trip()
     {
         var a = new AnnotateSettings();

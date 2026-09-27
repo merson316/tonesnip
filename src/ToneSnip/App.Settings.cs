@@ -107,6 +107,6 @@ public partial class App
     public void RememberAnnotateStyle(Core.Annotate.Style? style, AnnotateSettings shown, uint accent)
     {
         if (style is not Core.Annotate.Style s || s == shown.ToStyle(accent)) return;
-        UpdateSettingsQuiet(cur => cur with { Annotate = AnnotateSettings.FromStyle(s, accent) with { PrivacyMode = cur.Annotate.PrivacyMode } });
+        UpdateSettingsQuiet(cur => cur with { Annotate = cur.Annotate.WithStyle(s, accent) });
     }
 }

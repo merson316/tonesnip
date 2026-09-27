@@ -34,7 +34,11 @@ public sealed record AnnotateSettings
         return new ToneSnip.Core.Annotate.Style(c, Width, TextSize, TextBackground);
     }
 
-    public static AnnotateSettings FromStyle(ToneSnip.Core.Annotate.Style s, uint accentArgb) => new()
+    public static AnnotateSettings FromStyle(ToneSnip.Core.Annotate.Style s, uint accentArgb) => new AnnotateSettings().WithStyle(s, accentArgb);
+
+    /// <summary>These settings with the style's colour, width, text size and text box; the settings a style does not
+    /// carry (PrivacyMode, ClipToLasso) keep their values.</summary>
+    public AnnotateSettings WithStyle(ToneSnip.Core.Annotate.Style s, uint accentArgb) => this with
     {
         Colour = s.Color == accentArgb || s.Color == ToneSnip.Core.Annotate.Style.AccentPlaceholder ? "accent" : $"#{s.Color & 0xFFFFFF:X6}",
         Width = s.Width, TextSize = s.TextSize, TextBackground = s.TextBox,
