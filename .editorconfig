@@ -1,6 +1,6 @@
-# The style the code already has, written down for editors and for `dotnet format`. Nothing here is enforced at build
-# time: every C# preference is at suggestion severity, so the build stays warning-free. Comments are wrapped at about
-# 120 columns; code lines are not limited.
+# The style the code already has, written down for editors and for `dotnet format`. The style preferences are not
+# enforced at build time: every one is at suggestion severity. The code-quality rule exceptions at the end are. Comments
+# are wrapped at about 120 columns; code lines are not limited.
 root = true
 
 [*]
@@ -70,3 +70,21 @@ dotnet_naming_style.underscore_camel.required_prefix = _
 dotnet_naming_rule.private_fields_underscore.symbols = private_fields
 dotnet_naming_rule.private_fields_underscore.style = underscore_camel
 dotnet_naming_rule.private_fields_underscore.severity = suggestion
+
+# The .NET code-quality rules run at the recommended level (AnalysisLevel in Directory.Build.props), and CI fails on
+# any warning. A rule that does not fit is turned off here with its reason, for the files it does not fit; a single
+# exception is a [SuppressMessage] with a justification at the site.
+# CA1716: names that are keywords in other .NET languages (Error, Step, Handles). Nothing here is consumed from VB.
+dotnet_diagnostic.CA1716.severity = none
+
+[tests/**.cs]
+# Test names are sentences joined by underscores, the xunit convention.
+dotnet_diagnostic.CA1707.severity = none
+# A test runs once: its expected arrays stay beside the assertions they belong to rather than in static fields.
+dotnet_diagnostic.CA1861.severity = none
+
+[src/ToneSnip.Windows/Interop/**.cs]
+# The app's own Win32 layer: its P/Invokes are public so the app assembly can call them, and its structs keep their
+# Win32 names (WNDCLASSEX, MONITORINFOEX).
+dotnet_diagnostic.CA1401.severity = none
+dotnet_diagnostic.CA1711.severity = none
