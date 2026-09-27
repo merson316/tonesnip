@@ -630,6 +630,9 @@ public sealed class OverlayWindow : IDisposable
                 return IntPtr.Zero;
             case Win32.WmRButtonUp: _host.OnRightClick(); return IntPtr.Zero;
             case Win32.WmKeyDown or Win32.WmSysKeyDown:
+                // A key while another window has the foreground can only have been posted here. Logged, as the trail for
+                // a snip screen that once ignored a posted Escape while it had no foreground.
+                if (User32.GetForegroundWindow() != hwnd) _log?.Debug($"overlay: key 0x{(int)wParam:X2} arrived without the foreground");
                 // Bit 30 of lParam: the key was already down, so this is an auto-repeat.
                 _host.OnKey((int)wParam, Win32.KeyDown(Win32.VkControl), Win32.KeyDown(Win32.VkShift), Win32.KeyDown(Win32.VkMenu), ((long)lParam & (1L << 30)) != 0);
                 return IntPtr.Zero;                                          // handled: Alt must not open a system menu

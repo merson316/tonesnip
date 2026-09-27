@@ -103,6 +103,10 @@ public static partial class User32
     [StructLayout(LayoutKind.Sequential)] public struct LastInputInfo { public uint Size; public uint Time; }
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetLastInputInfo(ref LastInputInfo info);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool SetForegroundWindow(IntPtr hwnd);
+    /// <summary>INPUT, x64 layout: the type, then the union, whose largest member (MOUSEINPUT) makes it 40 bytes. Only
+    /// the type is set here: a mouse input with no flags neither moves the pointer nor presses a button.</summary>
+    [StructLayout(LayoutKind.Explicit, Size = 40)] public struct Input { [FieldOffset(0)] public uint Type; }
+    [LibraryImport(Dll, SetLastError = true)] public static partial uint SendInput(uint count, [In] Input[] inputs, int size);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool BringWindowToTop(IntPtr hwnd);
     [LibraryImport(Dll)] public static partial IntPtr SetFocus(IntPtr hwnd);
     [LibraryImport(Dll)] public static partial uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);

@@ -168,8 +168,13 @@ public partial class App : Application
         Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip, Divert = DivertSnip };
         // On Idle rather than Output.Completed, so a cancelled snip also releases its frames.
         Session.Idle += () => { ReclaimMemory("memory after snip"); _memory.ReleaseFramesWhenIdle(); };
-        // Escape (cancelCountdown) is a hotkey only while a countdown runs.
-        Hook = new KeyboardHook(Log) { Swallow = true, IsActive = b => b.Action != "cancelCountdown" || Session.CountingDown };
+        // Escape is a hotkey only while a countdown runs (cancelCountdown), or while the snip screen is up without the
+        // keyboard (escapeSnip), which otherwise could not be dismissed from the keyboard.
+        Hook = new KeyboardHook(Log)
+        {
+            Swallow = true,
+            IsActive = b => b.Action switch { "cancelCountdown" => Session.CountingDown, "escapeSnip" => Session.OverlayWithoutKeyboard, _ => true },
+        };
         Hook.Pressed += b => DispatchHotkey(b.Action);
         ApplyBindings();
         Hook.Install();
@@ -465,10 +470,11 @@ public partial class App : Application
     /// </summary>
     private void BringToFront(IntPtr hwnd, string what)
     {
-        uint inputAt = Win32.LastInputTick();
         if (User32.GetForegroundWindow() == hwnd) Log.Debug($"{what}: Activate took the foreground");
         else Log.Debug($"{what}: Activate was refused the foreground; forcing it");
         Win32.ForceForeground(hwnd, Log);
+        // Read after forcing, whose second try sends a no-op input of its own that is not the user's.
+        uint inputAt = Win32.LastInputTick();
         if (User32.GetForegroundWindow() != hwnd) Log.Info($"{what}: not in the foreground after taking it");
         DispatcherQueueTimer timer = Ui.CreateTimer();
         timer.IsRepeating = false;
@@ -530,6 +536,7 @@ public partial class App : Application
     {
         List<HotkeyBinding> bindings = Settings.Bindings();
         bindings.Add(new HotkeyBinding(Chord.Parse("Escape"), "cancelCountdown"));
+        bindings.Add(new HotkeyBinding(Chord.Parse("Escape"), "escapeSnip"));
         Hook.SetBindings(bindings);
     }
 
@@ -571,6 +578,7 @@ public partial class App : Application
             case "activeWindow": StartSnip(SnipMode.ActiveWindow, Settings.DefaultDelay); break;
             case "history": ToggleFlyout(); break;
             case "cancelCountdown": Session.CancelCountdown(); break;
+            case "escapeSnip": Session.EscapeOverlay(); break;
         }
     }
 

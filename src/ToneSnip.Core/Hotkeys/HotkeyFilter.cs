@@ -41,7 +41,8 @@ public sealed class HotkeyFilter(Func<long> nowMs)
     /// <summary>When true, a matching key-down is swallowed so no other app sees it.</summary>
     public bool Swallow { get; set; }
     /// <summary>Whether a binding applies right now; one that does not is not matched at all — no fire, no swallow, no
-    /// debounce. Escape's cancelCountdown applies only while a countdown is running. Null means every binding does.</summary>
+    /// debounce. Escape's bindings apply only while a countdown runs or the snip screen is up without the keyboard. Null
+    /// means every binding does.</summary>
     public Func<HotkeyBinding, bool>? IsActive { get; set; }
     /// <summary>While set, every non-modifier key-down and key-up is reported here (chord, isDown) and swallowed, and no
     /// binding fires.</summary>

@@ -141,6 +141,26 @@ public class HotkeyFilterTests
         Assert.Equal("region", f.OnKey(PrintScreen, true, false, KeyMods.None).Fired?.Action);
     }
 
+    /// <summary>Escape is bound twice, for the countdown and for a snip screen without the keyboard; whichever applies
+    /// fires, and with neither Escape reaches the foreground app.</summary>
+    [Fact]
+    public void Of_two_bindings_on_one_key_the_active_one_fires()
+    {
+        var countdown = new HotkeyBinding(new Chord(Escape, false, false, false, false), "cancelCountdown");
+        var snip = new HotkeyBinding(new Chord(Escape, false, false, false, false), "escapeSnip");
+        HotkeyFilter f = Filter(countdown, snip);
+        string active = "escapeSnip";
+        f.IsActive = b => b.Action == active;
+        KeyDecision down = f.OnKey(Escape, true, false, KeyMods.None);
+        Assert.Equal("escapeSnip", down.Fired?.Action);
+        Assert.True(down.Swallow);
+        _now += 1000;
+        f.OnKey(Escape, false, false, KeyMods.None);
+        active = "none";
+        _now += 1000;
+        Assert.Equal(default, f.OnKey(Escape, true, false, KeyMods.None));
+    }
+
     [Fact]
     public void The_debounce_is_per_binding()
     {

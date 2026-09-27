@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using ToneSnip.Core.Diagnostics;
 using ToneSnip.Windows.Interop;
 
@@ -72,6 +73,28 @@ public static class Win32
             TimeSpan took = Stopwatch.GetElapsedTime(started);
             if (took > SlowForeground) log?.Warn($"foreground: taking the foreground took {took.TotalMilliseconds:F0} ms{(attached ? " with the foreground app's input attached" : "")}");
         }
+        if (User32.GetForegroundWindow() != hwnd) TakeAfterInput(hwnd, fg, attached, log);
+    }
+
+    /// <summary>
+    /// The second try, for when the foreground lock refused the first. That happens when no window is in the foreground:
+    /// there is no input queue to attach to, and a process the user is not typing into may not take the foreground.
+    /// A process that sent the last input may, so a mouse input with no movement and no button is sent first, the
+    /// usual way round the lock; nothing sees it but the input system. Logged either way, since a snip screen left
+    /// without the keyboard ignores Escape.
+    /// </summary>
+    private static void TakeAfterInput(IntPtr hwnd, IntPtr fg, bool attached, ILog? log)
+    {
+        var noOp = new User32.Input[1];   // Type 0 is INPUT_MOUSE
+        bool sent = User32.SendInput(1, noOp, Marshal.SizeOf<User32.Input>()) == 1;
+        User32.BringWindowToTop(hwnd);
+        User32.SetForegroundWindow(hwnd);
+        User32.SetFocus(hwnd);
+        IntPtr now = User32.GetForegroundWindow();
+        string was = fg == IntPtr.Zero ? "no window" : attached ? "another app's window (attached)" : "another window (not attached)";
+        string how = sent ? "after a no-op input" : "though the no-op input was refused";
+        if (now == hwnd) log?.Info($"foreground: refused while {was} had it; taken {how}");
+        else log?.Warn($"foreground: refused while {was} had it, and again {how}; the foreground is now {now:X}");
     }
 
     /// <summary>The tick count (<c>GetTickCount</c>'s clock) of the last keyboard or mouse input anywhere in the session,

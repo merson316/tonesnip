@@ -239,6 +239,33 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// <summary>The snip screen while it is up, and the mode it was opened in. UI thread only.</summary>
     private Overlay.OverlaySession? _overlay;
     private SnipMode _overlayMode;
+    /// <summary><see cref="_overlay"/> is set; read on the keyboard hook's thread, hence volatile.</summary>
+    private volatile bool _overlayUp;
+
+    /// <summary>
+    /// The snip screen is up but another process has the keyboard: the snip screen could not take the foreground (as
+    /// when no window had it), or something took it since. The frames cover every monitor, so Escape pressed then is
+    /// meant for the snip screen, and the keyboard hook hands it over (<see cref="EscapeOverlay"/>). Called on the
+    /// hook's thread, so it only reads a flag and asks Windows which process owns the foreground.
+    /// </summary>
+    public bool OverlayWithoutKeyboard
+    {
+        get
+        {
+            if (!_overlayUp) return false;
+            User32.GetWindowThreadProcessId(User32.GetForegroundWindow(), out uint pid);
+            return pid != (uint)Environment.ProcessId;
+        }
+    }
+
+    /// <summary>Escape pressed while <see cref="OverlayWithoutKeyboard"/>, handled as if the snip screen had the
+    /// keyboard. UI thread.</summary>
+    public void EscapeOverlay()
+    {
+        if (_overlay is not { } overlay) return;
+        log.Info($"{_overlayMode}: Escape reached the snip screen through the hotkey hook; it did not have the keyboard");
+        overlay.OnKey(ToneSnip.Windows.Overlay.Win32.VkEscape, ctrl: false, shift: false, alt: false, repeat: false);
+    }
 
     /// <summary>
     /// The displays changed (WM_DISPLAYCHANGE). A snip screen built for the old layout is closed as a cancel when the
@@ -271,7 +298,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
         bool painted = false;   // UI thread only
         var watchdog = new CancellationTokenSource();
         var overlay = new Overlay.OverlaySession(outputs, grabber, desktop, mode, settings(), log);
-        _overlay = overlay; _overlayMode = mode;
+        _overlay = overlay; _overlayMode = mode; _overlayUp = true;
         overlay.FirstPaint = () =>
         {
             painted = true;
@@ -323,7 +350,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             watchdog.Cancel();
             watchdog.Dispose();
             _stage = null;
-            _overlay = null;
+            _overlay = null; _overlayUp = false;
         }
         if (outcome.RestartWithDelay >= 0)
         {
