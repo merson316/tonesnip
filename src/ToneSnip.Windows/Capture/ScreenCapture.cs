@@ -519,8 +519,15 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         public required global::Windows.Graphics.SizeInt32 Size;
         public required GraphicsCaptureItem Item;
         public required IObjectReference ItemReference;
+        /// <summary>A window item's Closed handler (<see cref="WindowStreamFor"/>), removed when the item is let go so
+        /// the item does not keep this capture object alive.</summary>
+        public global::Windows.Foundation.TypedEventHandler<GraphicsCaptureItem, object>? OnClosed;
 
-        public void Dispose() => ItemReference.Dispose();   // GraphicsCaptureItem is not IClosable: released here, not by a finalizer
+        public void Dispose()
+        {
+            if (OnClosed != null) { try { Item.Closed -= OnClosed; } catch { } OnClosed = null; }
+            ItemReference.Dispose();   // GraphicsCaptureItem is not IClosable: released here, not by a finalizer
+        }
     }
 
     /// <summary>The kept streams by HMONITOR. Touched only under <see cref="_streamGate"/>.</summary>
@@ -573,13 +580,17 @@ public sealed class ScreenCapture(ILog log) : IDisposable
             {
                 if (kept.Stream.Format == format) return kept.Stream;
                 // Same item, other format: the pool, not the item, carries it.
-                var reformatted = new Stream { Format = format, Size = kept.Stream.Size, Item = kept.Stream.Item, ItemReference = kept.Stream.ItemReference };
+                var reformatted = new Stream { Format = format, Size = kept.Stream.Size, Item = kept.Stream.Item, ItemReference = kept.Stream.ItemReference, OnClosed = kept.Stream.OnClosed };
                 _windowStream = (window, process, reformatted);
                 return reformatted;
             }
         }
         GraphicsCaptureItem item = CreateItem(window, forWindow: true);
         var stream = new Stream { Format = format, Size = item.Size, Item = item, ItemReference = ((IWinRTObject)item).NativeObject };
+        // The window closing ends the item for good, and its handle may soon name another window: the kept item is let
+        // go then, rather than at the next active-window snip's failed capture.
+        stream.OnClosed = (closed, _) => ForgetWindowItem(closed);
+        item.Closed += stream.OnClosed;
         lock (_streamGate)
         {
             _windowStream?.Stream.Dispose();
@@ -598,6 +609,18 @@ public sealed class ScreenCapture(ILog log) : IDisposable
             try { kept.Stream.Dispose(); } catch { }
             _windowStream = null;
         }
+    }
+
+    /// <summary>The kept window item's window closed (GraphicsCaptureItem.Closed, on a capture-system thread).</summary>
+    private void ForgetWindowItem(GraphicsCaptureItem closed)
+    {
+        lock (_streamGate)
+        {
+            if (_windowStream is not { } kept || !ReferenceEquals(kept.Stream.Item, closed)) return;
+            try { kept.Stream.Dispose(); } catch { }
+            _windowStream = null;
+        }
+        log.Debug("window capture: the kept window's item was released, the window closed");
     }
 
     private void ReleaseStreams()
