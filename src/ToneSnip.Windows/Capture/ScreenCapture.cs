@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using SharpGen.Runtime;
 using ToneSnip.Core.Capture;
 using ToneSnip.Core.Diagnostics;
+using ToneSnip.Core.Hdr;
 using ToneSnip.Windows.Display;
 using ToneSnip.Windows.Interop;
 using Vortice.Direct3D;
@@ -15,11 +16,22 @@ using WinRT;
 
 namespace ToneSnip.Windows.Capture;
 
-/// <summary>Called once per output, on a worker thread, with that output's frame mapped for reading: B8G8R8A8_UNorm for
-/// an SDR output, R16G16B16A16_Float (scRGB) for an HDR one, in desktop orientation. It runs with the graphics device
-/// locked, so it should only copy the frame out; slower work on the copy (a tonemap) goes in the action it returns,
-/// which is run on the same thread once the frame is unmapped and the device free for the other monitors.</summary>
-public delegate Action? FrameConsumer(int output, IntPtr data, int rowPitch, int width, int height, Format format);
+/// <summary>Called once per output, on a worker thread, before its frame is read back: B8G8R8A8_UNorm for an SDR
+/// output, R16G16B16A16_Float (scRGB) for an HDR one, in desktop orientation. Returns where the frame's rows go, or null
+/// to take nothing (the caller then copies the output another way).</summary>
+public delegate FrameSink? FrameConsumer(int output, int width, int height, Format format);
+
+/// <summary>Takes <paramref name="rows"/> rows of a frame, from row <paramref name="top"/>, mapped at
+/// <paramref name="data"/> with <paramref name="rowPitch"/> bytes a row. Runs with the graphics device locked, so it
+/// should only copy them out.</summary>
+public delegate void FrameRows(int top, int rows, IntPtr data, int rowPitch);
+
+/// <summary>
+/// Where a <see cref="FrameConsumer"/> wants its frame: <paramref name="Rows"/> is given it a band at a time, top to
+/// bottom, every row once. <paramref name="Then"/>, the slower work on the copy (a tonemap), runs on the same thread
+/// once the last band is read and the device is free for the other monitors.
+/// </summary>
+public sealed record FrameSink(FrameRows Rows, Action? Then = null);
 
 /// <summary>Called instead of <see cref="FrameConsumer"/> for an HDR output whose frame was kept on the graphics card,
 /// on a worker thread, with the device free. The consumer owns <paramref name="frame"/> from here on. Like
@@ -341,14 +353,10 @@ public sealed class ScreenCapture(ILog log) : IDisposable
                     state.Converting = true;
                 }
                 if (hdr != null && d.Format == Format.R16G16B16A16_Float) kept = KeepLocked(device, texture, width, height);
-                if (kept == null)
+                if (kept == null && consume(index, (int)width, (int)height, d.Format) is { } sink)
                 {
-                    using ID3D11Texture2D staging = device.CreateTexture2D(new Texture2DDescription(d.Format, width, height, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read));
-                    if (width == d.Width && height == d.Height) context.CopyResource(staging, texture);
-                    else context.CopySubresourceRegion(staging, 0, 0, 0, 0, texture, 0, new Vortice.Mathematics.Box(0, 0, 0, (int)width, (int)height, 1));
-                    MappedSubresource map = context.Map(staging, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);
-                    try { finish = consume(index, map.DataPointer, (int)map.RowPitch, (int)width, (int)height, d.Format); }
-                    finally { context.Unmap(staging, 0); }
+                    ReadBands(device, context, texture, d.Format, (int)width, (int)height, sink.Rows);
+                    finish = sink.Then;
                 }
             }
             finally { Monitor.Exit(_gate); }
@@ -377,6 +385,47 @@ public sealed class ScreenCapture(ILog log) : IDisposable
                 state.Done = true;
                 Monitor.PulseAll(state);
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads the top-left <paramref name="width"/> x <paramref name="height"/> of <paramref name="source"/> into
+    /// <paramref name="rows"/> a band at a time, through two staging bands of at most <paramref name="bandBytes"/>:
+    /// while one band is read, the GPU copies the next. Called with the device lock held.
+    /// <para>Never a frame-sized staging texture. The driver keeps a freed staging texture's memory for a while after it
+    /// is disposed, flushed and trimmed, and lets it go when it chooses, so a monitor-sized one per snip stayed
+    /// committed between snips: 38 MB for an HDR 3440x1440 frame, 14 MB for an SDR 1440x2560 one.</para>
+    /// </summary>
+    internal static void ReadBands(ID3D11Device device, ID3D11DeviceContext context, ID3D11Texture2D source, Format format, int width, int height,
+                                   FrameRows rows, int bandBytes = GpuTonemapper.BandBytes)
+    {
+        int bytesPerPixel = format == Format.R16G16B16A16_Float ? 8 : 4;
+        int bandRows = ReadbackBand.Rows(width, height, bytesPerPixel, bandBytes), bands = (height + bandRows - 1) / bandRows;
+        var staging = new ID3D11Texture2D?[Math.Min(2, bands)];
+        try
+        {
+            for (int i = 0; i < staging.Length; i++)
+                staging[i] = device.CreateTexture2D(new Texture2DDescription(format, (uint)width, (uint)bandRows, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Read));
+            void Issue(int band)
+            {
+                int top = band * bandRows, h = Math.Min(bandRows, height - top);
+                context.CopySubresourceRegion(staging[band & 1]!, 0, 0, 0, 0, source, 0, new Vortice.Mathematics.Box(0, top, 0, width, top + h, 1));
+            }
+            Issue(0);
+            if (bands > 1) Issue(1);
+            for (int band = 0; band < bands; band++)
+            {
+                ID3D11Texture2D s = staging[band & 1]!;
+                int top = band * bandRows, h = Math.Min(bandRows, height - top);
+                MappedSubresource m = context.Map(s, 0, MapMode.Read, Vortice.Direct3D11.MapFlags.None);   // waits for the copy
+                try { rows(top, h, m.DataPointer, (int)m.RowPitch); }
+                finally { context.Unmap(s, 0); }
+                if (band + 2 < bands) Issue(band + 2);
+            }
+        }
+        finally
+        {
+            foreach (ID3D11Texture2D? s in staging) s?.Dispose();
         }
     }
 

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using ToneSnip.Core.Capture;
 using ToneSnip.Core.Color;
 using ToneSnip.Core.Config;
@@ -149,7 +148,7 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
             var captured = new CapturedOutput?[outputs.Count];
             var copies = new CopyState[outputs.Count];
             for (int i = 0; i < copies.Length; i++) copies[i] = new CopyState();
-            string?[] reasons = _capture.Capture(handles, (i, data, pitch, w, h, format) => Convert(data, pitch, w, h, format, outputs[i], copies[i], c => captured[i] = c), FrameTimeoutMs,
+            string?[] reasons = _capture.Capture(handles, (i, w, h, format) => Convert(w, h, format, outputs[i], copies[i], c => captured[i] = c), FrameTimeoutMs,
                 UseGpu() ? (i, frame) => Keep(frame, outputs[i], copies[i], c => captured[i] = c) : null, settings().CaptureCursor);
             // From here the grab owns the frames the capture handed over: if anything below throws (a GDI copy of
             // another monitor, or a Grabbed handler), nobody else will ever dispose them, and each one on the graphics
@@ -237,7 +236,7 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
                 }
             }
             string? reason = _capture.CaptureWindow(window, monitor.Hdr,
-                (_, data, pitch, w, h, format) => CopyWindow(window, data, pitch, w, h, format, monitor, corner, radius, copy, Done), FrameTimeoutMs,
+                (_, w, h, format) => CopyWindow(window, w, h, format, monitor, corner, radius, copy, Done), FrameTimeoutMs,
                 UseGpu() ? (_, f) => KeepWindow(window, f, monitor, corner, radius, copy, Done) : null, settings().CaptureCursor);
             WindowGrab? got;
             lock (copy)
@@ -267,7 +266,7 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     /// made opaque. Placed on the desktop here, as the frame arrives, so a window that moved since the capture began
     /// lands where it is now.
     /// </summary>
-    private Action? CopyWindow(IntPtr window, IntPtr data, int pitch, int w, int h, Format format, OutputInfo monitor, int corner, double radius, CopyState copy, Action<WindowGrab> done)
+    private FrameSink? CopyWindow(IntPtr window, int w, int h, Format format, OutputInfo monitor, int corner, double radius, CopyState copy, Action<WindowGrab> done)
     {
         lock (copy) { if (copy.Abandoned) return null; }
         (IntRect at, IntRect keep) = Place(window, w, h);
@@ -275,8 +274,8 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
         var sdr = BgraImage.Blank(w, h);
         if (format == Format.R16G16B16A16_Float)
         {
-            HalfImage half = FrameConverter.ToHalfInto(data, pitch, w, h, new HalfImage(w, h));
-            return () =>
+            var half = new HalfImage(w, h);
+            return new FrameSink((top, rows, data, pitch) => FrameConverter.HalfRowsInto(data, pitch, top, rows, half), () =>
             {
                 lock (copy) { if (copy.Abandoned) return; }
                 var hdr = new HalfFrame(half);
@@ -284,15 +283,16 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
                 hdr.Tonemap(CurveFor(info), new IntRect(0, 0, w, h), sdr, 0, 0);
                 WindowCorners? corners = WindowCorners.Read(keep.Width, keep.Height, corner, r => HalfPatch(half.Crop(r.Offset(local.Left, local.Top))), radius);
                 done(new WindowGrab(new CapturedOutput(info, hdr, sdr), keep, corners, WindowSnip.IsBlank(half, BlankStep(w, h))));
-            };
+            });
         }
-        // Not FrameConverter.ToBgra8Into, which makes the copy opaque before the corners could be read.
-        for (int y = 0; y < h; y++) Marshal.Copy(data + y * pitch, sdr.Data, y * w * 4, w * 4);
-        WindowCorners? read = WindowCorners.Read(keep.Width, keep.Height, corner, r => BgraPatch(sdr, r.Offset(local.Left, local.Top)), radius);
-        bool blank = WindowSnip.IsBlank(sdr, BlankStep(w, h));
-        for (int i = 3; i < sdr.Data.Length; i += 4) sdr.Data[i] = 255;
-        done(new WindowGrab(new CapturedOutput(monitor with { Left = at.Left, Top = at.Top, Width = w, Height = h, Hdr = false }, null, sdr), keep, read, blank));
-        return null;
+        // Copied with the capture's own alpha, which the corners are read from before the copy is made opaque.
+        return new FrameSink((top, rows, data, pitch) => FrameConverter.Bgra8RowsInto(data, pitch, top, rows, sdr, opaque: false), () =>
+        {
+            WindowCorners? read = WindowCorners.Read(keep.Width, keep.Height, corner, r => BgraPatch(sdr, r.Offset(local.Left, local.Top)), radius);
+            bool blank = WindowSnip.IsBlank(sdr, BlankStep(w, h));
+            for (int i = 3; i < sdr.Data.Length; i += 4) sdr.Data[i] = 255;
+            done(new WindowGrab(new CapturedOutput(monitor with { Left = at.Left, Top = at.Top, Width = w, Height = h, Hdr = false }, null, sdr), keep, read, blank));
+        });
     }
 
     /// <summary>The GPU path of <see cref="GrabWindow"/>, as <see cref="Keep"/> is <see cref="GrabAll"/>'s: only the
@@ -360,20 +360,19 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     private static int BlankStep(int w, int h) => Math.Max(1, (int)Math.Sqrt(w * (long)h / 10_000.0));
 
     /// <summary>
-    /// Copies one monitor's mapped frame (desktop orientation) into pooled buffers and hands the result to
-    /// <paramref name="done"/>: fp16 becomes a half image plus its tonemapped SDR copy, BGRA8 is copied as is. Nothing
-    /// is handed over when the frame size does not match the monitor (a mode change mid-grab), so the grab falls back
-    /// to GDI.
-    /// <para>Runs with the capture device locked and the frame mapped, so for fp16 only the copy happens here; the
-    /// tonemap, which reads just the half copy, is returned for <see cref="ScreenCapture"/> to run once the device is
-    /// free, so a second monitor's copy does not wait behind it.</para>
+    /// Where one monitor's frame (desktop orientation) goes as the capture reads it back, a band of rows at a time:
+    /// into pooled buffers, handed to <paramref name="done"/> once complete. fp16 becomes a half image plus its
+    /// tonemapped SDR copy, BGRA8 is copied as is. Nothing is taken when the frame size does not match the monitor (a
+    /// mode change mid-grab), so the grab falls back to GDI.
+    /// <para>The rows are copied with the capture device locked; the tonemap, which reads just the half copy, runs
+    /// after the last band, once the device is free, so a second monitor's copy does not wait behind it.</para>
     /// <para>A copy that runs past the grab's wait (<see cref="ScreenCapture.StillCopyingReason"/>) is abandoned by
     /// <see cref="GrabAll"/> through <paramref name="copy"/>. Both buffers are taken from the pool here, under that
     /// state's lock, so a late copy never adds a buffer to the pool after the grab has ended; the tonemap writes only
     /// into the buffer it was given, which the abandoning grab has taken out of the pool, and is skipped once
     /// abandoned.</para>
     /// </summary>
-    private Action? Convert(IntPtr data, int rowPitch, int width, int height, Format format, OutputInfo o, CopyState copy, Action<CapturedOutput> done)
+    private FrameSink? Convert(int width, int height, Format format, OutputInfo o, CopyState copy, Action<CapturedOutput> done)
     {
         if (width != o.Width || height != o.Height)
         {
@@ -390,19 +389,15 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
             target = _pool.Bgra(o.Index, FramePool.Frame, width, height);
         }
         if (half != null)
-        {
-            FrameConverter.ToHalfInto(data, rowPitch, width, height, half);
-            return () =>
+            return new FrameSink((top, rows, data, pitch) => FrameConverter.HalfRowsInto(data, pitch, top, rows, half), () =>
             {
                 lock (copy) { if (copy.Abandoned) return; }
                 var frame = new HalfFrame(half);
                 frame.Tonemap(CurveFor(o), new IntRect(0, 0, width, height), target, 0, 0);
                 done(new CapturedOutput(o, frame, target));
-            };
-        }
-        FrameConverter.ToBgra8Into(data, rowPitch, width, height, target);
-        done(new CapturedOutput(o with { Hdr = false }, null, target));
-        return null;
+            });
+        return new FrameSink((top, rows, data, pitch) => FrameConverter.Bgra8RowsInto(data, pitch, top, rows, target),
+                             () => done(new CapturedOutput(o with { Hdr = false }, null, target)));
     }
 
     /// <summary>

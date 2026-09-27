@@ -44,6 +44,43 @@ public class InteropTests
         }
     }
 
+    /// <summary>A frame read back a band at a time lands exactly as one copied whole: each band's rows at their own
+    /// place, through the band's pitch, alpha made opaque only when asked.</summary>
+    [Fact]
+    public void Bands_of_rows_land_as_the_whole_frame_does()
+    {
+        const int W = 7, H = 10, HalfPitch = 64, BgraPitch = 32;
+        byte[] half = new byte[HalfPitch * H], bgra = new byte[BgraPitch * H];
+        new Random(5).NextBytes(half);
+        new Random(6).NextBytes(bgra);
+        HalfImage wholeH = new(W, H), bandH = new(W, H);
+        BgraImage wholeB = BgraImage.Blank(W, H), bandB = BgraImage.Blank(W, H), rawB = BgraImage.Blank(W, H);
+        GCHandle hh = GCHandle.Alloc(half, GCHandleType.Pinned), bh = GCHandle.Alloc(bgra, GCHandleType.Pinned);
+        try
+        {
+            FrameConverter.ToHalfInto(hh.AddrOfPinnedObject(), HalfPitch, W, H, wholeH);
+            FrameConverter.ToBgra8Into(bh.AddrOfPinnedObject(), BgraPitch, W, H, wholeB);
+            foreach ((int top, int rows) in new[] { (0, 4), (4, 4), (8, 2) })   // the last band partial
+            {
+                FrameConverter.HalfRowsInto(hh.AddrOfPinnedObject() + top * HalfPitch, HalfPitch, top, rows, bandH);
+                FrameConverter.Bgra8RowsInto(bh.AddrOfPinnedObject() + top * BgraPitch, BgraPitch, top, rows, bandB);
+                FrameConverter.Bgra8RowsInto(bh.AddrOfPinnedObject() + top * BgraPitch, BgraPitch, top, rows, rawB, opaque: false);
+            }
+        }
+        finally { hh.Free(); bh.Free(); }
+        Assert.Equal(wholeH.Data, bandH.Data);
+        Assert.Equal(wholeB.Data, bandB.Data);
+        for (int y = 0; y < H; y++)
+            Assert.Equal(bgra.AsSpan(y * BgraPitch, W * 4).ToArray(), rawB.Data.AsSpan(y * W * 4, W * 4).ToArray());   // the frame's own alpha kept
+    }
+
+    [Fact]
+    public void Rows_outside_the_image_are_refused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => FrameConverter.HalfRowsInto(IntPtr.Zero, 64, 3, 3, new HalfImage(4, 5)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FrameConverter.Bgra8RowsInto(IntPtr.Zero, 64, -1, 2, BgraImage.Blank(4, 5)));
+    }
+
     [Fact]
     public void A_frame_is_not_copied_into_an_image_of_another_size()
     {

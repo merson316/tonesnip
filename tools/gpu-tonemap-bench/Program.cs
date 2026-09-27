@@ -140,7 +140,7 @@ public static class Program
         for (int round = 0; round < rounds; round++)
         {
             var kept = new GpuHdrFrame?[outs.Count];
-            string?[] reasons = cap.Capture(outs, (_, _, _, _, _, _) => null, 3000, (i, frame) => { kept[i] = frame; return null; });
+            string?[] reasons = cap.Capture(outs, (_, _, _, _) => null, 3000, (i, frame) => { kept[i] = frame; return null; });
             for (int i = 0; i < outs.Count; i++)
             {
                 OutputHandle o = outs[i];
@@ -283,15 +283,17 @@ public static class Program
             var frames = new IHdrFrame?[outs.Count];
             var sw = Stopwatch.StartNew();
             string?[] reasons = cap.Capture(outs,
-                (i, data, pitch, w, h, fmt) =>
+                (i, w, h, fmt) =>
                 {
                     OutputHandle o = outs[i];
                     BgraImage bgra = Pooled(bgraPool, i, w, h);
-                    if (fmt != Format.R16G16B16A16_Float) { FrameConverter.ToBgra8Into(data, pitch, w, h, bgra); return null; }
+                    if (fmt != Format.R16G16B16A16_Float) return new FrameSink((top, rows, data, pitch) => FrameConverter.Bgra8RowsInto(data, pitch, top, rows, bgra));
                     HalfImage half = halfPool.TryGetValue(i, out var hh) && hh.Width == w && hh.Height == h ? hh : halfPool[i] = new HalfImage(w, h);
-                    FrameConverter.ToHalfInto(data, pitch, w, h, half);
-                    s.MemInGrab = Math.Max(s.MemInGrab, ProcessMemory.Mb());   // staging still mapped: the path's peak
-                    return () => { var f = new HalfFrame(half); f.Tonemap(Curve(o, tonemap, 1f), new IntRect(0, 0, w, h), bgra, 0, 0); frames[i] = f; };
+                    return new FrameSink((top, rows, data, pitch) =>
+                    {
+                        FrameConverter.HalfRowsInto(data, pitch, top, rows, half);
+                        s.MemInGrab = Math.Max(s.MemInGrab, ProcessMemory.Mb());   // a staging band still mapped: the path's peak
+                    }, () => { var f = new HalfFrame(half); f.Tonemap(Curve(o, tonemap, 1f), new IntRect(0, 0, w, h), bgra, 0, 0); frames[i] = f; });
                 },
                 3000,
                 gpu ? (i, frame) => () =>

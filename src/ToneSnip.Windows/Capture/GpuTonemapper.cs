@@ -27,7 +27,7 @@ public sealed unsafe class GpuTonemapper
     /// <summary>Largest system-memory staging band a readback uses. A frame is read back a band at a time, so the
     /// working set never holds a second full frame, and two bands overlap the copy of one with the read of the
     /// other.</summary>
-    private const int BandBytes = 4 << 20;
+    internal const int BandBytes = 4 << 20;
 
     /// <summary>How long a call made off the UI thread waits for the device before giving up. The same budget as the
     /// capture's own waits: nothing may park a thread for good behind a driver call that never returns.</summary>
