@@ -65,6 +65,9 @@ public sealed class OverlayWindow : IDisposable
     private BgraImage? _back;
     private GCHandle _backPin;
     private bool _backValid;
+    /// <summary>What is on screen is still the frozen frame as it was captured: no back buffer has been painted from,
+    /// and the frame has not been re-tonemapped since. The first build then repaints only what the document changed.</summary>
+    private bool _screenIsFrame = true;
 
     // The monitor-local areas the previous paint's selection frame, lasso, cursor readout and guide lines covered. Kept
     // apart rather than as one union, so a moving guide line invalidates two strips and not the monitor between them.
@@ -170,7 +173,9 @@ public sealed class OverlayWindow : IDisposable
     /// </summary>
     public void Render()
     {
-        if (_host.HasDocument && !_backValid) { RenderDirty(IntRect.Empty); return; }
+        // The back buffer is built first; the chrome's regions below still repaint as usual, since the first build
+        // repaints only what the document changed.
+        if (_host.HasDocument && !_backValid) RenderDirty(IntRect.Empty);
         IntRect sel = _host.Selection.IsEmpty ? _host.Hover : _host.Selection;
         bool hasSelection = !sel.IsEmpty;
         // While annotating the whole-monitor dim depends on whether anything is selected, so that transition repaints all.
@@ -249,19 +254,29 @@ public sealed class OverlayWindow : IDisposable
             ? Local
             : sourceDirty.Intersect(_bounds).Offset(-_bounds.Left, -_bounds.Top);
         if (local.IsEmpty) return;
+        // The first build over a screen that still shows the bare frame (annotate-first's first pointer move) rebuilds
+        // the whole buffer, but the pixels only change where the document draws: often nowhere yet.
+        IntRect? changed = !_backValid && _screenIsFrame ? _host.DocumentCovers : null;
         // RenderShapes may grow the painted area beyond `local` to cover a redaction it touches; the zebra must cover
         // the same grown area or it would leave stale stripes (or miss new ones) at the edge of that growth.
         IntRect painted = _host.RenderShapes(_frame, _bounds, _back!, local);
         _host.Zebra?.Invoke(_back!, _bounds, painted);
         _backValid = true;
-        local = local.Union(painted);
+        _screenIsFrame = false;
+        if (changed is IntRect area)
+        {
+            if (area.IsEmpty) return;
+            local = area.Intersect(_bounds).Offset(-_bounds.Left, -_bounds.Top);
+            if (local.IsEmpty) return;
+        }
+        else local = local.Union(painted);
         // Handles and the selection outline live outside a shape's own bounds, so repaint a little wider than we rendered.
         const int pad = EditSession.HandleSize + 2;
         Invalidate(IntRect.FromLtrb(local.Left - pad, local.Top - pad, local.Right + pad, local.Bottom + pad).Intersect(Local));
     }
 
     /// <summary>Marks the annotated buffer stale so the next <see cref="Render"/> rebuilds it (the base frame changed).</summary>
-    public void InvalidateBack() => _backValid = false;
+    public void InvalidateBack() { _backValid = false; _screenIsFrame = false; }
 
     /// <summary>
     /// The annotated buffer, on first use. A pooled one may hold the previous snip's marks, which is harmless: the first

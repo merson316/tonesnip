@@ -27,6 +27,9 @@ public interface IOverlayHost
     bool DrawingActive { get; }
     /// <summary>True once an annotation document exists, so the annotated back buffer replaces the frozen frame.</summary>
     bool HasDocument { get; }
+    /// <summary>Where, in screen pixels, the rendered document can differ from the frozen frame: Empty when it draws
+    /// nothing, null when anywhere. Lets the first build of the back buffer repaint only what it changed.</summary>
+    IntRect? DocumentCovers { get; }
     /// <summary>The colour picker is armed: the pixel loupe follows the cursor in every frame style, over a drawing tool
     /// too, magnifying the frozen frame the colour is copied from, with the colour under it as its readout.</summary>
     bool Picking { get; }

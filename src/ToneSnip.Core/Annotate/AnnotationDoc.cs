@@ -43,6 +43,20 @@ public sealed class AnnotationDoc
 
     public int NewId() => ++_nextId;
 
+    /// <summary>The source-frame area where the rendered document can differ from the bare frame: Empty when nothing
+    /// is drawn, null when anywhere (the zebra, or a shape such as a spotlight that changes the whole image).</summary>
+    public IntRect? Covers()
+    {
+        if (Zebra) return null;
+        IntRect area = IntRect.Empty;
+        foreach (Shape s in Shapes)
+        {
+            if (s.AffectsWholeImage) return null;
+            area = area.IsEmpty ? s.DirtyBounds : area.Union(s.DirtyBounds);
+        }
+        return area;
+    }
+
     /// <summary>A copy with every shape and the crop moved by (<paramref name="dx"/>, <paramref name="dy"/>), for
     /// converting between the editor's image-local frame and the desktop frame. Ids, order and view state carry over;
     /// the copy has no undo history and starts saved.</summary>

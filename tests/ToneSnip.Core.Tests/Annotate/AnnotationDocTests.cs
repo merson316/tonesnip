@@ -8,6 +8,22 @@ public class AnnotationDocTests
 {
     private static BoxShape Box(int id, int x = 0) => new(id, new IntRect(x, 0, 10, 10), 2, 1, false, false);
 
+    /// <summary>The overlay's first back-buffer build repaints only this area: nothing for an empty document.</summary>
+    [Fact]
+    public void A_document_covers_its_shapes_or_everything_when_it_dims_or_stripes_the_image()
+    {
+        var d = new AnnotationDoc();
+        Assert.Equal(IntRect.Empty, d.Covers());
+        d.Add(Box(d.NewId()));
+        d.Add(Box(d.NewId(), 40));
+        Assert.Equal(d.Shapes[0].DirtyBounds.Union(d.Shapes[1].DirtyBounds), d.Covers());
+        d.Zebra = true;
+        Assert.Null(d.Covers());
+        d.Zebra = false;
+        d.Add(new SpotlightShape(d.NewId(), new IntRect(5, 5, 20, 20)));
+        Assert.Null(d.Covers());
+    }
+
     [Fact]
     public void Add_replace_remove_are_undoable_in_order()
     {

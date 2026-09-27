@@ -90,6 +90,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>True while a drawing tool owns the mouse; selection modes take over when the user picks one.</summary>
     public bool DrawingActive => _annotating && _edit != null && _drawTool;
     public bool HasDocument => _edit != null;
+    public IntRect? DocumentCovers => _edit is { } edit ? edit.Doc.Covers() : IntRect.Empty;
     /// <summary>The colour picker is armed (C, or the toolbar's picker): the loupe follows the cursor and the next click,
     /// C, Space or Enter copies the colour under it.</summary>
     public bool Picking => _picking;
