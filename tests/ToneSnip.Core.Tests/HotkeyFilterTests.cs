@@ -27,6 +27,24 @@ public class HotkeyFilterTests
     }
 
     [Fact]
+    public void A_fresh_press_names_the_binding_it_matched_even_when_the_debounce_stops_it_firing()
+    {
+        // The hook logs each swallowed press by this, so a hotkey eaten without a snip still leaves a line.
+        HotkeyFilter f = Filter(Region);
+        KeyDecision first = f.OnKey(PrintScreen, true, false, KeyMods.None);
+        Assert.Equal("region", first.Matched?.Action);
+        _now += 20;
+        Assert.Null(f.OnKey(PrintScreen, true, false, KeyMods.None).Matched);    // auto-repeat: not a new press
+        Assert.Null(f.OnKey(PrintScreen, false, false, KeyMods.None).Matched);   // its key-up
+        _now += 100;
+        KeyDecision again = f.OnKey(PrintScreen, true, false, KeyMods.None);    // inside the debounce
+        Assert.Null(again.Fired);
+        Assert.True(again.Swallow);
+        Assert.Equal("region", again.Matched?.Action);
+        Assert.Null(f.OnKey(A, true, false, KeyMods.None).Matched);
+    }
+
+    [Fact]
     public void Auto_repeat_of_a_swallowed_press_is_swallowed_and_does_not_fire_again()
     {
         // Otherwise holding Win+Shift+S would let the repeats reach the shell and open the Snipping Tool too.

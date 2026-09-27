@@ -8,8 +8,10 @@ public readonly record struct KeyMods(bool Ctrl, bool Shift, bool Alt, bool Win)
 
 /// <summary>What the hook does with one key event: swallow it or pass it on, and the binding it fired, if any.
 /// <paramref name="MaskModifier"/> asks the hook to inject a no-op key while Alt or Win is held: with the chord's own
-/// key swallowed, the foreground app would otherwise see a lone Alt tap (its menu bar) or Win tap (Start).</summary>
-public readonly record struct KeyDecision(bool Swallow, HotkeyBinding? Fired, bool MaskModifier = false);
+/// key swallowed, the foreground app would otherwise see a lone Alt tap (its menu bar) or Win tap (Start).
+/// <paramref name="Matched"/> is the binding a fresh press matched, whether or not it fired (a press inside the
+/// debounce matches without firing); null for every other event, a swallowed press's repeats and key-up included.</summary>
+public readonly record struct KeyDecision(bool Swallow, HotkeyBinding? Fired, bool MaskModifier = false, HotkeyBinding? Matched = null);
 
 /// <summary>
 /// The low-level keyboard hook's decisions, separated from the native callback so they can be unit-tested: which events
@@ -86,7 +88,7 @@ public sealed class HotkeyFilter(Func<long> nowMs)
             HotkeyBinding? fired = null;
             if (!_lastFire.TryGetValue(b, out long last) || now - last > DebounceMs) { _lastFire[b] = now; fired = b; }
             if (Swallow) _swallowed.Add(vk);
-            return new KeyDecision(Swallow, fired, Swallow && (mods.Alt || mods.Win));
+            return new KeyDecision(Swallow, fired, Swallow && (mods.Alt || mods.Win), b);
         }
         return default;
     }

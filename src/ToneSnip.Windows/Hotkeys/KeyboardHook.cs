@@ -7,7 +7,8 @@ namespace ToneSnip.Windows.Hotkeys;
 
 /// <summary>
 /// Low-level keyboard hook that fires when a bound chord is pressed. Every decision is <see cref="HotkeyFilter"/>'s:
-/// this class is the native plumbing around it. No key is recorded or logged.
+/// this class is the native plumbing around it. No key is recorded or logged, except a press of a bound chord that the
+/// hook swallowed (<see cref="LogSwallowed"/>).
 /// The hook lives on its own message-loop thread so UI work can never stall it (Windows silently removes
 /// a low-level hook whose thread stops answering), and it is re-armed every few minutes as a safety net.
 /// </summary>
@@ -185,6 +186,7 @@ public sealed partial class KeyboardHook : IDisposable
             KeyDecision d = _filter.OnKey(vk, isDown, injected, new KeyMods(Down(VkControl), Down(VkShift), Down(VkMenu), Down(VkLwin) || Down(VkRwin)));
             if (d.MaskModifier && !MaskModifier() && _warned.Add("mask")) _log.Warn($"keyboard hook: the modifier mask was not sent ({Marshal.GetLastWin32Error()})");
             if (d.Fired is { } fired) Pressed?.Invoke(fired);
+            if (d.Swallow && d.Matched is { } matched) LogSwallowed(matched, fired: d.Fired != null);
             if (d.Swallow) return (IntPtr)1;
         }
         catch (Exception e)
@@ -196,6 +198,25 @@ public sealed partial class KeyboardHook : IDisposable
     }
 
     private static bool Down(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    /// <summary>
+    /// Logs a bound chord the hook swallowed, from a pool thread: the hook thread must never wait on the disk, or a
+    /// slow write could overrun LowLevelHooksTimeout and Windows would remove the hook. Only bound chords reach here,
+    /// never other keys. With the app's own "picked up" line this shows where a dead hotkey stopped: a press with no
+    /// line at all never reached the hook, and one swallowed but never picked up was lost between the hook and the UI
+    /// thread.
+    /// </summary>
+    private void LogSwallowed(HotkeyBinding binding, bool fired)
+    {
+        long pressed = Environment.TickCount64;
+        ThreadPool.UnsafeQueueUserWorkItem(_ =>
+        {
+            long queued = Environment.TickCount64 - pressed;
+            _log.Info(fired
+                ? $"hotkey {binding.Action}: the hook swallowed {binding.Chord} and fired it{(queued > 1000 ? $" (logged {queued} ms later)" : "")}"
+                : $"hotkey {binding.Action}: the hook swallowed {binding.Chord} without firing it: within {HotkeyFilter.DebounceMs} ms of its last press");
+        }, null);
+    }
 
     /// <summary>Re-installs the hook now rather than at the next periodic re-arm; for use after a resume, an unlock or a
     /// long GC pause, any of which can make Windows remove it, and when the user asks for it from the tray.</summary>
