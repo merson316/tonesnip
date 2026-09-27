@@ -12,7 +12,7 @@ namespace ToneSnip.Windows.Overlay;
 public static class Win32
 {
     // ----- virtual keys (the overlay's whole keyboard vocabulary) -----
-    public const int VkTab = 0x09, VkReturn = 0x0D, VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkEscape = 0x1B, VkSpace = 0x20,
+    public const int VkBack = 0x08, VkTab = 0x09, VkReturn = 0x0D, VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkEscape = 0x1B, VkSpace = 0x20,
                      VkLeft = 0x25, VkUp = 0x26, VkRight = 0x27, VkDown = 0x28,
                      VkA = 0x41, VkC = 0x43, VkF = 0x46, VkL = 0x4C, VkP = 0x50, VkR = 0x52, VkT = 0x54, VkW = 0x57,
                      VkF1 = 0x70, VkFirstOem = 0xBA;

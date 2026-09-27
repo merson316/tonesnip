@@ -1886,6 +1886,64 @@ if (Should-Run 'tray-menu') {
     } finally { Stop-Hold $p }
 }
 
+# ---------------------------------------------------------------- 11e. the snip screen's keyboard: F1 and a lasso
+
+# A real snip screen over a grey frame (nothing on the desktop is frozen), in freeform mode with the pointer in the
+# middle of the primary monitor. Keys go through the input guard like any other. The hold exits 0 only when the snip
+# screen ended with a lasso, so its exit code is the last test.
+if (Should-Run 'overlay-lasso') {
+    $p = $null
+    try {
+        $p = Start-Hold 'overlay-lasso' 90
+        $id = $p.Id
+        Start-Sleep -Milliseconds 800
+        Test-UI "overlay-lasso: F1 opens the keys band" {
+            winapp ui send-keys 'f1' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "F1 did not open the keys band" }
+            winapp ui wait-for 'Enter: Close lasso' -a $id -t 2000
+        }
+        Test-UI "overlay-lasso: F1 again closes it" {
+            winapp ui send-keys 'f1' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id --gone -t 3000
+        }
+        # A screenshot activates each of the process's windows in turn and leaves the bar in the foreground, where the
+        # snip screen's keys would go nowhere. The bar's own keys toggle hands the keyboard back to the snip screen, as
+        # after any click on the bar, so every shot is followed by it.
+        Test-UI "overlay-lasso: the bar's keys button opens the band and gives the keyboard back" {
+            winapp ui send-keys 'f1' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "F1 did not open the keys band" }
+            Shot $id 'overlay-keys'
+            winapp ui invoke 'Overlay_KeysToggle' -a $id | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id --gone -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "the keys button did not close the band" }
+            winapp ui send-keys 'f1' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id -t 3000
+            if ($LASTEXITCODE -ne 0) { throw "F1 after the keys button did not reach the snip screen" }
+            winapp ui send-keys 'f1' -a $id --via send-input | Out-Null
+            winapp ui wait-for 'Overlay_KeysBand' -a $id --gone -t 3000
+        }
+        Test-UI "overlay-lasso: Space, arrows and corners draw a lasso that Enter closes" {
+            winapp ui send-keys 'space' -a $id --via send-input | Out-Null
+            winapp ui send-keys 'shift+right shift+right shift+right shift+right shift+right shift+right' -a $id --via send-input | Out-Null
+            winapp ui send-keys 'space' -a $id --via send-input | Out-Null
+            winapp ui send-keys 'shift+down shift+down shift+down shift+down shift+down shift+down' -a $id --via send-input | Out-Null
+            Shot $id 'overlay-lasso'
+            # Twice: open and close the band, which leaves the lasso as it was and the keyboard with the snip screen.
+            winapp ui invoke 'Overlay_KeysToggle' -a $id | Out-Null
+            Start-Sleep -Milliseconds 300
+            winapp ui invoke 'Overlay_KeysToggle' -a $id | Out-Null
+            Start-Sleep -Milliseconds 300
+            winapp ui send-keys 'enter' -a $id --via send-input | Out-Null
+            if (-not $p.WaitForExit(10000)) { throw "the snip screen did not end after Enter" }
+            if ($p.ExitCode -ne 0) { throw "the hold exited $($p.ExitCode): the snip screen did not end with a lasso (see the debug log)" }
+        }
+    } catch {
+        Add-SectionError "overlay-lasso section" $_
+    } finally { Stop-Hold $p }
+}
+
 # ---------------------------------------------------------------- 12. the stock-TextBox IsPassword control probe
 
 if ((Should-Run 'gallery') -and -not $SkipGallery) {

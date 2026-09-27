@@ -80,12 +80,16 @@ internal static partial class Screenshots
             {
                 await HoldTrayMenu(seconds);
             }
+            else if (what.Equals("overlay-lasso", StringComparison.OrdinalIgnoreCase))
+            {
+                await HoldOverlayLasso(seconds);
+            }
             else if (!what.StartsWith("flyout", StringComparison.OrdinalIgnoreCase))
             {
                 _failures++;
                 app.Log.Warn($"hold: no window called {what}; known: flyout-row, flyout-grid, settings-<page>, editor, " +
                              "editor-hdr, editor-front, toolbar, toolbar-annotate, countdown, textentry, toast-saved, toast-copied, toast-dwell, " +
-                             "toast-notice, pin, tray-menu");
+                             "toast-notice, pin, tray-menu, overlay-lasso");
             }
             else
             {

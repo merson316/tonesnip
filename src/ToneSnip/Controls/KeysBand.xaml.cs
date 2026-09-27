@@ -10,9 +10,10 @@ namespace ToneSnip.App.Controls;
 public sealed partial class KeysBand : UserControl
 {
     /// <summary>
-    /// The keys, as the band lists them: (keys, what they do), two pairs to a row, left then right. Kept terse so the
-    /// band is no wider than the bar; the mode letters are also on the mode buttons, and the frozen desktop's window
-    /// title spells each key out for a screen reader.
+    /// The keys, as the band lists them: (keys, what they do), two pairs to a row, left then right; the last row is the
+    /// freeform mode's keyboard lasso, which Backspace also steps back through. Kept terse so the band is no wider than
+    /// the bar; the mode letters are also on the mode buttons, and the frozen desktop's window title spells each key
+    /// out for a screen reader.
     /// </summary>
     internal static readonly (string Keys, string Does)[] Keys =
     {
@@ -22,6 +23,7 @@ public sealed partial class KeysBand : UserControl
         ("R W F L", "Modes"), ("A", "Annotate"),
         ("T", "Copy text"), ("P", "Pin"),
         ("C", "Pick colour"), ("F1", "These keys"),
+        ("Space", "Lasso corner"), ("Enter", "Close lasso"),
     };
 
     public KeysBand()

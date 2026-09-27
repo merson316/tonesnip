@@ -30,7 +30,7 @@ window, `screenshots\`, `overlay-mode-switch.mp4`. Each result is `PASS`, `FAIL`
 0 when everything passed, 1 when anything failed and 2 when nothing failed but some input was blocked.
 
 `-Sections settings,editor` runs a subset (`settings`, `editor`, `editor-hdr`, `flyout`, `flyout-grid`,
-`toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `toast-notice`, `pin`, `tray-menu`, `gallery`);
+`toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `toast-notice`, `pin`, `tray-menu`, `overlay-lasso`, `gallery`);
 `-Theme light` drives the holds in the light theme; `-SkipGallery` drops the stock-control probe, which
 is the only section that opens an app other than ToneSnip.
 
@@ -45,5 +45,6 @@ is recorded as `BLOCKED` with the foreground pid, counted apart from pass and fa
 (`invoke`, `focus`, `set-value`, `wait-for`, `inspect`) act on the element itself and are not guarded. Blocked
 tests mean the run is incomplete: keep the desktop idle and rerun those sections.
 
-The script refuses to start while a `tonesnip-overlay` window is up, never sends Ctrl+S at the editor and
+The `overlay-lasso` section opens a real snip screen over a grey frame (nothing on the desktop is frozen) and
+drives it from the keyboard. The script refuses to start while any other `tonesnip-overlay` window is up, never sends Ctrl+S at the editor and
 never confirms a history row's delete prompt — all three could touch the user's own files.

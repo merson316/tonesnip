@@ -73,8 +73,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>What Narrator reads when the frozen desktop takes the keyboard: what the screen is for and its keys.
     /// Changes after that are spoken through the toolbar's live region (<see cref="Announce"/>).</summary>
     public string WindowTitle => "ToneSnip: select an area. Arrow keys move the pointer, Space starts and finishes a selection, "
-                               + "Tab picks a window. R W F L switch modes, T copies text, P pins, C picks a colour, A annotates, "
-                               + "F1 lists the keys, Escape cancels";
+                               + "Tab picks a window. In freeform mode Space adds a corner and Enter closes the lasso. "
+                               + "R W F L switch modes, T copies text, P pins, C picks a colour, A annotates, F1 lists the keys, Escape cancels";
 
     /// <summary>The mode as the toolbar's live region says it.</summary>
     private static string ModeName(SnipMode m) => m switch
@@ -146,7 +146,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 return;
             }
             mode = value; _dragStart = null; _path.Clear(); Selection = IntRect.Empty; Hover = IntRect.Empty;
-            _keyAnchor = null; _tabIndex = -1;
+            _keyAnchor = null; _tabIndex = -1; _lasso.Clear();
             ToolbarChanged?.Invoke();
             Announce?.Invoke(ModeName(value));
             RenderAll();
@@ -155,7 +155,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>Current rectangle (drag in progress, pending nudge, hovered window/monitor).</summary>
     public IntRect Selection { get; private set; } = IntRect.Empty;
     public IntRect Hover { get; private set; } = IntRect.Empty;
-    public IReadOnlyList<(int X, int Y)> Path => _path;
+    /// <summary>The lasso being drawn: from the keyboard (its corners and the live end at the pointer) or by a drag.</summary>
+    public IReadOnlyList<(int X, int Y)> Path => _lasso.Active ? _lasso.Path : _path;
     public (int X, int Y) Cursor { get; private set; }
     public Action? ToolbarChanged { get; set; }
 
@@ -575,6 +576,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         Cursor = (x, y);
         if (_picking || _pickClick) { RenderAll(); return; }   // the loupe follows; nothing is being selected or drawn
         if (DrawingActive && _edit != null) { _edit.Move(x, y, Mods()); return; }
+        _lasso.Move(x, y);   // a keyboard lasso's live edge follows the pointer, whether the keys or the mouse moved it
         switch (mode)
         {
             case SnipMode.Rectangle when _dragStart != null: Selection = IntRect.FromDrag(_dragStart.Value.X, _dragStart.Value.Y, x, y).Clamp(desktop); break;
@@ -622,6 +624,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         if (_picking) { _pickClick = true; CopyColour(withNits: Win32.KeyDown(Win32.VkShift)); return; }
         if (DrawingActive && _edit != null) { _edit.Begin(x, y, Mods()); return; }
         _keyAnchor = null;   // the mouse takes over from a selection begun on the keyboard
+        _lasso.Clear();
         switch (mode)
         {
             case SnipMode.Rectangle: _dragStart = (x, y); Selection = IntRect.FromDrag(x, y, x, y); break;
@@ -738,6 +741,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
             if (_toolbar is { KeysShown: true } keys) { keys.ShowKeys(false); Announce?.Invoke("Keyboard shortcuts hidden"); return; }
             if (_annotating && _edit != null && _edit.Escape()) { RenderAll(); return; }
             if (_keyAnchor != null) { DropAnchor(); Announce?.Invoke("Selection cleared"); RenderAll(); return; }
+            if (_lasso.Active) { _lasso.Clear(); Announce?.Invoke("Lasso cleared"); RenderAll(); return; }
             Finish(OverlayOutcome.Cancelled); return;
         }
         if (vk == Win32.VkA && !ctrl && !shift && !alt) { Annotating = !Annotating; return; }
@@ -764,7 +768,10 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         bool pointerBusy = DrawingActive || _dragStart != null;
         switch (vk)
         {
-            case Win32.VkReturn or Win32.VkSpace when _dragStart == null: SelectKey(pointerBusy); return;
+            case Win32.VkReturn or Win32.VkSpace when _dragStart == null: SelectKey(pointerBusy, enter: vk == Win32.VkReturn); return;
+            case Win32.VkBack when _lasso.Active:
+                Announce?.Invoke(_lasso.RemoveCorner() ? $"Corner removed, {_lasso.Corners} left" : "Only the starting point is left; Escape clears the lasso");
+                break;
             case Win32.VkTab when !pointerBusy: CycleHover(shift ? -1 : 1); return;
             case Win32.VkR: Mode = SnipMode.Rectangle; break;
             case Win32.VkW: Mode = SnipMode.Window; break;
@@ -807,13 +814,18 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         Selection = IntRect.Empty;
     }
 
+    /// <summary>The freeform selection being drawn from the keyboard (<see cref="KeyboardLasso"/>).</summary>
+    private readonly KeyboardLasso _lasso = new();
+
     /// <summary>
     /// Space and Enter: in rectangle mode the first press anchors a selection at the cursor and the second finishes it;
     /// in window and full-screen modes either takes what is highlighted, as a click would. A selection already made
-    /// (the arrow keys can move one) is finished as it is.
+    /// (the arrow keys can move one) is finished as it is. In freeform mode either starts a lasso at the cursor; then
+    /// Space adds a corner and Enter closes it (<see cref="LassoKey"/>).
     /// </summary>
-    private void SelectKey(bool pointerBusy)
+    private void SelectKey(bool pointerBusy, bool enter)
     {
+        if (mode == SnipMode.Freeform && _lasso.Active) { LassoKey(enter); return; }
         if (_keyAnchor != null)
         {
             if (Selection.Width < 2 || Selection.Height < 2) return;   // a point is not a snip; keep going
@@ -823,10 +835,42 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         }
         if (!Selection.IsEmpty) { Complete(Selection, null); return; }
         if (mode is SnipMode.Window or SnipMode.FullScreen) { if (!Hover.IsEmpty) Complete(Hover, null); return; }
-        if (mode != SnipMode.Rectangle || pointerBusy) return;   // a lasso needs a pointer; a drawing tool has it
+        if (pointerBusy) return;   // a drawing tool has the pointer
+        if (mode == SnipMode.Freeform)
+        {
+            _lasso.Start(Cursor.X, Cursor.Y);
+            Announce?.Invoke($"Lasso started at {Cursor.X}, {Cursor.Y}. Arrow keys draw an edge, Space adds a corner, Backspace takes one back, Enter closes the lasso, Escape clears it");
+            RenderAll();
+            return;
+        }
+        if (mode != SnipMode.Rectangle) return;
         _keyAnchor = Cursor;
         Selection = IntRect.FromDrag(Cursor.X, Cursor.Y, Cursor.X, Cursor.Y).Clamp(desktop);
         Announce?.Invoke($"Selection started at {Cursor.X}, {Cursor.Y}. Arrow keys move the other corner, Shift for 10 pixels; Space or Enter finishes, Escape clears");
+        RenderAll();
+    }
+
+    /// <summary>
+    /// Space or Enter while a keyboard lasso is drawn. Space fixes a corner at the pointer. Enter closes the outline
+    /// back to its start and snips it, masked like a dragged lasso; an outline with no area yet (a point or a line)
+    /// stays open for more corners.
+    /// </summary>
+    private void LassoKey(bool enter)
+    {
+        if (!enter)
+        {
+            if (_lasso.AddCorner()) Announce?.Invoke($"Corner {_lasso.Corners} at {Cursor.X}, {Cursor.Y}");
+            RenderAll();
+            return;
+        }
+        if (_lasso.Finish() is not { } outline)
+        {
+            Announce?.Invoke("A lasso needs at least three corners that are not in a line; add another with Space");
+            return;
+        }
+        IntRect box = FreeformMask.BoundingBox(outline).Clamp(desktop);
+        if (box.IsEmpty) { RenderAll(); return; }
+        Complete(box, outline);
         RenderAll();
     }
 
@@ -902,7 +946,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         // writes straight into them.
         _windowList = null;
         _zebraMasks.Clear();
-        _path.Clear(); _pendingPath = null;
+        _path.Clear(); _pendingPath = null; _lasso.Clear();
         _ownHwnds.Clear();
         _outputs = NoOutputs;
         if (_edit is { } edit)
