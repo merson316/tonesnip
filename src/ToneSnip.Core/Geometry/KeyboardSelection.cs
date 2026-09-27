@@ -26,6 +26,42 @@ public static class KeyboardSelection
     }
 
     /// <summary>
+    /// Where an arrow key moves the pointer from (<paramref name="x"/>, <paramref name="y"/>) by
+    /// (<paramref name="dx"/>, <paramref name="dy"/>), across the gaps between monitors of different sizes or
+    /// positions. A step that lands on a monitor goes there, so side-by-side monitors are crossed as one surface. A step
+    /// that would leave the monitor stops at its edge first. From the edge, the next step jumps to the nearest monitor
+    /// beyond it in that direction (its nearest pixel, so the pointer enters it as close to where it left as it can):
+    /// clamping alone would leave a monitor that is offset or shorter than its neighbour unreachable from the
+    /// keyboard. With nothing beyond, the pointer stays at the edge. A point on no monitor is pulled onto the nearest.
+    /// </summary>
+    public static (int X, int Y) Step(int x, int y, int dx, int dy, IReadOnlyList<IntRect> monitors)
+    {
+        int tx = x + dx, ty = y + dy;
+        IntRect? here = null;
+        foreach (IntRect m in monitors)
+        {
+            if (m.IsEmpty) continue;
+            if (m.Contains(tx, ty)) return (tx, ty);
+            if (m.Contains(x, y)) here ??= m;
+        }
+        if (here is not { } on) return ClampToMonitors(tx, ty, monitors);
+        (int X, int Y) edge = (Math.Clamp(tx, on.Left, on.Right - 1), Math.Clamp(ty, on.Top, on.Bottom - 1));
+        if (edge != (x, y)) return edge;
+        (int X, int Y) best = (x, y);
+        long bestDistance = long.MaxValue;
+        foreach (IntRect m in monitors)
+        {
+            if (m.IsEmpty || m == on) continue;
+            bool beyond = (dx > 0 && m.Left > x) || (dx < 0 && m.Right - 1 < x) || (dy > 0 && m.Top > y) || (dy < 0 && m.Bottom - 1 < y);
+            if (!beyond) continue;
+            int cx = Math.Clamp(x, m.Left, m.Right - 1), cy = Math.Clamp(y, m.Top, m.Bottom - 1);
+            long ex = cx - x, ey = cy - y, distance = ex * ex + ey * ey;
+            if (distance < bestDistance) { best = (cx, cy); bestDistance = distance; }
+        }
+        return best;
+    }
+
+    /// <summary>
     /// The next place in a list of <paramref name="count"/> after <paramref name="current"/>, <paramref name="step"/>
     /// places on and wrapping round. <paramref name="current"/> is -1 before the first press, so Tab lands on the first
     /// item and Shift+Tab on the last. -1 for an empty list.

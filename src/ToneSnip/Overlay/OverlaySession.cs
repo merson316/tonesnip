@@ -794,7 +794,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                     Selection = alt ? Resize(Selection, dx, dy) : Selection.Nudge(dx, dy, desktop);
                     break;
                 }
-                if (!pointerBusy) MoveCursor(Cursor.X + dx, Cursor.Y + dy);
+                if (!pointerBusy) MoveCursor(dx, dy);
                 return;
         }
         RenderAll();
@@ -874,14 +874,14 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         RenderAll();
     }
 
-    /// <summary>Moves the real cursor (kept on a monitor, never in a gap between them), so the readout, the loupe and a
-    /// keyboard selection all follow it; the move is applied here too rather than waiting for the WM_MOUSEMOVE it
-    /// generates.</summary>
-    private void MoveCursor(int x, int y)
+    /// <summary>Moves the real cursor by an arrow key's step (kept on a monitor, and across the gaps between monitors of
+    /// different sizes: <see cref="KeyboardSelection.Step"/>), so the readout, the loupe and a keyboard selection all
+    /// follow it; the move is applied here too rather than waiting for the WM_MOUSEMOVE it generates.</summary>
+    private void MoveCursor(int dx, int dy)
     {
         List<IntRect> monitors = _outputs.Select(o => o.Info.Bounds).ToList();
         if (monitors.Count == 0) monitors.Add(desktop);
-        (x, y) = KeyboardSelection.ClampToMonitors(x, y, monitors);
+        (int x, int y) = KeyboardSelection.Step(Cursor.X, Cursor.Y, dx, dy, monitors);
         User32.SetCursorPos(x, y);
         OnMouseMove(x, y);
     }
