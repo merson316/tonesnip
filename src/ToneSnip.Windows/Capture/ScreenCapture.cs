@@ -243,7 +243,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
     /// An HDR frame made from CPU pixels on the capture's device, for the harnesses: synthetic frames that go through
     /// the same GPU path as captured ones. Null where that path is unavailable.
     /// </summary>
-    public GpuHdrFrame? Upload(int width, int height, HalfRowFill fill)
+    internal GpuHdrFrame? Upload(int width, int height, HalfRowFill fill)
     {
         GpuTonemapper? gpu;
         if (!Monitor.TryEnter(_gate, GateBudgetMs)) throw new TimeoutException($"the graphics device was still busy after {GateBudgetMs} ms");

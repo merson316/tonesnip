@@ -17,5 +17,8 @@
   <ItemGroup>
     <!-- The WARP tests drive the tonemapper's internals (the frame a capture keeps, the readback bands) directly. -->
     <InternalsVisibleTo Include="ToneSnip.Windows.Tests" />
+    <!-- The debug build's harness (src/ToneSnip/Harness) reaches what only it uses, such as ScreenCapture.Upload and the
+         GDI calls that read a tray icon back, without making it public API of the assembly that ships. -->
+    <InternalsVisibleTo Include="tonesnip-debug" Condition="'$(ToneSnipHarness)' == 'true'" />
   </ItemGroup>
 </Project>

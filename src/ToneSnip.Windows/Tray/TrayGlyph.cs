@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using ToneSnip.Core.Imaging;
 using ToneSnip.Windows.Imaging;
 using ToneSnip.Windows.Interop;
 using Microsoft.Win32;
@@ -78,54 +77,6 @@ public static class TrayGlyph
         }
         catch { return false; }   // the Windows 11 default is a dark taskbar
     }
-
-#if TONESNIP_HARNESS
-    /// <summary>Harness: the glyph as the shell sees it, created through <see cref="CreateIcon"/> and read back out of
-    /// the icon's colour bitmap, un-premultiplied. Null when it could not be created or read.</summary>
-    public static BgraImage? RenderIcon(int size, uint argb)
-    {
-        size = Math.Clamp(size, 8, 256);
-        IntPtr icon = CreateIcon(size, argb);
-        if (icon == IntPtr.Zero) return null;
-        try
-        {
-            if (!User32.GetIconInfo(icon, out User32.IconInfo info)) return null;
-            try
-            {
-                // GetDIBits wants a BITMAPINFO; for a 32-bit BI_RGB read the header alone is the whole structure.
-                var header = new Gdi32.BitmapInfoHeader
-                {
-                    Size = (uint)Marshal.SizeOf<Gdi32.BitmapInfoHeader>(),
-                    Width = size, Height = -size,   // top-down, the order BgraImage keeps its rows in
-                    Planes = 1, BitCount = 32,
-                };
-                byte[] bits = new byte[size * size * 4];
-                IntPtr dc = User32.GetDC(IntPtr.Zero);
-                int lines;
-                try { lines = Gdi32.GetDIBits(dc, info.Color, 0, (uint)size, bits, ref header, 0 /*DIB_RGB_COLORS*/); }
-                finally { User32.ReleaseDC(IntPtr.Zero, dc); }
-                if (lines != size) return null;
-                // The icon's colour bitmap is PARGB (CreateIcon draws it that way for the shell); BgraImage is straight.
-                for (int i = 0; i < bits.Length; i += 4)
-                {
-                    int a = bits[i + 3];
-                    if (a == 0 || a == 255) continue;
-                    bits[i] = (byte)Math.Min(255, (bits[i] * 255 + a / 2) / a);
-                    bits[i + 1] = (byte)Math.Min(255, (bits[i + 1] * 255 + a / 2) / a);
-                    bits[i + 2] = (byte)Math.Min(255, (bits[i + 2] * 255 + a / 2) / a);
-                }
-                return new BgraImage(size, size, bits);
-            }
-            finally
-            {
-                // GetIconInfo hands out copies of both bitmaps, and they are the caller's to delete.
-                if (info.Color != IntPtr.Zero) Gdi32.DeleteObject(info.Color);
-                if (info.Mask != IntPtr.Zero) Gdi32.DeleteObject(info.Mask);
-            }
-        }
-        finally { User32.DestroyIcon(icon); }
-    }
-#endif
 
     /// <summary>The glyph as an HICON the caller owns and destroys; <see cref="IntPtr.Zero"/> when GDI could not create
     /// the bitmaps, so the caller can fall back to the .ico.</summary>

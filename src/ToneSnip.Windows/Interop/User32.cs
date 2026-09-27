@@ -152,7 +152,7 @@ public static partial class User32
     [LibraryImport(Dll)] public static partial IntPtr LoadIconW(IntPtr instance, IntPtr name);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool DestroyIcon(IntPtr icon);
     [LibraryImport(Dll, SetLastError = true)] public static partial IntPtr CreateIconIndirect(ref IconInfo info);
-    [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetIconInfo(IntPtr icon, out IconInfo info);
+    [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] internal static partial bool GetIconInfo(IntPtr icon, out IconInfo info);
 
     // ----- metrics, DPI and monitors -----
     [LibraryImport(Dll)] public static partial int GetSystemMetrics(int index);

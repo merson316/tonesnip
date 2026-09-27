@@ -29,7 +29,7 @@ public static partial class Gdi32
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool DeleteDC(IntPtr dc);
     [LibraryImport(Dll)] public static partial IntPtr CreateDIBSection(IntPtr dc, ref BitmapInfoHeader header, uint usage, out IntPtr bits, IntPtr section, uint offset);
     [LibraryImport(Dll)] public static partial IntPtr CreateBitmap(int width, int height, uint planes, uint bitsPerPixel, byte[] bits);
-    [LibraryImport(Dll)] public static partial int GetDIBits(IntPtr dc, IntPtr bitmap, uint startLine, uint lines, [Out] byte[] bits, ref BitmapInfoHeader header, uint usage);
+    [LibraryImport(Dll)] internal static partial int GetDIBits(IntPtr dc, IntPtr bitmap, uint startLine, uint lines, [Out] byte[] bits, ref BitmapInfoHeader header, uint usage);
     [LibraryImport(Dll)] public static partial IntPtr SelectObject(IntPtr dc, IntPtr obj);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool DeleteObject(IntPtr obj);
     [LibraryImport(Dll)] public static partial IntPtr GetStockObject(int index);

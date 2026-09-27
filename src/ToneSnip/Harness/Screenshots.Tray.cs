@@ -24,7 +24,7 @@ namespace ToneSnip.App;
 internal static partial class Screenshots
 {
     /// <summary>The tray glyph at 16, 20 and 24 px (100 %, 125 %, 150 %) in each colour setting, read back from the
-    /// HICON itself (<see cref="TrayGlyph.RenderIcon"/>) so the PNG is what the shell composites.
+    /// HICON itself (<see cref="RenderIcon"/>) so the PNG is what the shell composites.
     /// <para>The high-contrast variant is drawn on the COLOR_WINDOW ground it is paired with, using
     /// <see cref="TrayGlyph.GlyphArgb"/> with high contrast forced on.</para></summary>
     private static void CaptureTrayGlyphs(string dir)
@@ -39,14 +39,62 @@ internal static partial class Screenshots
         })
             foreach (int size in new[] { 16, 20, 24 })
             {
-                BgraImage? icon = TrayGlyph.RenderIcon(size, argb);
+                BgraImage? icon = RenderIcon(size, argb);
                 if (icon == null) { App.Current.Log.Warn($"screenshots: {name}-{size}: the HICON could not be read back"); _failures++; continue; }
                 BgraImage img = OnGround(icon, ground);
                 string file = $"{name}-{size}.png";
                 File.WriteAllBytes(Path.Combine(dir, file), Bitmaps.EncodePng(img));
-                Index.Add(new Shot(file, "tray", $"{name["tray-".Length..]}-{size}", "n/a", "TrayGlyph.RenderIcon", img.Width, img.Height, 1.0));
+                Index.Add(new Shot(file, "tray", $"{name["tray-".Length..]}-{size}", "n/a", "Screenshots.RenderIcon", img.Width, img.Height, 1.0));
                 App.Current.Log.Info($"screenshots: {file} {img.Width}x{img.Height} read back from the HICON, glyph {argb:X8} on {ground:X8}");
             }
+    }
+
+    /// <summary>The tray glyph as the shell sees it, created through <see cref="TrayGlyph.CreateIcon"/> and read back
+    /// out of the icon's colour bitmap, un-premultiplied. Null when it could not be created or read. Here rather than in
+    /// TrayGlyph so the shipped ToneSnip.Windows carries none of it; the two calls it needs beyond TrayGlyph's are
+    /// internal to that assembly and visible to the debug build only.</summary>
+    private static BgraImage? RenderIcon(int size, uint argb)
+    {
+        size = Math.Clamp(size, 8, 256);
+        IntPtr icon = TrayGlyph.CreateIcon(size, argb);
+        if (icon == IntPtr.Zero) return null;
+        try
+        {
+            if (!User32.GetIconInfo(icon, out User32.IconInfo info)) return null;
+            try
+            {
+                // GetDIBits wants a BITMAPINFO; for a 32-bit BI_RGB read the header alone is the whole structure.
+                var header = new Gdi32.BitmapInfoHeader
+                {
+                    Size = (uint)Marshal.SizeOf<Gdi32.BitmapInfoHeader>(),
+                    Width = size, Height = -size,   // top-down, the order BgraImage keeps its rows in
+                    Planes = 1, BitCount = 32,
+                };
+                byte[] bits = new byte[size * size * 4];
+                IntPtr dc = User32.GetDC(IntPtr.Zero);
+                int lines;
+                try { lines = Gdi32.GetDIBits(dc, info.Color, 0, (uint)size, bits, ref header, 0 /*DIB_RGB_COLORS*/); }
+                finally { User32.ReleaseDC(IntPtr.Zero, dc); }
+                if (lines != size) return null;
+                // The icon's colour bitmap is PARGB (CreateIcon draws it that way for the shell); BgraImage is straight.
+                for (int i = 0; i < bits.Length; i += 4)
+                {
+                    int a = bits[i + 3];
+                    if (a == 0 || a == 255) continue;
+                    bits[i] = (byte)Math.Min(255, (bits[i] * 255 + a / 2) / a);
+                    bits[i + 1] = (byte)Math.Min(255, (bits[i + 1] * 255 + a / 2) / a);
+                    bits[i + 2] = (byte)Math.Min(255, (bits[i + 2] * 255 + a / 2) / a);
+                }
+                return new BgraImage(size, size, bits);
+            }
+            finally
+            {
+                // GetIconInfo hands out copies of both bitmaps, and they are the caller's to delete.
+                if (info.Color != IntPtr.Zero) Gdi32.DeleteObject(info.Color);
+                if (info.Mask != IntPtr.Zero) Gdi32.DeleteObject(info.Mask);
+            }
+        }
+        finally { User32.DestroyIcon(icon); }
     }
 
     /// <summary>A transparent glyph composited over one opaque colour; the image itself when there is no ground (0).</summary>
