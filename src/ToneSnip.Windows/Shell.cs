@@ -120,11 +120,15 @@ public static partial class Shell
     [LibraryImport("shell32.dll")]
     private static partial int SHFileOperationW(ref SHFILEOPSTRUCTW fileOp);
 
+    private static readonly string ExplorerPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+
     private static void Start(Action<ProcessStartInfo> arguments, string what, ILog? log)
     {
         try
         {
-            var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+            // By full path: started from the installed (packaged) app, a bare "explorer.exe" is not found ("the system
+            // cannot find the file specified"), though the same call works unpackaged.
+            var psi = new ProcessStartInfo(ExplorerPath) { UseShellExecute = false };
             arguments(psi);
             Process.Start(psi);
         }
