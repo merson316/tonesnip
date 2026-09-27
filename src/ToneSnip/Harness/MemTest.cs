@@ -88,6 +88,7 @@ internal static class MemTest
             {
                 await Cycle(i, i == 1 ? tracked : null, i == 1 ? pixels : null);
                 privates[i - 1] = Report(i);
+                Regions(i);
                 if (i == 1 || i == _cycles || i % 50 == 0) Census($"cycle {i}");
             }
 
@@ -290,6 +291,34 @@ internal static class MemTest
              $"gc {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}  handles {me.HandleCount}  threads {me.Threads.Count}  " +
              $"gdi {User32.GetGuiResources(me.Handle, 0)}  user {User32.GetGuiResources(me.Handle, 1)}");
         return priv;
+    }
+
+    private static Dictionary<IntPtr, RegionCensus.Region>? _regions;
+
+    /// <summary>
+    /// The large allocations (<see cref="RegionCensus"/>) that appeared, went or changed size by 4 MB or more since the
+    /// last cycle's measurement. A cycle whose private bytes jump shows here what the jump is made of: a frame-sized
+    /// region is recognisable by its size, and its address says whether it is the same one coming back.
+    /// </summary>
+    private static void Regions(int cycle)
+    {
+        Dictionary<IntPtr, RegionCensus.Region> now = RegionCensus.Take();
+        Dictionary<IntPtr, RegionCensus.Region>? before = _regions;
+        _regions = now;
+        if (before == null)
+        {
+            Line($"memtest:   large allocations at cycle {cycle}: {now.Count}, {Mb(now.Values.Sum(r => r.Committed))} MB committed");
+            return;
+        }
+        var moved = new List<string>();
+        foreach (RegionCensus.Region r in now.Values.OrderBy(r => r.Base))
+        {
+            long delta = r.Committed - (before.TryGetValue(r.Base, out RegionCensus.Region b) ? b.Committed : 0);
+            if (Math.Abs(delta) >= 4 << 20) moved.Add($"{(delta > 0 ? "+" : "")}{Mb(delta)} MB {(r.Private ? "private" : "mapped")} at {r.Base:X}");
+        }
+        foreach (RegionCensus.Region r in before.Values.Where(r => !now.ContainsKey(r.Base)).OrderBy(r => r.Base))
+            moved.Add($"-{Mb(r.Committed)} MB {(r.Private ? "private" : "mapped")} at {r.Base:X}");
+        Line($"memtest:   large allocations since cycle {cycle - 1}: {(moved.Count == 0 ? "unchanged" : string.Join("; ", moved))}");
     }
 
     private static Dictionary<string, int>? _censusStart;
