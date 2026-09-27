@@ -221,13 +221,39 @@ public class UltraHdrInputTests
         HalfImage before = CopyFlattened(canvas, white);
         GainMapResult expected = OneArrayGainMap(before, Flatten.OnWhite(sdr), white);
 
-        BgraImage flat = Flatten.IsOpaque(sdr) ? sdr : Flatten.OnWhite(sdr);
-        Assert.Equal(!transparent, ReferenceEquals(flat, sdr));
         HdrCanvas.FlattenOnWhite(canvas, white);
         Assert.Equal(before.Data, canvas.Data);
-        Assert.Equal(Flatten.OnWhite(sdr).Data, flat.Data);
-        GainMapResult actual = GainMap.Compute(canvas, flat, white);
+        // The SDR render goes in as it is, transparent or not: the map reads it flattened on white.
+        GainMapResult actual = GainMap.Compute(canvas, sdr, white);
         Assert.Equal(expected.Gray, actual.Gray);
         Assert.Equal((expected.Min, expected.Max), (actual.Min, actual.Max));
+
+        // And the rows the JPEG encoder asks for a band at a time, in bands that do not divide the height.
+        GainMapper m = GainMap.Measure(canvas, sdr, white);
+        Assert.Equal((expected.Min, expected.Max), (m.Min, m.Max));
+        var banded = new byte[canvas.Width * canvas.Height];
+        for (int top = 0; top < canvas.Height; top += 7)
+        {
+            int n = Math.Min(7, canvas.Height - top);
+            m.Fill(top, n, banded.AsSpan(top * canvas.Width, n * canvas.Width));
+        }
+        Assert.Equal(expected.Gray, banded);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void The_jpeg_encoders_bgr_bands_are_the_flattened_copy_without_its_alpha(bool transparent)
+    {
+        (_, BgraImage sdr) = Random(53, 29, transparent ? 21 : 22, transparent);
+        byte[] flat = Flatten.OnWhite(sdr).Data;
+        var bgr = new byte[sdr.Width * sdr.Height * 3];
+        for (int top = 0; top < sdr.Height; top += 4)
+        {
+            int n = Math.Min(4, sdr.Height - top);
+            Flatten.ToBgrOnWhite(sdr, top, n, bgr.AsSpan(top * sdr.Width * 3, n * sdr.Width * 3));
+        }
+        for (int p = 0; p < sdr.Width * sdr.Height; p++)
+            Assert.Equal((flat[p * 4], flat[p * 4 + 1], flat[p * 4 + 2]), (bgr[p * 3], bgr[p * 3 + 1], bgr[p * 3 + 2]));
     }
 }

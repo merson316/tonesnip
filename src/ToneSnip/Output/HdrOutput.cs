@@ -86,13 +86,13 @@ public static class HdrOutput
             {
                 if (sdrRendered.Width != canvas.Width || sdrRendered.Height != canvas.Height) throw new ArgumentException("SDR render must match the canvas");
                 // JPEG has no alpha: both halves are flattened on white, matching the SDR JPEG. The SDR render is
-                // shared with the rest of the output, so it is copied only when it has transparency to flatten (a
-                // freeform snip); the canvas is this file's own and is flattened in place.
-                BgraImage flat = Flatten.IsOpaque(sdrRendered) ? sdrRendered : Flatten.OnWhite(sdrRendered);
+                // shared with the rest of the output, so it is not copied: the gain map and the base's encoder read it
+                // flattened, a pixel and a band at a time. The canvas is this file's own and is flattened in place.
                 HdrCanvas.FlattenOnWhite(canvas, referenceWhiteNits);
-                GainMapResult gm = GainMap.Compute(canvas, flat, referenceWhiteNits);
-                byte[] baseJpeg = Bitmaps.EncodeJpeg(flat, s.JpegQuality);
-                byte[] gainJpeg = Bitmaps.EncodeGrayJpeg(gm.Gray, gm.Width, gm.Height, 85);
+                GainMapper gm = GainMap.Measure(canvas, sdrRendered, referenceWhiteNits);
+                byte[] baseJpeg = Bitmaps.EncodeJpeg(sdrRendered, s.JpegQuality);
+                // The map's rows are computed as the encoder asks for them, so the map is never held whole.
+                byte[] gainJpeg = Bitmaps.EncodeGrayJpeg(gm.Width, gm.Height, 85, gm.Fill);
                 return UltraHdrContainer.Assemble(baseJpeg, gainJpeg, new UltraHdrMeta(gm.Min, gm.Max));
             }
             default: throw new ArgumentException(file);

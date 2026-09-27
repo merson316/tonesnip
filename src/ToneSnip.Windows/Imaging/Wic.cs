@@ -259,24 +259,54 @@ internal interface IWICImagingFactory
     [PreserveSig] int CreateQueryWriterFromReader(IntPtr reader, IntPtr vendor, out IntPtr writer);
 }
 
+/// <summary>
+/// Writes rows [<paramref name="top"/>, <paramref name="top"/> + <paramref name="count"/>) of an image being encoded
+/// into <paramref name="rows"/>, each row the encode's stride wide: the image is handed to the encoder a band at a time,
+/// in whatever pixel format the encode asks for, so no converted copy of the whole image is made.
+/// </summary>
+public delegate void RowsFill(int top, int count, Span<byte> rows);
+
 /// <summary>Shared encode loop: container + pixel format + options → bytes.</summary>
 internal static class WicEncode
 {
+    /// <summary>The largest band a <see cref="RowsFill"/> is asked for: small enough to stay off the Large Object
+    /// Heap, and still many rows of a wide image, which the encoders buffer as they need.</summary>
+    private const int BandBytes = 64 * 1024;
+
     /// <summary><paramref name="pixels"/> is pinned as-is (byte[], ushort[], …) and handed to WIC by address, so a caller
     /// whose native layout already matches <paramref name="pixelFormat"/> (e.g. a <c>HalfImage</c>'s <c>ushort[]</c>) need
     /// not copy into a <c>byte[]</c> first.</summary>
     public static byte[] Run(Guid container, Guid pixelFormat, int width, int height, int stride, Array pixels, Action<IPropertyBag2>? options)
+        => InMemory(stream => Encode(stream, container, pixelFormat, width, height, options, frame => WriteWhole(frame, height, stride, pixels)));
+
+    /// <summary>As the array form, with the pixels filled a band at a time by <paramref name="fill"/>.</summary>
+    public static byte[] Run(Guid container, Guid pixelFormat, int width, int height, int stride, RowsFill fill, Action<IPropertyBag2>? options)
+        => InMemory(stream => Encode(stream, container, pixelFormat, width, height, options, frame => WriteBands(frame, height, stride, fill)));
+
+    private static byte[] InMemory(Action<IStream> encode)
+    {
+        IStream stream = Wic.MemoryStream();
+        try
+        {
+            encode(stream);
+            return Wic.ReadAll(stream);
+        }
+        finally { Marshal.ReleaseComObject(stream); }
+    }
+
+    /// <summary>One frame of <paramref name="width"/> x <paramref name="height"/> in <paramref name="pixelFormat"/> into
+    /// <paramref name="stream"/>; <paramref name="write"/> hands the encoder its pixels. Every COM object made here is
+    /// released before it returns, so the caller's release of the stream is the last one.</summary>
+    private static void Encode(IStream stream, Guid container, Guid pixelFormat, int width, int height, Action<IPropertyBag2>? options, Action<IWICBitmapFrameEncode> write)
     {
         IWICImagingFactory factory = Wic.CreateFactory();
         try
         {
-            IStream? stream = null;
             IWICBitmapEncoder? encoder = null;
             IWICBitmapFrameEncode? frame = null;
             IPropertyBag2? bag = null;
             try
             {
-                stream = Wic.MemoryStream();
                 Guid c = container;
                 Wic.Check(factory.CreateEncoder(ref c, IntPtr.Zero, out encoder), "CreateEncoder");
                 Wic.Check(encoder.Initialize(stream, Wic.CacheOptionNo), "IWICBitmapEncoder.Initialize");
@@ -288,21 +318,38 @@ internal static class WicEncode
                 Guid pf = pixelFormat;
                 Wic.Check(frame.SetPixelFormat(ref pf), "SetPixelFormat");
                 if (pf != pixelFormat) throw new InvalidOperationException($"WIC cannot encode this container in the requested pixel format ({pixelFormat})");
-                GCHandle h = GCHandle.Alloc(pixels, GCHandleType.Pinned);
-                try { Wic.Check(frame.WritePixels((uint)height, (uint)stride, checked((uint)((long)stride * height)), h.AddrOfPinnedObject()), "WritePixels"); }
-                finally { h.Free(); }
+                write(frame);
                 Wic.Check(frame.Commit(), "frame Commit");
                 Wic.Check(encoder.Commit(), "encoder Commit");
-                return Wic.ReadAll(stream);
             }
             finally
             {
                 if (bag != null) Marshal.ReleaseComObject(bag);
                 if (frame != null) Marshal.ReleaseComObject(frame);
                 if (encoder != null) Marshal.ReleaseComObject(encoder);
-                if (stream != null) Marshal.ReleaseComObject(stream);
             }
         }
         finally { Marshal.ReleaseComObject(factory); }
+    }
+
+    private static void WriteWhole(IWICBitmapFrameEncode frame, int height, int stride, Array pixels)
+    {
+        GCHandle h = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+        try { Wic.Check(frame.WritePixels((uint)height, (uint)stride, checked((uint)((long)stride * height)), h.AddrOfPinnedObject()), "WritePixels"); }
+        finally { h.Free(); }
+    }
+
+    /// <summary>WritePixels a band at a time: WIC takes a frame's rows over several calls, in order.</summary>
+    private static unsafe void WriteBands(IWICBitmapFrameEncode frame, int height, int stride, RowsFill fill)
+    {
+        int rows = Math.Clamp(BandBytes / stride, 1, height);
+        var band = new byte[rows * stride];
+        fixed (byte* p = band)
+            for (int top = 0; top < height; top += rows)
+            {
+                int n = Math.Min(rows, height - top);
+                fill(top, n, band.AsSpan(0, n * stride));
+                Wic.Check(frame.WritePixels((uint)n, (uint)stride, (uint)(n * stride), (IntPtr)p), "WritePixels");
+            }
     }
 }

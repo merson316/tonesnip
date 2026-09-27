@@ -10,26 +10,19 @@ public static class Bitmaps
     public static byte[] EncodePng(BgraImage img) => WicEncode.Run(Wic.ContainerPng, Wic.Pf32bppBgra, img.Width, img.Height, img.Width * 4, img.Data, null);
 
     /// <summary>JPEG has no alpha: transparent pixels are flattened on white, as <see cref="Flatten.OnWhite"/> does, while
-    /// packing to 24-bit BGR, so no flattened copy of the image is made. An opaque image is encoded as is.</summary>
+    /// packing to 24-bit BGR a band at a time (<see cref="Flatten.ToBgrOnWhite"/>), so neither a flattened nor a packed
+    /// copy of the image is made. An opaque image is encoded as is.</summary>
     public static byte[] EncodeJpeg(BgraImage img, int quality)
-    {
-        var bgr = new byte[img.Width * img.Height * 3];
-        for (int i = 0, o = 0; i < img.Data.Length; i += 4, o += 3)
-        {
-            int a = img.Data[i + 3];
-            bgr[o] = Flatten.OverWhite(img.Data[i], a);
-            bgr[o + 1] = Flatten.OverWhite(img.Data[i + 1], a);
-            bgr[o + 2] = Flatten.OverWhite(img.Data[i + 2], a);
-        }
-        return WicEncode.Run(Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, bgr, bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f));
-    }
+        => WicEncode.Run(Wic.ContainerJpeg, Wic.Pf24bppBgr, img.Width, img.Height, img.Width * 3, BgrOnWhite(img), JpegQuality(quality));
 
-    /// <summary>An 8-bit grayscale JPEG, for the UltraHDR gain map.</summary>
-    public static byte[] EncodeGrayJpeg(byte[] gray, int width, int height, int quality)
-    {
-        if (gray.Length != width * height) throw new ArgumentException("gray must be width*height bytes");
-        return WicEncode.Run(Wic.ContainerJpeg, Wic.Pf8bppGray, width, height, width, gray, bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f));
-    }
+    private static RowsFill BgrOnWhite(BgraImage img) => (top, count, rows) => Flatten.ToBgrOnWhite(img, top, count, rows);
+
+    private static Action<IPropertyBag2> JpegQuality(int quality) => bag => Wic.SetOption(bag, "ImageQuality", Math.Clamp(quality, 1, 100) / 100f);
+
+    /// <summary>An 8-bit grayscale JPEG, for the UltraHDR gain map, whose rows <paramref name="fill"/> computes a band
+    /// at a time, so the map is never held whole (<see cref="Core.Hdr.GainMapper.Fill"/>).</summary>
+    public static byte[] EncodeGrayJpeg(int width, int height, int quality, RowsFill fill)
+        => WicEncode.Run(Wic.ContainerJpeg, Wic.Pf8bppGray, width, height, width, fill, JpegQuality(quality));
 
     /// <summary>The largest image <see cref="Decode"/> will allocate for: 268 megapixels (1 GB of BGRA), more than three
     /// 8K monitors side by side but far short of what a forged header can ask for.</summary>
