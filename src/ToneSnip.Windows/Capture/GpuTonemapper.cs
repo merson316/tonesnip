@@ -120,36 +120,41 @@ public sealed unsafe class GpuTonemapper
     }
 
     /// <summary>
-    /// A frame whose pixels come from the CPU, one row at a time, through a system-memory staging texture: the memory
+    /// A frame whose pixels come from the CPU, one row at a time, through a system-memory staging band: the memory
     /// harness's synthetic frames and the self-test's stress image. Takes <see cref="Gate"/> itself.
+    /// <para>A band of at most <see cref="BandBytes"/>, never a frame-sized staging texture. The driver keeps a freed
+    /// staging texture's memory for a while after it is disposed, flushed and trimmed, and lets it go at a moment of its
+    /// own choosing: a frame-sized one put a random 38 MB spike on --memtest's cycles, in private bytes and Task
+    /// Manager's column alike, which no real snip has, since a captured frame is copied on the graphics card.</para>
     /// </summary>
     public GpuHdrFrame Upload(int width, int height, HalfRowFill fill)
     {
         Enter();
         try
         {
-            using ID3D11Texture2D staging = Device.CreateTexture2D(new Texture2DDescription(Format.R16G16B16A16_Float, (uint)width, (uint)height, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Write));
-            MappedSubresource m = Context.Map(staging, 0, MapMode.Write, Vortice.Direct3D11.MapFlags.None);
-            try
-            {
-                for (int y = 0; y < height; y++)
-                    fill(y, new Span<ushort>((byte*)m.DataPointer + (long)y * m.RowPitch, width * 4));
-            }
-            finally { Context.Unmap(staging, 0); }
+            int rows = HalfBandRows(width, height);
             ID3D11Texture2D frame = Device.CreateTexture2D(FrameDescription((uint)width, (uint)height));
             try
             {
-                Context.CopyResource(frame, staging);
+                using (ID3D11Texture2D staging = Device.CreateTexture2D(new Texture2DDescription(Format.R16G16B16A16_Float, (uint)width, (uint)rows, 1, 1, BindFlags.None, ResourceUsage.Staging, CpuAccessFlags.Write)))
+                    for (int top = 0; top < height; top += rows)
+                    {
+                        int n = Math.Min(rows, height - top);
+                        // Waits for the previous band's copy out of the staging texture before handing it out again.
+                        MappedSubresource m = Context.Map(staging, 0, MapMode.Write, Vortice.Direct3D11.MapFlags.None);
+                        try
+                        {
+                            for (int r = 0; r < n; r++)
+                                fill(top + r, new Span<ushort>((byte*)m.DataPointer + (long)r * m.RowPitch, width * 4));
+                        }
+                        finally { Context.Unmap(staging, 0); }
+                        Context.CopySubresourceRegion(frame, 0, 0, (uint)top, 0, staging, 0, new Vortice.Mathematics.Box(0, 0, 0, width, n, 1));
+                    }
+                // The runtime destroys the disposed staging band once the context is flushed.
+                Context.Flush();
                 return Adopt(frame);
             }
             catch { frame.Dispose(); throw; }
-            finally
-            {
-                // The runtime defers destroying the frame-sized staging texture (system memory) until the context is
-                // flushed; without this the memory harness saw its commit climb by a frame every few uploads.
-                staging.Dispose();
-                Context.Flush();
-            }
         }
         catch (Exception e) when (IsDeviceLoss(e)) { throw Lose(e); }
         finally { Monitor.Exit(Gate); }
