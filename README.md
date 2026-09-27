@@ -194,19 +194,22 @@ hotkey / tray / --snip ──▶ tonesnip.exe
 ## Building
 
 `ToneSnip.Core`, `ToneSnip.Windows` and the tests build with any .NET 10 SDK, Linux and WSL included. The app itself
-needs the Windows .NET 10 SDK for its WinUI tooling.
+needs the Windows .NET 10 SDK for its WinUI tooling, and `ToneSnip.Windows.Tests` runs only on Windows: it checks the
+GPU tonemap against the CPU one on WARP, the software graphics device, so it needs no graphics card.
 
 ```
 dotnet test tests/ToneSnip.Core.Tests
+dotnet test tests/ToneSnip.Windows.Tests              # on Windows
 dotnet publish src/ToneSnip -c Release -r win-x64     # on Windows
-tools/publish.sh [exe|debug|msix]                     # from WSL, through the Windows SDK
+tools/publish.sh [exe|debug|msix|test]                # from WSL, through the Windows SDK
 ```
 
-`tools/publish.sh` builds into `dist/`:
+`tools/publish.sh` runs both test projects, then builds into `dist/`:
 
 - `exe` (the default): the single-file production `tonesnip.exe`. On WSL it is also installed to
   `%USERPROFILE%\Tools\tonesnip` and started; set `TONESNIP_NO_INSTALL=1` to only build.
 - `msix`: `tonesnip-x64.msix`, signed when `TONESNIP_PFX` and `TONESNIP_PFX_PASSWORD` are set, unsigned otherwise.
+- `test`: nothing; only the tests run.
 - `debug`: `tonesnip-debug.exe`, the same app built with `-p:ToneSnipHarness=true`. It adds `--selftest`,
   `--screenshots`, `--hold` (for the UI Automation pass in `tools/ui-tests`), `--leaktest` and `--memtest`, and logs at
   debug level. It uses its own mutex, pipe and `%LOCALAPPDATA%\tonesnip-debug` folder, so it runs beside an installed
@@ -236,6 +239,7 @@ attaches them, with `SHA256SUMS.txt`, to a draft GitHub release. The release goe
 | `src/ToneSnip.Windows` | Windows.Graphics.Capture with [Vortice](https://github.com/amerkoleci/Vortice.Windows), DisplayConfig, keyboard hook, tray, GDI and WIC |
 | `src/ToneSnip` | The WinUI 3 app |
 | `tests/ToneSnip.Core.Tests` | xUnit tests for Core |
+| `tests/ToneSnip.Windows.Tests` | xUnit tests for ToneSnip.Windows on Windows: the GPU tonemap on WARP, WIC and Win32 helpers |
 | `tools/ui-tests` | The UI Automation pass, run against the debug build |
 | `packaging` | MSIX manifest and certificate script |
 

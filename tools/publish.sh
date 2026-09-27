@@ -7,6 +7,8 @@
 #                               into dist/tonesnip-debug/; it has its own mutex, pipes and %LOCALAPPDATA% folder so it
 #                               can run beside the installed app. Never installed or started.
 #   tools/publish.sh msix       the MSIX package, into dist/msix/
+#   tools/publish.sh test       only the tests: ToneSnip.Core.Tests (Linux SDK) and ToneSnip.Windows.Tests (Windows SDK)
+# Every target runs both test projects first.
 # Environment:
 #   TONESNIP_NO_INSTALL=1       build only: no install and no start
 #   TONESNIP_PFX=<windows path to .pfx> TONESNIP_PFX_PASSWORD=...   sign the MSIX (unsigned otherwise, which will not install)
@@ -17,6 +19,7 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 if ! command -v dotnet >/dev/null 2>&1 && [ -x "$HOME/.dotnet/dotnet" ]; then export PATH="$HOME/.dotnet:$PATH"; fi
 cd "$(dirname "$0")/.."
 TARGET="${1:-exe}"
+case "$TARGET" in exe|debug|msix|test) ;; *) echo "unknown target '$TARGET'; expected exe, debug, msix or test" >&2; exit 1 ;; esac
 dotnet test tests/ToneSnip.Core.Tests -c Release
 
 WINUSER=""
@@ -144,7 +147,16 @@ REPO_ROOT="$(pwd)"
 winpath() { echo "$WINDRIVE:$(echo "$REPO_ROOT" | sed 's|/|\\|g')\\$(echo "$1" | sed 's|/|\\|g')"; }
 
 # The Linux SDK (Core tests above) and the Windows SDK corrupt each other's obj/, so every Windows build starts clean.
-clean_obj() { rm -rf src/ToneSnip.Core/obj src/ToneSnip.Core/bin src/ToneSnip.Windows/obj src/ToneSnip.Windows/bin src/ToneSnip/obj src/ToneSnip/bin; }
+clean_obj() { rm -rf src/ToneSnip.Core/obj src/ToneSnip.Core/bin src/ToneSnip.Windows/obj src/ToneSnip.Windows/bin src/ToneSnip/obj src/ToneSnip/bin tests/ToneSnip.Windows.Tests/obj tests/ToneSnip.Windows.Tests/bin; }
+
+# ToneSnip.Windows' own tests (the GPU tonemap on WARP, the WIC and Win32 helpers) need Windows, so they run through the
+# Windows SDK. dotnet.exe runs from SDK_DIR, whose copy of global.json also selects Microsoft.Testing.Platform.
+test_windows() {
+  clean_obj
+  map_wsl_drive
+  (cd "$SDK_DIR" && "$WINDOTNET" test "$(winpath tests/ToneSnip.Windows.Tests/ToneSnip.Windows.Tests.csproj)" -c Release) | tr -d '\r'
+  unmap_wsl_drive
+}
 
 build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 10 Desktop Runtime)
   # WindowsAppSDKSelfContained=true is required: a single-file publish with a framework-dependent Windows App SDK is
@@ -220,7 +232,11 @@ may_start() {  # exe-name
   [ -n "$WINUSER" ]
 }
 
+test_windows
+
 case "$TARGET" in
+  test)
+    ;;
   exe)
     build_exe
     install_exe tonesnip
@@ -230,7 +246,4 @@ case "$TARGET" in
   debug)
     # No install and no start: the debug exe is copied by hand to wherever it is driven from (see tools/ui-tests).
     build_debug ;;
-  *)
-    echo "unknown target '$TARGET'; expected exe, debug or msix" >&2
-    exit 1 ;;
 esac

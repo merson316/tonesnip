@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ToneSnip.Windows on Windows itself: the GPU tonemap on the WARP software device (so no graphics card is needed,
+       and CI's windows-latest runs it), and the Win32/WIC helpers that need no window or desktop. The Linux CI leg
+       cannot load any of it, so this project runs only in windows.yml and tools/publish.sh. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <IsPackable>false</IsPackable>
+    <!-- xunit v3 builds each test project as its own runner executable. -->
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ToneSnip.Windows.Tests</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <ProjectReference Include="../../src/ToneSnip.Windows/ToneSnip.Windows.csproj" />
+  </ItemGroup>
+</Project>

@@ -42,6 +42,11 @@ jobs:
       - name: Core tests
         run: dotnet test tests/ToneSnip.Core.Tests -c Release
 
+      # ToneSnip.Windows on Windows: the GPU tonemap against the CPU one on WARP, the software device every Windows
+      # install has (the runner has no graphics card), and the WIC and Win32 helpers that need no desktop.
+      - name: Windows tests
+        run: dotnet test tests/ToneSnip.Windows.Tests -c Release
+
       # The WUI rules come from the Windows App SDK analyzer, which is only loaded when WinUIAnalyzerDir points at
       # its payload. tools/publish.sh supplies it locally; the runner has no copy, so the log says so explicitly.
       - name: WUI analyzer status
