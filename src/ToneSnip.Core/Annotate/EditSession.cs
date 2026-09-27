@@ -115,6 +115,9 @@ public sealed class EditSession
     public void End(int x, int y, InputMods mods)
     {
         if (_start == null) return;
+        // The release point is the drag's last point: a release away from the last move ends the shape where the button
+        // came up. Taken before _start is cleared, which the drag updates need.
+        Move(x, y, mods);
         (int sx, int sy) = _start.Value; _start = null;
         switch (_tool)
         {
@@ -137,12 +140,10 @@ public sealed class EditSession
                 if (_points != null) Doc.Add(new PenShape(Doc.NewId(), _points.ToArray(), Doc.Current.Width, Doc.Current.Color, _tool == Tool.Highlighter));
                 _points = null; InProgress = null; return;
             case Tool.Crop:
-                UpdateDragShape(x, y, mods);
                 IntRect m = CropMarquee; InProgress = null;
                 if (m.Width < Handles.MinSize || m.Height < Handles.MinSize) CropMarquee = IntRect.Empty;
                 MarqueeChanged?.Invoke(); return;
             default:
-                UpdateDragShape(x, y, mods);
                 Shape? made = InProgress; InProgress = null;
                 if (made == null) return;
                 bool tiny = made switch

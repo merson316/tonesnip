@@ -45,6 +45,30 @@ public class EditSessionTests
     }
 
     [Fact]
+    public void A_shape_ends_where_the_button_is_released_not_at_the_last_move()
+    {
+        EditSession s = NewSession(Tool.Rect);
+        s.Begin(10, 10, InputMods.None); s.Move(30, 30, InputMods.None); s.End(60, 50, InputMods.None);
+        Assert.Equal(IntRect.FromDrag(10, 10, 60, 50), Assert.IsType<BoxShape>(Assert.Single(s.Doc.Shapes)).Rect);
+        s.Tool = Tool.Arrow;
+        s.Begin(100, 100, InputMods.None); s.End(140, 120, InputMods.None);   // no move at all
+        var arrow = Assert.IsType<LineShape>(s.Doc.Shapes[1]);
+        Assert.Equal((140, 120), (arrow.X2, arrow.Y2));
+    }
+
+    [Theory]
+    [InlineData(Tool.Line)] [InlineData(Tool.Arrow)] [InlineData(Tool.Rect)] [InlineData(Tool.Ellipse)]
+    [InlineData(Tool.Spotlight)] [InlineData(Tool.Magnifier)] [InlineData(Tool.Blur)] [InlineData(Tool.Pixelate)]
+    public void A_click_with_a_shape_tool_draws_nothing(Tool tool)
+    {
+        EditSession s = NewSession(tool);
+        s.Begin(40, 40, InputMods.None); s.End(40, 40, InputMods.None);
+        Assert.Empty(s.Doc.Shapes);
+        Assert.Null(s.InProgress);
+        Assert.False(s.Doc.HasEdits);
+    }
+
+    [Fact]
     public void Rect_and_ellipse_drag_in_any_direction_and_shift_makes_squares()
     {
         EditSession s = NewSession(Tool.Rect);
