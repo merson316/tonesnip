@@ -90,16 +90,37 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
     /// <summary>The overlay window's annotated copy of one output's frame, pooled like the frame itself.</summary>
     public BgraImage BackBuffer(OutputInfo o, int width, int height) => _pool.Bgra(o.Index, FramePool.Back, width, height);
 
-    /// <summary>The monitors as the rest of the app describes them.</summary>
+    /// <summary>How long <see cref="Outputs"/> and <see cref="RefreshOutputs"/> wait for a grab in progress. Both run
+    /// on pool threads, which a grab stuck in the capture system or the driver must not park for good.</summary>
+    private const int OutputsWaitMs = 2000;
+
+    /// <summary>The monitors as the rest of the app describes them. Waits for a grab in progress so it sees that grab's
+    /// enumeration; past <see cref="OutputsWaitMs"/> it reads the list without waiting, which the capture guards with
+    /// its own lock, so a stuck grab costs at most a list from before a refresh the grab was making.</summary>
     public List<OutputInfo> Outputs()
     {
-        lock (_grabGate) return Describe(_capture.Outputs);
+        if (!Monitor.TryEnter(_grabGate, OutputsWaitMs))
+        {
+            log.Debug($"capture: a grab held the monitor list for over {OutputsWaitMs} ms; reading it without waiting");
+            return Describe(_capture.Outputs);
+        }
+        try { return Describe(_capture.Outputs); }
+        finally { Monitor.Exit(_grabGate); }
     }
 
-    /// <summary>Enumerates the monitors again, after a display change.</summary>
+    /// <summary>Enumerates the monitors again, after a display change. A grab that holds the capture past
+    /// <see cref="OutputsWaitMs"/> is not waited for: the next grab enumerates them instead, as after any display
+    /// change it has not yet seen.</summary>
     public void RefreshOutputs()
     {
-        lock (_grabGate) { _displaysChanged = false; _capture.Refresh(); }
+        if (!Monitor.TryEnter(_grabGate, OutputsWaitMs))
+        {
+            _displaysChanged = true;
+            log.Warn($"capture: a grab was still running {OutputsWaitMs} ms after a display change; the next snip enumerates the monitors instead");
+            return;
+        }
+        try { _displaysChanged = false; _capture.Refresh(); }
+        finally { Monitor.Exit(_grabGate); }
     }
 
     /// <summary>Set on a display change, so a snip taken before the app's delayed refresh re-enumerates first.</summary>
