@@ -30,7 +30,7 @@ window, `screenshots\`, `overlay-mode-switch.mp4`. Each result is `PASS`, `FAIL`
 0 when everything passed, 1 when anything failed and 2 when nothing failed but some input was blocked.
 
 `-Sections settings,editor` runs a subset (`settings`, `editor`, `editor-hdr`, `flyout`, `flyout-grid`,
-`toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `toast-notice`, `pin`, `gallery`);
+`toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `toast-notice`, `pin`, `tray-menu`, `gallery`);
 `-Theme light` drives the holds in the light theme; `-SkipGallery` drops the stock-control probe, which
 is the only section that opens an app other than ToneSnip.
 

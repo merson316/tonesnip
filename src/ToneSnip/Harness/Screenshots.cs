@@ -45,7 +45,7 @@ internal static partial class Screenshots
         "flyout", "flyout-row", "flyout-grid",
         "settings", "settings-general", "settings-hotkeys", "settings-tonemap", "settings-output", "settings-about",
         "editor", "editor-hdr", "editor-front", "toolbar", "toolbar-annotate",
-        "countdown", "textentry", "toast-saved", "toast-copied", "toast-dwell", "toast-notice", "pin",
+        "countdown", "textentry", "toast-saved", "toast-copied", "toast-dwell", "toast-notice", "pin", "tray-menu",
     };
 
     /// <summary>The rows <see cref="SeedHistory"/> seeded, so the empty-state shot can restore them.</summary>

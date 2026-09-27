@@ -30,7 +30,7 @@ public sealed partial class KeyboardHook : IDisposable
     [LibraryImport("user32.dll")] private static partial IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
     [LibraryImport("user32.dll")] private static partial short GetAsyncKeyState(int vKey);
     [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetMessageW(out Msg msg, IntPtr hWnd, uint min, uint max);
-    [LibraryImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool PostThreadMessageW(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
+    [LibraryImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static partial bool PostThreadMessageW(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
     [LibraryImport("user32.dll", SetLastError = true)] private static partial uint SendInput(uint count, [In] Input[] inputs, int size);
 
     /// <summary>INPUT with its keyboard member, laid out for x64: type, 4 bytes of padding, then KEYBDINPUT padded to the
@@ -114,26 +114,46 @@ public sealed partial class KeyboardHook : IDisposable
     private void HookThread(ManualResetEventSlim ready)
     {
         _threadId = Kernel32.GetCurrentThreadId();
-        Arm();
+        Arm(null);
         ready.Set();
         while (GetMessageW(out Msg msg, IntPtr.Zero, 0, 0))
         {
-            if (msg.message == RearmMessage) Arm();
+            if (msg.message == RearmMessage) Arm(Interlocked.Exchange(ref _rearmReason, null));
             if (msg.message == WmQuit) break;
         }
         Disarm();
     }
 
-    private void Arm()
+    /// <param name="reason">Why the re-arm was asked for, logged at Info; null for the periodic safety net, which is
+    /// logged at Debug only.</param>
+    private void Arm(string? reason)
     {
         Disarm();
         _hook = SetWindowsHookExW(WhKeyboardLl, _proc, Kernel32.GetModuleHandleW(null), 0);
         _installed = _hook != IntPtr.Zero;
-        if (!_installed) _log.Error($"keyboard hook failed: {Marshal.GetLastWin32Error()}");
-        // Info on the first arm so the log always shows the hook came up; Debug on the periodic re-arms.
-        else if (!_everArmed) { _everArmed = true; _log.Info($"keyboard hook armed, {_bindings.Count} bindings"); }
+        if (!_installed) { _log.Error($"keyboard hook failed: {Marshal.GetLastWin32Error()}"); return; }
+        Interlocked.Exchange(ref _armedAt, DateTime.Now.Ticks);
+        Interlocked.Increment(ref _arms);
+        // Info on the first arm so the log always shows the hook came up, and on a re-arm someone asked for; Debug on
+        // the periodic re-arms.
+        if (!_everArmed) { _everArmed = true; _log.Info($"keyboard hook armed, {_bindings.Count} bindings"); }
+        else if (reason != null) _log.Info($"keyboard hook re-armed ({reason}), {_bindings.Count} bindings");
         else _log.Debug($"keyboard hook re-armed, {_bindings.Count} bindings");
     }
+
+    /// <summary>Whether the hook is installed right now.</summary>
+    public bool Armed => _installed;
+    /// <summary>When the hook was last installed, by the first arm or any re-arm; null before the first.</summary>
+    /// <remarks>Kept as ticks: written on the hook thread and read on others, and a long cannot be read torn.</remarks>
+    public DateTime? ArmedAt => Interlocked.Read(ref _armedAt) is var t and not 0 ? new DateTime(t) : null;
+    private long _armedAt;
+    /// <summary>How many times the hook has been installed, re-arms included; a re-arm that went through bumps it.</summary>
+    public int Arms => Volatile.Read(ref _arms);
+    private int _arms;
+    /// <summary>The bindings the hook matches, unbound chords left out.</summary>
+    public int BindingCount => _bindings.Count;
+    /// <summary>Why the next re-arm was asked for, taken by the hook thread when it runs it.</summary>
+    private string? _rearmReason;
 
     /// <summary>Set by the first successful <see cref="Arm"/>.</summary>
     private bool _everArmed;
@@ -178,10 +198,13 @@ public sealed partial class KeyboardHook : IDisposable
     private static bool Down(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     /// <summary>Re-installs the hook now rather than at the next periodic re-arm; for use after a resume, an unlock or a
-    /// long GC pause, any of which can make Windows remove it.</summary>
-    public void Rearm()
+    /// long GC pause, any of which can make Windows remove it, and when the user asks for it from the tray.</summary>
+    /// <param name="reason">Said in the log line the re-arm writes, at Info. Null logs it at Debug, like the periodic
+    /// re-arm.</param>
+    public void Rearm(string? reason = null)
     {
-        if (_threadId != 0) PostThreadMessageW(_threadId, RearmMessage, IntPtr.Zero, IntPtr.Zero);
+        if (reason != null) Volatile.Write(ref _rearmReason, reason);
+        if (_threadId != 0 && !PostThreadMessageW(_threadId, RearmMessage, IntPtr.Zero, IntPtr.Zero)) _log.Warn($"keyboard hook: the re-arm was not posted ({Marshal.GetLastWin32Error()})");
     }
 
     public void Dispose()

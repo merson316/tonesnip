@@ -634,6 +634,21 @@ if (Should-Run 'settings') {
             Shot $id $pg.shot
         }
 
+        # --- About's Copy diagnostics puts the report on the clipboard (it replaces whatever was there)
+        Test-UI "settings: Copy diagnostics copies the report" {
+            winapp ui invoke 'Settings_NavAbout' -a $id | Out-Null
+            Start-Sleep -Milliseconds 600
+            # A clickable SettingsCard exposes no Invoke pattern, so it is pressed from the keyboard (guarded input).
+            winapp ui focus 'Settings_CopyDiagnostics' -a $id | Out-Null
+            Start-Sleep -Milliseconds 300
+            winapp ui send-keys 'space' -a $id --via send-input | Out-Null
+            $text = ''
+            for ($i = 0; $i -lt 20 -and $text -notmatch 'Monitors \('; $i++) { Start-Sleep -Milliseconds 250; $text = (Get-Clipboard -Raw) }
+            if ($text -notmatch '^ToneSnip ') { throw "the clipboard does not hold the report" }
+            foreach ($part in 'Monitors \(', 'Hotkeys:', 'Capture:', 'Recent log lines') { if ($text -notmatch $part) { throw "the report has no '$part'" } }
+            if ($text -match [regex]::Escape($env:USERPROFILE)) { throw "the report names the user's profile folder" }
+        }
+
         # --- value round-trips. Nothing here reaches settings.json: a hold runs in App.ScreenshotMode,
         #     where ApplySettings is an in-memory update.
         Test-UI "settings: back to General" { winapp ui invoke 'Settings_NavGeneral' -a $id }
@@ -1816,6 +1831,26 @@ if (Should-Run 'pin') {
         }
     } catch {
         Add-SectionError "pin section" $_
+    } finally { Stop-Hold $p }
+}
+
+# ---------------------------------------------------------------- 11d. the tray menu's Re-arm hotkeys
+
+# The real tray menu over a hook with no bindings. The hold checks the hook was installed again after the pick and
+# exits 0 only then, so its exit code is the test.
+if (Should-Run 'tray-menu') {
+    $p = $null
+    try {
+        $p = Start-Hold 'tray-menu' 60
+        $id = $p.Id
+        Test-UI "tray-menu: Re-arm hotkeys is on the menu" { winapp ui wait-for 'Re-arm hotkeys' -a $id -t 5000 }
+        Test-UI "tray-menu: Re-arm hotkeys re-installs the keyboard hook" {
+            winapp ui invoke 'Re-arm hotkeys' -a $id | Out-Null
+            if (-not $p.WaitForExit(15000)) { throw "the hold did not end after the pick" }
+            if ($p.ExitCode -ne 0) { throw "the hold exited $($p.ExitCode): the hook was not re-armed (see the debug log)" }
+        }
+    } catch {
+        Add-SectionError "tray-menu section" $_
     } finally { Stop-Hold $p }
 }
 

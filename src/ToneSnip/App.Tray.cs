@@ -1,5 +1,6 @@
 using ToneSnip.Core.Capture;
 using ToneSnip.Core.Config;
+using ToneSnip.Windows.Interop;
 using ToneSnip.Windows.Tray;
 
 namespace ToneSnip.App;
@@ -10,12 +11,39 @@ public partial class App
     /// <summary>The tray icon and its menu: plain Win32 in the Windows library, so no XAML loads at startup.</summary>
     private void BuildTray()
     {
+        TrayMenu menu = BuildTrayMenu(_messages!);
+        (IntPtr icon, bool ownsIcon) = TrayImage();
+        _tray = new TrayIcon(_messages!, icon, "ToneSnip", Log, ownsIcon);
+        _tray.LeftClick += ToggleFlyout;
+        _tray.RightClick += (x, y) => menu.Show(x, y);
+        // The glyph is drawn in one colour, so it is redrawn when the accent, light/dark mode or its settings change.
+        Theme.ThemeManager.Changed += () => RunOnUi(RefreshTrayIcon);
+        // A high-contrast switch arrives through the message window; it raises ThemeManager.Changed, which redraws.
+        // Posted rather than run inline, to get off the window procedure's stack before touching XAML.
+        _messages!.ThemeChanged += () => RunOnUi(Theme.ThemeManager.SystemThemeChanged);
+        string trayApplied = Settings.TrayIcon, themeApplied = Settings.Theme;
+        // SettingsChanged fires on every settings edit, so redraw only when these values change.
+        SettingsChanged += () =>
+        {
+            if (Settings.TrayIcon == trayApplied && Settings.Theme == themeApplied) return;
+            trayApplied = Settings.TrayIcon; themeApplied = Settings.Theme;
+            RefreshTrayIcon();
+        };
+        // The constructor already added the icon, so Shown has fired by now; log directly when it has.
+        void TrayShown() => Log.Debug($"tray shown in {Program.Started.ElapsedMilliseconds} ms since process start");
+        if (_tray.IsShown) TrayShown(); else _tray.Shown += TrayShown;
+    }
+
+    /// <summary>The tray's context menu, on <paramref name="window"/>. Separate from <see cref="BuildTray"/> so the
+    /// harness can open the same menu the tray does.</summary>
+    internal TrayMenu BuildTrayMenu(MessageWindow window)
+    {
         // An empty chord means "unbound"; the Funcs read Settings.Hotkeys live so a rebinding shows on the menu's
         // next open without rebuilding it.
         static Func<string?> Accelerator(Func<string> chord) => () => { string c = chord(); return string.IsNullOrEmpty(c) ? null : c; };
         // The owner-drawn Win32 menu cannot read XAML brushes, so it gets the theme state directly. High contrast
         // overrides dark/light: the menu then paints from GetSysColor.
-        var menu = new TrayMenu(_messages!, Log)
+        var menu = new TrayMenu(window, Log)
         {
             IsDark = () => Theme.ThemeManager.IsDark,
             IsHighContrast = () => Theme.ThemeManager.IsHighContrast,
@@ -42,29 +70,11 @@ public partial class App
         menu.AddSeparator();
         menu.Add("Settings…", ShowSettings);
         menu.Add("Pause hotkeys", () => Paused = !Paused, () => Paused);
+        // For a hotkey that has stopped answering: the same re-install the hook does after sleep, on demand.
+        menu.Add("Re-arm hotkeys", () => RearmHotkeys("the tray menu"));
         menu.AddSeparator();
         menu.Add("Quit ToneSnip", Quit);
-
-        (IntPtr icon, bool ownsIcon) = TrayImage();
-        _tray = new TrayIcon(_messages!, icon, "ToneSnip", Log, ownsIcon);
-        _tray.LeftClick += ToggleFlyout;
-        _tray.RightClick += (x, y) => menu.Show(x, y);
-        // The glyph is drawn in one colour, so it is redrawn when the accent, light/dark mode or its settings change.
-        Theme.ThemeManager.Changed += () => RunOnUi(RefreshTrayIcon);
-        // A high-contrast switch arrives through the message window; it raises ThemeManager.Changed, which redraws.
-        // Posted rather than run inline, to get off the window procedure's stack before touching XAML.
-        _messages!.ThemeChanged += () => RunOnUi(Theme.ThemeManager.SystemThemeChanged);
-        string trayApplied = Settings.TrayIcon, themeApplied = Settings.Theme;
-        // SettingsChanged fires on every settings edit, so redraw only when these values change.
-        SettingsChanged += () =>
-        {
-            if (Settings.TrayIcon == trayApplied && Settings.Theme == themeApplied) return;
-            trayApplied = Settings.TrayIcon; themeApplied = Settings.Theme;
-            RefreshTrayIcon();
-        };
-        // The constructor already added the icon, so Shown has fired by now; log directly when it has.
-        void TrayShown() => Log.Debug($"tray shown in {Program.Started.ElapsedMilliseconds} ms since process start");
-        if (_tray.IsShown) TrayShown(); else _tray.Shown += TrayShown;
+        return menu;
     }
 
     /// <summary>

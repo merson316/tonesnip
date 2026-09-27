@@ -544,7 +544,7 @@
             </StackPanel>
 
             <!-- ===== About =====
-                 An expander with the app icon, name and version over three clickable cards. -->
+                 An expander with the app icon, name and version over four clickable cards. -->
             <StackPanel x:Name="PageAbout" Visibility="Collapsed" Spacing="4">
               <toolkit:SettingsExpander x:Name="AboutExpander" Header="ToneSnip" IsExpanded="True"
                                         AutomationProperties.AutomationId="Settings_AboutExpander">
@@ -568,6 +568,13 @@
                   <toolkit:SettingsCard Header="Open settings folder" Description="Where settings.json and the snip history live."
                                         IsClickEnabled="True" Click="OnOpenSettingsFolder"
                                         AutomationProperties.AutomationId="Settings_OpenSettingsFolder"/>
+                  <!-- Polite live region: the Description turns into the confirmation after a click, and Narrator
+                       reads it from there. -->
+                  <toolkit:SettingsCard x:Name="CopyDiagnosticsCard" Header="Copy diagnostics"
+                                        Description="Version, Windows build, monitors, HDR, hotkeys and recent log lines, for a bug report."
+                                        IsClickEnabled="True" Click="OnCopyDiagnostics"
+                                        AutomationProperties.LiveSetting="Polite"
+                                        AutomationProperties.AutomationId="Settings_CopyDiagnostics"/>
                   <toolkit:SettingsCard Header="GitHub" Description="github.com/merson316/tonesnip"
                                         IsClickEnabled="True" Click="OnGitHub"
                                         AutomationProperties.AutomationId="Settings_GitHub"/>

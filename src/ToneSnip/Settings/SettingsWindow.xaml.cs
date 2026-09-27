@@ -541,6 +541,26 @@ public partial class SettingsWindow : Window
     // Shell.OpenFolder is the app's single way of opening Explorer; the log above uses ShellExecute to open in the
     // user's .log handler.
     private void OnOpenSettingsFolder(object sender, RoutedEventArgs e) => Shell.OpenFolder(AppPaths.Dir, App.Current.Log);
+    /// <summary>What the Copy diagnostics card says under its title while it is not confirming a copy.</summary>
+    private string? _diagnosticsDescription;
+
+    /// <summary>
+    /// Copies the diagnostics report and says so in the card's description for a few seconds, which the card's live
+    /// region reads out. The card is disabled while the report is built, so a double click copies once.
+    /// </summary>
+    private async void OnCopyDiagnostics(object sender, RoutedEventArgs e)
+    {
+        _diagnosticsDescription ??= CopyDiagnosticsCard.Description as string;
+        CopyDiagnosticsCard.IsEnabled = false;
+        bool copied = await App.Current.CopyDiagnosticsAsync();
+        if (_closed) return;
+        CopyDiagnosticsCard.IsEnabled = true;
+        CopyDiagnosticsCard.Description = copied ? "Copied to the clipboard. Paste it into the bug report." : "Not copied. Open the log to see why.";
+        Controls.LiveRegion.Announce(CopyDiagnosticsCard);
+        await Task.Delay(TimeSpan.FromSeconds(4));
+        if (!_closed && _diagnosticsDescription != null) CopyDiagnosticsCard.Description = _diagnosticsDescription;
+    }
+
     private void OnGitHub(object sender, RoutedEventArgs e) => StartShell("https://github.com/merson316/tonesnip", "open GitHub");
 
     /// <summary>The preview's maximum size in DIPs.</summary>

@@ -57,6 +57,10 @@ public partial class App
         Toasts = new ToastService(Log);
     }
 
+    /// <summary>Hands a harness hold the keyboard hook the tray's "Re-arm hotkeys" re-arms; side modes install none of
+    /// their own.</summary>
+    internal void UseHookForHarness(Windows.Hotkeys.KeyboardHook hook) => Hook = hook;
+
     /// <summary>`--memtest`, which needs the grabber and its Grabbed handler but nothing after them. True when it was
     /// started.</summary>
     private bool StartMemTest()

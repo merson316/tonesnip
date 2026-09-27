@@ -76,12 +76,16 @@ internal static partial class Screenshots
             {
                 await HoldPin(seconds);
             }
+            else if (what.Equals("tray-menu", StringComparison.OrdinalIgnoreCase))
+            {
+                await HoldTrayMenu(seconds);
+            }
             else if (!what.StartsWith("flyout", StringComparison.OrdinalIgnoreCase))
             {
                 _failures++;
                 app.Log.Warn($"hold: no window called {what}; known: flyout-row, flyout-grid, settings-<page>, editor, " +
                              "editor-hdr, editor-front, toolbar, toolbar-annotate, countdown, textentry, toast-saved, toast-copied, toast-dwell, " +
-                             "toast-notice, pin");
+                             "toast-notice, pin, tray-menu");
             }
             else
             {
