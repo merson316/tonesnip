@@ -791,6 +791,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 // can aim wherever the mouse can.
                 if (_keyAnchor == null && !Selection.IsEmpty)
                 {
+                    if (!_pendingSelection.IsEmpty && Selection == _pendingSelection) { NudgePending(dx, dy, alt); break; }
                     Selection = alt ? Resize(Selection, dx, dy) : Selection.Nudge(dx, dy, desktop);
                     break;
                 }
@@ -884,6 +885,28 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         (int x, int y) = KeyboardSelection.Step(Cursor.X, Cursor.Y, dx, dy, monitors);
         User32.SetCursorPos(x, y);
         OnMouseMove(x, y);
+    }
+
+    /// <summary>
+    /// The arrows in the "annotate" flow, whose selection is already made: the selection that Done and Enter save moves
+    /// (or with Alt, resizes) with the outline on screen, and a lasso's outline moves with it, so the snip is where the
+    /// user put it. A lasso is not resized: its outline has no corner to pull, so Alt+arrows leave it and say so.
+    /// </summary>
+    private void NudgePending(int dx, int dy, bool alt)
+    {
+        IntRect was = _pendingSelection;
+        if (alt && _pendingPath != null)
+        {
+            Announce?.Invoke("A lasso cannot be resized; the arrow keys move it");
+            return;
+        }
+        IntRect now = alt ? Resize(was, dx, dy) : was.Nudge(dx, dy, desktop);
+        if (_pendingPath is { } path && (now.Left != was.Left || now.Top != was.Top))
+        {
+            int mx = now.Left - was.Left, my = now.Top - was.Top;
+            _pendingPath = path.Select(p => (p.X + mx, p.Y + my)).ToList();
+        }
+        _pendingSelection = Selection = now;
     }
 
     /// <summary>Alt+arrows: the selection's right and bottom edges move, never past the desktop or below 1 × 1.</summary>
