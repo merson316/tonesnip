@@ -236,6 +236,26 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
         }
     }
 
+    /// <summary>The snip screen while it is up, and the mode it was opened in. UI thread only.</summary>
+    private Overlay.OverlaySession? _overlay;
+    private SnipMode _overlayMode;
+
+    /// <summary>
+    /// The displays changed (WM_DISPLAYCHANGE). A snip screen built for the old layout is closed as a cancel when the
+    /// monitors it froze no longer match <paramref name="monitors"/>: its windows would cover the wrong areas, or a
+    /// monitor that is gone, and a snip taken from it would be cut from frames that no longer match the screen. The
+    /// user snips again, which grabs the new layout. A change that leaves every monitor where it was keeps the screen
+    /// up. UI thread only.
+    /// </summary>
+    public void DisplaysChanged(IReadOnlyCollection<IntRect> monitors)
+    {
+        if (_overlay is not { } overlay) return;
+        List<IntRect> frozen = overlay.Monitors;
+        if (frozen.Count == 0 || MonitorLayout.Same(frozen, monitors)) return;
+        log.Info($"{_overlayMode}: the displays changed while the snip screen was up ({frozen.Count} monitor(s) -> {monitors.Count}); it was closed, snip again");
+        overlay.Finish(Overlay.OverlayOutcome.Cancelled);
+    }
+
     /// <summary>
     /// Puts the frozen-frame overlay up and waits for the selection. A watchdog ends the snip if the overlay has not
     /// painted within <see cref="PaintBudget"/>: frozen windows that never draw would otherwise hold <see cref="Busy"/>
@@ -251,6 +271,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
         bool painted = false;   // UI thread only
         var watchdog = new CancellationTokenSource();
         var overlay = new Overlay.OverlaySession(outputs, grabber, desktop, mode, settings(), log);
+        _overlay = overlay; _overlayMode = mode;
         overlay.FirstPaint = () =>
         {
             painted = true;
@@ -302,6 +323,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             watchdog.Cancel();
             watchdog.Dispose();
             _stage = null;
+            _overlay = null;
         }
         if (outcome.RestartWithDelay >= 0)
         {

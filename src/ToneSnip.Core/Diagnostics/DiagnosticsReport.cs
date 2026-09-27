@@ -55,7 +55,7 @@ public static class DiagnosticsReport
     private static readonly string[] Topics =
     {
         "hotkey", "keyboard hook", "refused", "resumed", "going to sleep", "session locked", "session unlocked",
-        "displays on", "displays off", "display change", "the compacting collection", "gc pause", "graphics device",
+        "displays on", "displays off", "display change", "displays changed", "the compacting collection", "gc pause", "graphics device",
         "using gdi", "capture:", "started, pid", "stuck",
     };
 

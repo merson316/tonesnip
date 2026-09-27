@@ -238,6 +238,7 @@ public partial class App : Application
     {
         Log.Debug("display change");
         Grabber.DisplaysChanged();
+        CloseSnipScreenIfDisplaysChanged();
         if (Interlocked.Exchange(ref _displayRefreshPending, 1) == 1) return;
         _ = Task.Run(() =>
         {
@@ -247,9 +248,19 @@ public partial class App : Application
             {
                 Grabber.RefreshOutputs();
                 PublishOutputs(Grabber.Outputs());
+                // Asked again once Windows has settled: the first message can arrive before the new layout is in place.
+                RunOnUi(CloseSnipScreenIfDisplaysChanged);
             }
             catch (Exception e) { Log.Warn("display change refresh: " + e.Message); }
         });
+    }
+
+    /// <summary>Closes an open snip screen whose monitors no longer match the desktop (<see cref="SnipSession.DisplaysChanged"/>).
+    /// UI thread.</summary>
+    private void CloseSnipScreenIfDisplaysChanged()
+    {
+        try { Session.DisplaysChanged(Native.Monitors().Select(m => m.Bounds).ToList()); }
+        catch (Exception e) { Log.Warn("display change: the snip screen was not checked: " + e.Message); }
     }
 
     /// <summary>

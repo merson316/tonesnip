@@ -214,6 +214,10 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         }
     }
 
+    /// <summary>The monitors the frozen frames were taken of, for telling whether the displays changed under them.
+    /// Empty once the session has finished.</summary>
+    public List<IntRect> Monitors => _outputs.Select(o => o.Info.Bounds).ToList();
+
     /// <summary>Paints every frozen-frame window's pending update at once; the paint watchdog's last check before it
     /// gives up on an overlay that has not painted.</summary>
     public void PaintNow() { foreach (OverlayWindow w in _windows) w.PaintNow(); }
