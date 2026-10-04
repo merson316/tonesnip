@@ -154,6 +154,7 @@ is kept as `settings.json.bad-<time>` and defaults are used.
 | `historyLimit` | `20` | 20, 50, 100 or 200: how many snips Recent lists. Older snips leave the list; their files stay |
 | `deleteToRecycleBin` | `true` | Deleting from Recent snips moves the file and its HDR copy to the Recycle Bin |
 | `showNitsReadout` | `true` | |
+| `preciseNits` | `false` | Nits to 3 decimals in the readouts and in what the picker copies. |
 | `colorFormat` | `hex` | `hex` (`#RRGGBB`) or `rgb` (`rgb(r, g, b)`): what the colour picker copies |
 | `startWithWindows` | `false` | A per-user Run key; the MSIX uses its startup task instead |
 

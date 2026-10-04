@@ -117,6 +117,8 @@ public sealed record SnipSettings
     /// <summary>colour | mono | accent. Monochrome is the default: the Windows 11 convention for a tray glyph.</summary>
     public string TrayIcon { get; set; } = "mono";
     public bool ShowNitsReadout { get; set; } = true;
+    /// <summary>Nits to three decimals instead of whole, in every readout and in what the picker copies.</summary>
+    public bool PreciseNits { get; set; }
     /// <summary>hex | rgb: how the colour picker (C in the overlay, the editor's picker) writes the colour it copies.</summary>
     public string ColorFormat { get; set; } = "hex";
     /// <summary>Include the mouse pointer in what is captured: an instant snip's image, and the frozen screen a

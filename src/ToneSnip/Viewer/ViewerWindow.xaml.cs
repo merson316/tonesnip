@@ -493,7 +493,7 @@ public sealed partial class ViewerWindow : Window
     {
         if (nits is float n && App.Current.Settings.ShowNitsReadout)
         {
-            NitsReadout.Text = $"{n:F0} nits";
+            NitsReadout.Text = $"{Core.Extract.ColorText.Nits(n, App.Current.Settings.PreciseNits)} nits";
             NitsReadout.Visibility = Visibility.Visible;
         }
         else NitsReadout.Visibility = Visibility.Collapsed;
@@ -549,7 +549,7 @@ public sealed partial class ViewerWindow : Window
         System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.CopyTo(_loupePixels!, _loupeBitmap!.PixelBuffer);
         _loupeBitmap.Invalidate();
         uint argb = Surface.ColourAt(x, y) ?? 0xFF000000;
-        _loupeText!.Text = Core.Extract.ColorText.Loupe(argb, App.Current.Settings.ColorFormat, Surface.NitsAt(x, y));
+        _loupeText!.Text = Core.Extract.ColorText.Loupe(argb, App.Current.Settings.ColorFormat, Surface.NitsAt(x, y), App.Current.Settings.PreciseNits);
         _loupeLabel!.Measure(new global::Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
         int labelW = (int)Math.Ceiling(_loupeLabel.DesiredSize.Width * s), labelH = (int)Math.Ceiling(_loupeLabel.DesiredSize.Height * s);
         global::Windows.Foundation.Point p = Surface.TransformToVisual(LoupeLayer).TransformPoint(Surface.PixelCentre(x, y));
@@ -611,12 +611,12 @@ public sealed partial class ViewerWindow : Window
     {
         SetPicking(false);
         string colour = Core.Extract.ColorText.Format(argb, App.Current.Settings.ColorFormat);
-        string copied = withNits ? Core.Extract.ColorText.WithNits(colour, nits) : colour;
+        string copied = withNits ? Core.Extract.ColorText.WithNits(colour, nits, App.Current.Settings.PreciseNits) : colour;
         // Queued, so two quick picks land in the order they were made.
         _ = ClipboardWriter.SetTextQueued(copied, App.Current.Log).ContinueWith(
             t => App.Current.Log.Warn("viewer pick colour: " + t.Exception!.GetBaseException().Message),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-        ShowNote(Core.Extract.ColorText.Confirmation(colour, nits, withNits), dwell: true);
+        ShowNote(Core.Extract.ColorText.Confirmation(colour, nits, withNits, App.Current.Settings.PreciseNits), dwell: true);
     }
 
     /// <summary>

@@ -170,7 +170,7 @@ public partial class SettingsWindow : Window
     {
         ThemeCombo.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Themes, s.Theme));
         TrayIconCombo.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.TrayIcons, s.TrayIcon));
-        StartWithWindows.IsOn = s.StartWithWindows; NitsReadout.IsOn = s.ShowNitsReadout; CaptureCursor.IsOn = s.CaptureCursor;
+        StartWithWindows.IsOn = s.StartWithWindows; NitsReadout.IsOn = s.ShowNitsReadout; PreciseNits.IsOn = s.PreciseNits; CaptureCursor.IsOn = s.CaptureCursor;
         DefaultDelay.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Delays, s.DefaultDelay));
         AfterSelect.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.AfterSelects, s.AfterSelect));
         ColorFormat.SelectedIndex = Math.Max(0, Array.IndexOf(Core.Extract.ColorText.Formats, s.ColorFormat));
@@ -251,6 +251,7 @@ public partial class SettingsWindow : Window
                 TrayIcon = SnipSettings.TrayIcons[Math.Max(0, TrayIconCombo.SelectedIndex)],
                 StartWithWindows = StartWithWindows.IsOn,
                 ShowNitsReadout = NitsReadout.IsOn,
+                PreciseNits = PreciseNits.IsOn,
                 CaptureCursor = CaptureCursor.IsOn,
                 DefaultDelay = SnipSettings.Delays[Math.Max(0, DefaultDelay.SelectedIndex)],
                 AfterSelect = SnipSettings.AfterSelects[Math.Max(0, AfterSelect.SelectedIndex)],

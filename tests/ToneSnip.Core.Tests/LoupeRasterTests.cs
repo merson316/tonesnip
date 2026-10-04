@@ -67,7 +67,7 @@ public class LoupeRasterTests
     [Fact]
     public void The_label_is_the_colour_as_copied_with_the_nits_beside_it()
     {
-        Assert.Equal("#C80A14", ColorText.Loupe(0xFFC80A14, "hex", null));
-        Assert.Equal("rgb(200, 10, 20)  ·  480 nits", ColorText.Loupe(0xFFC80A14, "rgb", 480f));
+        Assert.Equal("#C80A14", ColorText.Loupe(0xFFC80A14, "hex", null, precise: false));
+        Assert.Equal("rgb(200, 10, 20)  ·  480 nits", ColorText.Loupe(0xFFC80A14, "rgb", 480f, precise: false));
     }
 }

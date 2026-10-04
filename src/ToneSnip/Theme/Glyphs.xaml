@@ -73,6 +73,7 @@
   <x:String x:Key="GlyphHistory">&#xE81C;</x:String>
   <x:String x:Key="GlyphStartWithWindows">&#xE7E8;</x:String>
   <x:String x:Key="GlyphNitsReadout">&#xE793;</x:String>
+  <x:String x:Key="GlyphPreciseNits">&#xE8EF;</x:String>
   <x:String x:Key="GlyphCaptureCursor">&#xE8B0;</x:String>
   <x:String x:Key="GlyphAfterSelect">&#xE8FF;</x:String>
   <x:String x:Key="GlyphSelectionFrame">&#xF407;</x:String>

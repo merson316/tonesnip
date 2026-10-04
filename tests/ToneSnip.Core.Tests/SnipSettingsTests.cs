@@ -31,6 +31,18 @@ public class SnipSettingsTests
         Assert.Equal("mono", s.TrayIcon);
         // Off, as in Snipping Tool: the pointer is rarely what a snip is for.
         Assert.False(s.CaptureCursor);
+        Assert.False(s.PreciseNits);
+    }
+
+    [Fact]
+    public void Precise_nits_round_trips_under_its_json_name()
+    {
+        string p = Temp("{ \"version\": 2, \"preciseNits\": true }");
+        (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
+        Assert.Null(err);
+        Assert.True(s.PreciseNits);
+        SnipSettingsFile.Save(p, s with { PreciseNits = false });
+        Assert.Contains("\"preciseNits\": false", File.ReadAllText(p));
     }
 
     [Fact]

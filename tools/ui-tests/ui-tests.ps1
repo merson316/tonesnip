@@ -695,6 +695,18 @@ if (Should-Run 'settings') {
             Start-Sleep -Milliseconds 400
             winapp ui wait-for 'Settings_CaptureCursor' -a $id --value $was -t 4000
         }
+        Test-UI "settings: PreciseNits toggles and returns" {
+            winapp ui scroll-into-view 'Settings_PreciseNits' -a $id 2>&1 | Out-Null
+            $was = (Get-Json @('get-value','Settings_PreciseNits','-a',"$id",'--json')).text
+            winapp ui invoke 'Settings_PreciseNits' -a $id
+            if ($LASTEXITCODE -ne 0) { throw "invoke failed" }
+            Start-Sleep -Milliseconds 400
+            $now = (Get-Json @('get-value','Settings_PreciseNits','-a',"$id",'--json')).text
+            if ($now -eq $was) { throw "did not change from $was" }
+            winapp ui invoke 'Settings_PreciseNits' -a $id
+            Start-Sleep -Milliseconds 400
+            winapp ui wait-for 'Settings_PreciseNits' -a $id --value $was -t 4000
+        }
         Test-UI "settings: the hold wrote nothing to HKCU Run" {
             $after = (Get-ItemProperty -Path $runKey -ErrorAction SilentlyContinue).ToneSnip
             if ($after -ne $runBefore) { throw "HKCU Run\ToneSnip moved: '$runBefore' -> '$after'" }

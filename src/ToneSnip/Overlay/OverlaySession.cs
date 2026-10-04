@@ -415,7 +415,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     {
         if (_pillNote != null) return _pillNote;   // a confirmation stands in for the readout while it lasts
         // The picker's loupe reads the colour it would copy, whatever the frame.
-        if (_picking) return PixelUnderCursor() is { } p ? Core.Extract.ColorText.Loupe(p.Argb, settings.ColorFormat, p.Nits) : null;
+        if (_picking) return PixelUnderCursor() is { } p ? Core.Extract.ColorText.Loupe(p.Argb, settings.ColorFormat, p.Nits, settings.PreciseNits) : null;
         string? nits = NitsText();
         switch (FrameStyle)
         {
@@ -511,8 +511,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         if (PixelUnderCursor() is not { } pixel) return;
         (uint argb, float? nits) = pixel;
         string colour = Core.Extract.ColorText.Format(argb, settings.ColorFormat);
-        string copied = withNits ? Core.Extract.ColorText.WithNits(colour, nits) : colour;
-        string said = Core.Extract.ColorText.Confirmation(colour, nits, withNits);
+        string copied = withNits ? Core.Extract.ColorText.WithNits(colour, nits, settings.PreciseNits) : colour;
+        string said = Core.Extract.ColorText.Confirmation(colour, nits, withNits, settings.PreciseNits);
         SetPicking(false, quiet: true);
         ShowPillNote(said);
         Announce?.Invoke(said);
@@ -1067,7 +1067,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         if (o?.ReadableHdr is not { } f) return null;
         string text;
         if (f.TrySample(Cursor.X - o.Info.Left, Cursor.Y - o.Info.Top, out float r, out float g, out float b))
-            text = _lastNits = $"{Core.Color.Transfer.Luminance709(r, g, b) * 80f:F0} nits";
+            text = _lastNits = $"{Nits(Core.Color.Transfer.Luminance709(r, g, b) * 80f)} nits";
         else if (_lastNits != null && f.Readable) { text = _lastNits; CatchUpStats(); }
         else return null;
         IntRect sel = Selection.IsEmpty ? Hover : Selection;
@@ -1084,7 +1084,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 {
                     _statsAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     _statsFor = (hit, f);
-                    _stats = $"  peak {peak:F0}  mean {mean:F0}";
+                    _stats = $"  peak {Nits(peak)}  mean {Nits(mean)}";
                 }
                 else CatchUpStats();   // the device was busy: the old figures stay up until the timer asks again
             }
@@ -1092,6 +1092,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         }
         return text;
     }
+
+    private string Nits(float nits) => Core.Extract.ColorText.Nits(nits, settings.PreciseNits);
 
     /// <summary>
     /// Re-asks for the readout once the throttle interval has passed since the last sample. The pill's text is cached

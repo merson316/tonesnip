@@ -250,6 +250,12 @@
                 <ToggleSwitch x:Name="NitsReadout" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
                               AutomationProperties.Name="Show nits under the cursor" AutomationProperties.AutomationId="Settings_NitsReadout"/>
               </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Precise nits"
+                                    Description="Shows and copies nits to 3 decimals, e.g. 480.125.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPreciseNits}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="PreciseNits" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Precise nits" AutomationProperties.AutomationId="Settings_PreciseNits"/>
+              </toolkit:SettingsCard>
               <toolkit:SettingsCard Header="Capture the mouse pointer"
                                     Description="Shows the pointer where it was when the snip started.">
                 <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCaptureCursor}"/></toolkit:SettingsCard.HeaderIcon>
