@@ -8,6 +8,10 @@
 //            the 128 MB a buffer is guaranteed to be allowed.
 // CSStats:   luminance peak and sum over a rectangle, one partial per 64x64 tile, summed on the CPU.
 // CSZebra:   one bit per pixel, set where luminance x exposure is above SDR white; one thread per 32-pixel word.
+// CSVideo:   a recording's frame as NV12 (Record.Nv12 in ToneSnip.Core): the same 8-bit values CSTonemap gives a snip,
+//            as BT.709 limited-range Y'CbCr, chroma the mean of each 2x2 block. One thread per 4x2 pixels, writing two
+//            words of luma (four bytes each) into Dst and one word of chroma (two Cb, Cr pairs) into Chroma, so the
+//            readback is a row copy into the encoder's buffer.
 //
 // Compiled with D3DCOMPILE_IEEE_STRICTNESS: the NaN/inf handling below must survive the optimiser.
 
@@ -15,12 +19,13 @@ Texture2D<float4> Src : register(t0);
 RWTexture2D<uint> Dst : register(u0);
 RWStructuredBuffer<float2> Partials : register(u1);
 RWByteAddressBuffer Mask : register(u2);
+RWTexture2D<uint> Chroma : register(u3);
 
 cbuffer Params : register(b0)
 {
     uint2 Size;          // output (region) size in pixels
     uint2 Origin;        // region's top-left in the source texture
-    uint Mode;           // 0 desktop, 1 hable, 2 aces, 3 passthrough (clip + encode)
+    uint Mode;           // 0 desktop, 1 hable, 2 aces, 3 passthrough (clip + encode), 4 an SDR frame (CSVideo)
     uint Clip;           // desktop: knee >= 1
     float Scale;         // 80 / sdrWhite * exposure
     float SdrWhite;      // nits
@@ -198,4 +203,62 @@ void CSZebra(uint3 id : SV_DispatchThreadID)
         if (!(lit <= ZebraWhite)) word |= 1u << b;
     }
     Mask.Store((id.y * TilesX + id.x) * 4, word);
+}
+
+// --------------------------------------------------------------------------------------------------------- video
+
+// One pixel as the 8-bit value a snip of it gets, over 255. An SDR frame (B8G8R8A8_UNORM) is display-referred already,
+// so it is only requantised: a UNORM read returns exactly n / 255.
+float3 Display(float3 c)
+{
+    uint3 q;
+    if (Mode == 0)
+    {
+        float3 m = Desktop(c);
+        q = uint3(EncodeTable(m.r), EncodeTable(m.g), EncodeTable(m.b));
+    }
+    else if (Mode == 1) q = uint3(EncodeTable(Hable1(c.r)), EncodeTable(Hable1(c.g)), EncodeTable(Hable1(c.b)));
+    else if (Mode == 2) q = uint3(EncodeExact(Aces1(c.r)), EncodeExact(Aces1(c.g)), EncodeExact(Aces1(c.b)));
+    else if (Mode == 3) q = uint3(EncodeTable(c.r), EncodeTable(c.g), EncodeTable(c.b));
+    else q = (uint3)round(saturate(c) * 255.0);
+    return q / 255.0;
+}
+
+// Record.Nv12: BT.709 weights, limited range, rounded half to even as the CPU's MathF.Round.
+float Luma709(float3 p) { return 0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b; }
+uint LumaByte(float3 p) { return (uint)clamp(round(16.0 + 219.0 * Luma709(p)), 0.0, 255.0); }
+uint ChromaBytes(float3 p)
+{
+    float y = Luma709(p);
+    uint cb = (uint)clamp(round(128.0 + 224.0 * (p.b - y) / 1.8556), 0.0, 255.0);
+    uint cr = (uint)clamp(round(128.0 + 224.0 * (p.r - y) / 1.5748), 0.0, 255.0);
+    return cb | (cr << 8);
+}
+
+// Size is the frame's (both sides even), Origin its top-left in Src. Columns past the right edge, in the last word of a
+// width that is not a multiple of 4, repeat the edge; the readback copies only Size.x bytes a row.
+[numthreads(8, 8, 1)]
+void CSVideo(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x * 4 >= Size.x || id.y * 2 >= Size.y) return;
+    uint2 at = uint2(id.x * 4, id.y * 2);
+    uint top = 0, bottom = 0, chroma = 0;
+    [loop] for (uint pair = 0; pair < 2; pair++)
+    {
+        float3 sum = 0.0;
+        [loop] for (uint i = 0; i < 2; i++)
+        {
+            uint column = pair * 2 + i;
+            uint x = min(at.x + column, Size.x - 1);
+            float3 a = Display(Src.Load(int3(Origin + uint2(x, at.y), 0)).rgb);
+            float3 b = Display(Src.Load(int3(Origin + uint2(x, at.y + 1), 0)).rgb);
+            top |= LumaByte(a) << (column * 8);
+            bottom |= LumaByte(b) << (column * 8);
+            sum += a + b;
+        }
+        chroma |= ChromaBytes(sum * 0.25) << (pair * 16);
+    }
+    Dst[uint2(id.x, at.y)] = top;
+    Dst[uint2(id.x, at.y + 1)] = bottom;
+    Chroma[id.xy] = chroma;
 }

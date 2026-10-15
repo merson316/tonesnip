@@ -434,6 +434,13 @@ public sealed partial class HistoryFlyout : PopupWindow
         App.Current.Snip(mode);
     }
 
+    /// <summary>The header's record button: the snip screen opens armed to record, or the recording running stops.</summary>
+    private void OnRecord(object sender, RoutedEventArgs e)
+    {
+        Dismiss();
+        App.Current.ToggleRecording(fromMenu: true);
+    }
+
     /// <summary>The default delay from settings, or 0 if the stored value is not one of the choices.</summary>
     private static int Delay => SnipSettings.Delays.Contains(App.Current.Settings.DefaultDelay) ? App.Current.Settings.DefaultDelay : 0;
 

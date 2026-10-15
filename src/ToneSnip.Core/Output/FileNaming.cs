@@ -9,6 +9,10 @@ public static class FileNaming
     public static string Build(DateTime local, string ext)
         => $"Snip {local.ToString("yyyy-MM-dd HHmmss", CultureInfo.InvariantCulture)}.{ext.TrimStart('.')}";
 
+    /// <summary>A screen recording's name, dated as a snip's is.</summary>
+    public static string BuildRecording(DateTime local)
+        => $"Recording {local.ToString("yyyy-MM-dd HHmmss", CultureInfo.InvariantCulture)}.mp4";
+
     public static string Resolve(string folder, string fileName, Func<string, bool> exists)
     {
         string path = Path.Combine(folder, fileName);

@@ -11,7 +11,7 @@ public static unsafe class ShaderCompiler
 {
     /// <summary>Every compute shader in Shaders/Tonemap.hlsl, by entry point; each is embedded as
     /// <c>Shaders/{entry}.cso</c>.</summary>
-    public static readonly string[] EntryPoints = ["CSTonemap", "CSStats", "CSZebra"];
+    public static readonly string[] EntryPoints = ["CSTonemap", "CSStats", "CSZebra", "CSVideo"];
 
     public const string Profile = "cs_5_0";
 

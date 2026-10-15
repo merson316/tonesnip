@@ -11,7 +11,44 @@ public sealed record SnipHotkeys
     public string ActiveWindow { get; set; } = "Alt+PrintScreen";
     /// <summary>Opens the recent-snips flyout.</summary>
     public string History { get; set; } = "Ctrl+Shift+PrintScreen";
+    /// <summary>Starts a screen recording, or stops the one running. Unbound by default: Snipping Tool's Win+Shift+R
+    /// comes with <see cref="ReplaceSnippingTool"/>.</summary>
+    public string Record { get; set; } = "";
+    /// <summary>Also binds Snipping Tool's own chords: Win+Shift+S to a region snip and Win+Shift+R to a recording.</summary>
     public bool ReplaceSnippingTool { get; set; }
+}
+
+public sealed record RecordSettings
+{
+    /// <summary>The frame rates Settings offers. A recording takes at most this many frames a second; a still screen
+    /// sends none, so the file is variable frame rate.</summary>
+    public static readonly int[] FrameRates = { 30, 60 };
+
+    /// <summary>null = Videos\Screen Recordings, Snipping Tool's folder.</summary>
+    public string? Folder { get; set; }
+    public int FrameRate { get; set; } = 30;
+    /// <summary>The mouse pointer is in the video. On by default, unlike a snip: a recording usually shows something
+    /// being done.</summary>
+    public bool Cursor { get; set; } = true;
+
+    /// <summary>The folder under Videos a recording is saved to when none is set; the harness build keeps its own, as
+    /// it does for snips.</summary>
+#if TONESNIP_HARNESS
+    public const string DefaultFolderName = "Screen Recordings (ToneSnip debug)";
+#else
+    public const string DefaultFolderName = "Screen Recordings";
+#endif
+
+    public string ResolvedFolder(string videosFolder)
+        => string.IsNullOrWhiteSpace(Folder) ? Path.Combine(videosFolder, DefaultFolderName) : Folder;
+
+    /// <summary><see cref="ResolvedFolder"/>, or null when that is not a safe absolute path.</summary>
+    public string? SafeFolder(string videosFolder)
+    {
+        if (string.IsNullOrWhiteSpace(Folder) && string.IsNullOrWhiteSpace(videosFolder)) return null;
+        string folder = ResolvedFolder(videosFolder);
+        return PathGuard.IsSafeAbsolute(folder) ? folder : null;
+    }
 }
 
 public sealed record AnnotateSettings
@@ -131,6 +168,7 @@ public sealed record SnipSettings
     /// under %LOCALAPPDATA% is always deleted.</summary>
     public bool DeleteToRecycleBin { get; set; } = true;
     public HdrSettings Hdr { get; set; } = new();
+    public RecordSettings Record { get; set; } = new();
 
     /// <summary>
     /// The folder under Pictures a snip is saved to when none is set. The harness build uses its own folder so its
@@ -165,9 +203,14 @@ public sealed record SnipSettings
     /// <summary>Hook bindings; empty or unparsable chords are left out.</summary>
     public List<HotkeyBinding> Bindings()
     {
-        var list = new List<HotkeyBinding>(6);
+        var list = new List<HotkeyBinding>(8);
         Add(Hotkeys.Region, "region"); Add(Hotkeys.Window, "window"); Add(Hotkeys.FullScreenAll, "fullScreenAll"); Add(Hotkeys.ActiveWindow, "activeWindow"); Add(Hotkeys.History, "history");
-        if (Hotkeys.ReplaceSnippingTool) list.Add(new HotkeyBinding(Chord.Parse("Win+Shift+S"), "region"));
+        Add(Hotkeys.Record, "record");
+        if (Hotkeys.ReplaceSnippingTool)
+        {
+            list.Add(new HotkeyBinding(Chord.Parse("Win+Shift+S"), "region"));
+            list.Add(new HotkeyBinding(Chord.Parse("Win+Shift+R"), "record"));
+        }
         return list;
         void Add(string text, string action) { if (Chord.TryParse(text, out Chord c)) list.Add(new HotkeyBinding(c, action)); }
     }
@@ -199,6 +242,7 @@ public sealed record SnipSettings
             TrayIcon = Or(s.TrayIcon, d.TrayIcon, "trayIcon"),
             ColorFormat = Or(s.ColorFormat, d.ColorFormat, "colorFormat"),
             Hdr = Or(s.Hdr, d.Hdr, "hdr"),
+            Record = Or(s.Record, d.Record, "record"),
         };
     }
 
@@ -217,7 +261,7 @@ public sealed record SnipSettings
         {
             Region = FixChord(s.Hotkeys.Region, "region"), Window = FixChord(s.Hotkeys.Window, "window"),
             FullScreenAll = FixChord(s.Hotkeys.FullScreenAll, "fullScreenAll"), ActiveWindow = FixChord(s.Hotkeys.ActiveWindow, "activeWindow"),
-            History = FixChord(s.Hotkeys.History, "history"),
+            History = FixChord(s.Hotkeys.History, "history"), Record = FixChord(s.Hotkeys.Record, "record"),
         } };
         if (!TonemapperFactory.Names.Contains(s.Tonemap.ToLowerInvariant())) { fixes.Add($"tonemap '{s.Tonemap}' -> desktop"); s = s with { Tonemap = "desktop" }; }
         else s = s with { Tonemap = s.Tonemap.ToLowerInvariant() };
@@ -273,6 +317,13 @@ public sealed record SnipSettings
         if (hf == null) { fixes.Add($"hdr.file '{hd.File}' -> none"); hd = hd with { File = "none" }; } else hd = hd with { File = hf };
         if (hd.JxrQuality is < 1 or > 100) hd = hd with { JxrQuality = Math.Clamp(hd.JxrQuality, 1, 100) };
         s = s with { Hdr = hd };
+        RecordSettings rec = s.Record;
+        if (!RecordSettings.FrameRates.Contains(rec.FrameRate)) { int r = RecordSettings.FrameRates.MinBy(x => Math.Abs(x - rec.FrameRate)); fixes.Add($"record.frameRate {rec.FrameRate} -> {r}"); rec = rec with { FrameRate = r }; }
+        // The same rule as SaveFolder: passed to explorer.exe and file writes, so only a safe absolute path is kept.
+        if (string.IsNullOrWhiteSpace(rec.Folder)) rec = rec with { Folder = null };
+        else if (!PathGuard.IsSafeAbsolute(rec.Folder.Trim())) { fixes.Add($"record.folder '{rec.Folder}' -> default"); rec = rec with { Folder = null }; }
+        else rec = rec with { Folder = rec.Folder.Trim() };
+        s = s with { Record = rec };
         if (s.Version < 2) s = s with { Version = 2 };
         return s;
     }

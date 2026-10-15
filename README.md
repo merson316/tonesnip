@@ -32,6 +32,12 @@ highlights are compressed. What you paste looks like what you saw.
 - **Copy text:** reads the text in a selection, an area dragged on an open snip (or all of it), a pin or a Recent snip with the in-box Windows OCR in
   your languages, and copies it as plain text.
 - **Pin to screen:** keeps a snip on top of everything as a borderless picture you can move, zoom and fade.
+- **Screen recording:** records an area, a window's area or a whole monitor to MP4, tonemapped frame by frame on the
+  graphics card exactly as a snip is, so HDR content looks the way it does in a snip. A 3 second countdown, then a bar
+  beside the area with the time, pause, stop and discard; the bar and the area's outline are left out of the video.
+  H.264 up to 4096 x 2304 and HEVC above that (a whole ultrawide monitor), at 30 or 60 frames a second, with the
+  pointer or without. Saved to `Videos\Screen Recordings`, copied to the clipboard as a file, with a notification to
+  open it or show it in its folder.
 - **Colour picker:** in the overlay and the editor, a pixel loupe shows the colour under the cursor, and a click copies
   it as `#RRGGBB` or `rgb()`, with the nits on HDR monitors.
 - **Keyboard-only snips and Narrator:** the overlay can be driven entirely from the keyboard, and it names itself and
@@ -39,8 +45,8 @@ highlights are compressed. What you paste looks like what you saw.
 - **Recent snips:** left-click the tray icon for new-snip buttons and your latest snips (20, or up to 200), as a list
   or a grid, with search, filters, copy, open, edit, show in folder and delete (to the Recycle Bin by default);
   right-click a row to pin it or copy its text.
-- **Hotkeys** recorded in Settings, including PrintScreen itself and, optionally, `Win+Shift+S` in place of Snipping
-  Tool.
+- **Hotkeys** recorded in Settings, including PrintScreen itself and, optionally, `Win+Shift+S` and `Win+Shift+R` in
+  place of Snipping Tool.
 - **Settings** with a live tonemap preview. Follows the Windows theme, accent colour and contrast themes, and is
   per-monitor DPI aware.
 - Falls back to GDI for a monitor that gives no frame (some VMs and Remote Desktop sessions).
@@ -86,13 +92,14 @@ Either way, a tray icon appears. To start with Windows, turn on **Start with Win
 | `Shift+PrintScreen` | All monitors, instantly |
 | `Alt+PrintScreen` | Active window, instantly |
 | `Ctrl+Shift+PrintScreen` | Recent snips |
-| `Win+Shift+S` | Off by default; turn on "Also use Win + Shift + S for region snips" in Settings > Hotkeys |
+| `Win+Shift+S` | Off by default; turn on "Also use Win + Shift + S and Win + Shift + R" in Settings > Hotkeys |
+| `Win+Shift+R` | Screen recording, with the same switch; or bind your own under "Screen recording". Pressed during a recording, it stops and saves it |
 
 **Overlay:** `R` rectangle, `W` window, `F` full screen, `L` freeform; `T` copies the text of the next selection
 and `P` pins it (press again to turn off; with the tool row open, use the toolbar buttons, since `T` and `P` are
 tools there); `C` picks a colour: a pixel loupe follows the cursor, and a click or a second `C` copies the colour
 under it (`Shift` adds the nits on an HDR monitor); `Enter` accepts; `Esc` or right-click cancels; `A` toggles
-annotating.
+annotating. The toolbar's Record button records the next selection instead of snipping it.
 
 **Overlay without a mouse:** arrow keys move the pointer (`Shift` for 10 px); in rectangle mode `Space` or `Enter`
 starts a selection at the pointer and a second press finishes it. With a selection made, arrow keys move it and
@@ -120,6 +127,7 @@ selected shape. `Esc` closes the text box, then clears the selection, then cance
 tonesnip.exe --snip region|window|fullscreen|freeform|fullScreenAll|activeWindow [--delay <seconds>]
 tonesnip.exe --settings
 tonesnip.exe --history
+tonesnip.exe --record
 tonesnip.exe --help
 ```
 
@@ -130,8 +138,8 @@ is kept as `settings.json.bad-<time>` and defaults are used.
 
 | Field | Default | Notes |
 |---|---|---|
-| `hotkeys.region` `.window` `.fullScreenAll` `.activeWindow` `.history` | see above | Chords such as `Ctrl+Shift+F9`; empty is unbound |
-| `hotkeys.replaceSnippingTool` | `false` | Also binds `Win+Shift+S` to a region snip |
+| `hotkeys.region` `.window` `.fullScreenAll` `.activeWindow` `.history` `.record` | see above | Chords such as `Ctrl+Shift+F9`; empty is unbound. `record` is empty by default |
+| `hotkeys.replaceSnippingTool` | `false` | Also binds `Win+Shift+S` to a region snip and `Win+Shift+R` to a recording |
 | `tonemap` | `desktop` | `desktop`, `hable` or `aces` |
 | `exposure` | `1.0` | Linear multiplier before tonemapping |
 | `knee` | `1.0` | Desktop curve: 1 clips at SDR white; lower starts a BT.2390 roll-off at that fraction |
@@ -157,6 +165,9 @@ is kept as `settings.json.bad-<time>` and defaults are used.
 | `preciseNits` | `false` | Nits to 3 decimals in the readouts and in what the picker copies. |
 | `colorFormat` | `hex` | `hex` (`#RRGGBB`) or `rgb` (`rgb(r, g, b)`): what the colour picker copies |
 | `startWithWindows` | `false` | A per-user Run key; the MSIX uses its startup task instead |
+| `record.folder` | `null` | `null` is `Videos\Screen Recordings`; files are `Recording yyyy-MM-dd HHmmss.mp4` |
+| `record.frameRate` | `30` | `30` or `60`: the most frames a second a recording keeps. A still screen sends none |
+| `record.cursor` | `true` | The mouse pointer is in the video |
 
 ## How it works
 
@@ -178,6 +189,12 @@ hotkey / tray / --snip ──▶ tonesnip.exe
   hue-preserving desktop curve stays in float and finishes through a 4096-entry sRGB table.
 - **One rasterizer.** Annotations are a small document in the capture's pixel frame. The overlay, the editor and the
   saved file all draw it through the same GDI+ code, so what you see is what is saved.
+- **Recording keeps a capture session open on one monitor.** Each frame Windows hands over is cropped, tonemapped
+  and converted to BT.709 NV12 by a compute shader beside the snip's tonemap, so the video carries the 8-bit values a
+  snip would; only those 12 bits a pixel are read back. Media Foundation encodes them with the graphics card's
+  encoder, or Windows' own, into MP4. Frames go out at most once per frame slot and none while the screen is still,
+  so the file is variable frame rate; pausing cuts the paused time out. The recorder has its own graphics device, so a
+  snip taken during a recording does not wait for it.
 - **The HDR copy is composited in linear light.** The SDR composite is lifted to the snip's reference white, the
   captured half-float crops replace it where the desktop was HDR, redactions run on the half-float data with the
   same privacy rule, and annotations are blended so a white pen stroke is exactly SDR white.
@@ -186,8 +203,8 @@ hotkey / tray / --snip ──▶ tonesnip.exe
 
 - ToneSnip installs a low-level keyboard hook to see its hotkeys. Each key-down is compared with the configured chords;
   keys are never stored or logged.
-- Frames live in memory only. It writes the snips you take to your save folder, and a history of the last 20
-  (`%LOCALAPPDATA%\tonesnip\history.json`, with a thumbnail each under `thumbs\`).
+- Frames live in memory only. It writes the snips you take to your save folder, the recordings you make to theirs,
+  and a history of the last 20 snips (`%LOCALAPPDATA%\tonesnip\history.json`, with a thumbnail each under `thumbs\`).
 - It makes no network connections. The log is `%LOCALAPPDATA%\tonesnip\tonesnip.log`.
 - Privacy mode reads one mean colour for a redacted region plus a per-shape seed, never the pixels underneath. Turn
   it off in Settings for classic blur and pixelate, which do filter the real pixels. It applies to the HDR copy too.
@@ -248,7 +265,8 @@ attaches them, with `SHA256SUMS.txt`, to a draft GitHub release. The release goe
 
 - Games in exclusive fullscreen are untested; borderless windowed works. DRM-protected content captures black.
 - The clipboard carries SDR only; no application reads an HDR clipboard format.
-- No video recording.
+- Recordings are SDR (tonemapped, BT.709) and silent: no system sound or microphone yet.
+- A recording covers one monitor; a selection across monitors keeps the part on the monitor it covers most.
 
 ## Credits
 

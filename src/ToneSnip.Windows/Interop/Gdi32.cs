@@ -53,6 +53,8 @@ public static partial class Gdi32
     // ----- regions and clipping -----
     [LibraryImport(Dll)] public static partial int SelectClipRgn(IntPtr dc, IntPtr region);
     [LibraryImport(Dll)] public static partial IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+    public const int RgnDiff = 4;
+    [LibraryImport(Dll)] public static partial int CombineRgn(IntPtr destination, IntPtr source1, IntPtr source2, int mode);
     /// <summary>The region as an RGNDATA header plus RECTs; 0 when <paramref name="size"/> bytes are too few.</summary>
     [LibraryImport(Dll)] public static unsafe partial uint GetRegionData(IntPtr region, uint size, byte* data);
     [LibraryImport(Dll)] public static partial int IntersectClipRect(IntPtr dc, int left, int top, int right, int bottom);

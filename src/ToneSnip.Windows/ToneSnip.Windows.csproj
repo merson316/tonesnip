@@ -9,6 +9,8 @@
   <ItemGroup>
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
+    <!-- The recorder's encoder: Media Foundation's sink writer, H.264 or HEVC into MP4, with Windows' own codecs. -->
+    <PackageReference Include="Vortice.MediaFoundation" Version="3.8.3" />
     <ProjectReference Include="../ToneSnip.Core/ToneSnip.Core.csproj" />
     <!-- The GPU tonemap's compute shaders, precompiled from Capture/Shaders/Tonemap.hlsl (ShaderBytecodeTests says
          how to rebuild them). Nothing is compiled at run time. -->

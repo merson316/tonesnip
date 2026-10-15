@@ -21,7 +21,7 @@ namespace ToneSnip.App;
 /// <param name="MemTestCycles">Cycles for `--memtest`. Default 6.</param>
 /// <remarks>Harness modes are never forwarded to a running instance: each runs before the mutex.</remarks>
 #endif
-public sealed record StartupCommand(SnipMode? Mode, int? Delay, bool OpenSettings, bool OpenHistory = false
+public sealed record StartupCommand(SnipMode? Mode, int? Delay, bool OpenSettings, bool OpenHistory = false, bool Record = false
 #if TONESNIP_HARNESS
                                     , string? ScreenshotDir = null, string? ScreenshotTheme = null, bool LeakTest = false,
                                     string? HoldWindow = null, int HoldSeconds = 30,
@@ -29,7 +29,7 @@ public sealed record StartupCommand(SnipMode? Mode, int? Delay, bool OpenSetting
 #endif
                                     )
 {
-    public bool IsEmpty => Mode == null && !OpenSettings && !OpenHistory;
+    public bool IsEmpty => Mode == null && !OpenSettings && !OpenHistory && !Record;
 }
 
 public static class CommandLine
@@ -84,6 +84,8 @@ public static class CommandLine
         text.AppendLine("  --snip <mode>      take a snip now; mode is region (or rectangle), window,");
         text.AppendLine("                     fullscreen, freeform, fullScreenAll or activeWindow");
         text.AppendLine(CultureInfo.InvariantCulture, $"  --delay <seconds>  count down before the snip starts (with --snip); 0 to {MaxDelaySeconds}");
+        text.AppendLine("  --record           record an area of the screen as a video, or stop the");
+        text.AppendLine("                     recording that is running");
         text.AppendLine("  --settings         open the settings window");
         text.AppendLine("  --history          open the Recent flyout");
         text.AppendLine("  --background       start in the notification area and nothing else, even when");
@@ -102,7 +104,7 @@ public static class CommandLine
         text.AppendLine("  --hold <window> [seconds]  open one window for real and leave it up for `winapp ui`");
         text.AppendLine("                     (default 30). flyout-row, flyout-grid, settings-<page>, editor,");
         text.AppendLine("                     editor-hdr, editor-front, toolbar, toolbar-annotate, countdown,");
-        text.AppendLine("                     textentry, toast-saved, toast-copied, toast-dwell");
+        text.AppendLine("                     textentry, toast-saved, toast-copied, toast-dwell, record");
         text.AppendLine("  --flip-theme       half way through a --hold, apply the other theme to the live window");
 #endif
         text.AppendLine();
@@ -123,7 +125,7 @@ public static class CommandLine
     {
         var faults = new List<string>();
         errors = faults;
-        SnipMode? mode = null; int? delay = null; bool settings = false, history = false;
+        SnipMode? mode = null; int? delay = null; bool settings = false, history = false, record = false;
 #if TONESNIP_HARNESS
         bool leaks = false, memory = false, flip = false;
         string? shots = null, theme = null, hold = null;
@@ -157,6 +159,7 @@ public static class CommandLine
                 }
                 case "--settings": settings = true; break;
                 case "--history": history = true; break;
+                case "--record": record = true; break;
                 // The Run key's switch. It adds nothing to the command, so a second launch with it reduces to an empty
                 // command and exits without forwarding (Program.Main), instead of opening Settings as a bare launch does.
                 case "--background": break;
@@ -204,9 +207,9 @@ public static class CommandLine
             }
         }
 #if TONESNIP_HARNESS
-        return new StartupCommand(mode, delay, settings, history, shots, theme, leaks, hold, holdSeconds, memory, memCycles, flip);
+        return new StartupCommand(mode, delay, settings, history, record, shots, theme, leaks, hold, holdSeconds, memory, memCycles, flip);
 #else
-        return new StartupCommand(mode, delay, settings, history);
+        return new StartupCommand(mode, delay, settings, history, record);
 #endif
 
         // The value after an option, or a fault. Another option counts as no value: `--snip --settings` is a missing
@@ -249,6 +252,7 @@ public static class CommandLine
         if (c.Delay != null) { a.Add("--delay"); a.Add(c.Delay.Value.ToString(CultureInfo.InvariantCulture)); }
         if (c.OpenSettings) a.Add("--settings");
         if (c.OpenHistory) a.Add("--history");
+        if (c.Record) a.Add("--record");
         return a.ToArray();
     }
 }

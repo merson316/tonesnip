@@ -43,6 +43,12 @@
                         ToolTipService.ToolTip="Pin the selection to the screen (P)" Click="OnPin">
             <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphPin}" FontSize="16"/>
           </ToggleButton>
+          <!-- Records the selection as a video instead: the snip screen closes and the live screen is recorded. -->
+          <ToggleButton x:Name="BtnRecord" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Record"
+                        AutomationProperties.AutomationId="Overlay_RecordToggle"
+                        ToolTipService.ToolTip="Record the selection as a video" Click="OnRecord">
+            <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRecord}" FontSize="16"/>
+          </ToggleButton>
           <!-- The colour picker, as C arms it: checked while the loupe follows the cursor, until a click copies. The
                pointer is for one thing at a time, so it and the two above exclude each other. -->
           <ToggleButton x:Name="BtnPickColour" Style="{StaticResource ToolToggle}" AutomationProperties.Name="Pick colour"

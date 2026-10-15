@@ -65,7 +65,7 @@ public partial class App : Application
     private IDisposable? _hostPipe;
     private MessageWindow? _messages;
     private DispatcherQueueTimer? _snipDelay;
-    private (SnipMode Mode, int Delay)? _pendingSnip;
+    private (SnipMode Mode, int Delay, SnipAction Then)? _pendingSnip;
     private bool _paused;
     private readonly MemoryReclaimer _memory;
     public bool Paused { get => _paused; set { _paused = value; Hook.Paused = value; _tray?.SetTooltip(value ? "ToneSnip (hotkeys paused)" : "ToneSnip"); Log.Info(value ? "hotkeys paused" : "hotkeys resumed"); } }
@@ -169,7 +169,7 @@ public partial class App : Application
             if (Settings.AfterSelect == "edit") OpenViewer(r, annotate: true);
             else if (Settings.ShowToast) _ = ShowToastWhenThumbnailed(r, thumb);
         };
-        Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip, Divert = DivertSnip };
+        Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip, Divert = DivertSnip, Record = BeginRecording };
         // On Idle rather than Output.Completed, so a cancelled snip also releases its frames.
         Session.Idle += () => { ReclaimMemory("memory after snip"); _memory.ReleaseFramesWhenIdle(); };
         // Escape is a hotkey only while a countdown runs (cancelCountdown), or while the snip screen is up without the
@@ -307,6 +307,7 @@ public partial class App : Application
         if (c.OpenSettings) ShowSettings();
         if (c.OpenHistory) ToggleFlyout();
         if (c.Mode != null) StartSnip(c.Mode.Value, c.Delay ?? Settings.DefaultDelay);
+        if (c.Record) ToggleRecording();
     }
 
     /// <summary>Hides the toast card and the Recent flyout before a snip captures the screen (<see cref="SnipSession.HideOwnWindows"/>).</summary>
@@ -322,16 +323,17 @@ public partial class App : Application
         return hid;
     }
 
-    /// <summary>The single path every snip starts through, so <see cref="LastMode"/> is always recorded.</summary>
-    private void StartSnip(SnipMode mode, int delay)
+    /// <summary>The single path every snip starts through, so <see cref="LastMode"/> is always recorded.
+    /// <paramref name="then"/> arms the snip screen, as a recording does.</summary>
+    private void StartSnip(SnipMode mode, int delay, SnipAction then = SnipAction.Snip)
     {
         LastMode = mode;
-        _ = Session.Run(mode, delay);
+        _ = Session.Run(mode, delay, then);
     }
 
     /// <summary>Snip from a menu or the mode bar, after a short wait for the menu and flyout to close. The timer is a
     /// field because an unreferenced DispatcherQueueTimer can be collected before it ticks.</summary>
-    public void Snip(SnipMode mode, int? delay = null)
+    public void Snip(SnipMode mode, int? delay = null, SnipAction then = SnipAction.Snip)
     {
         _snipDelay ??= Ui.CreateTimer();
         _snipDelay.Stop();
@@ -339,7 +341,7 @@ public partial class App : Application
         _snipDelay.IsRepeating = false;
         _snipDelay.Tick -= OnSnipDelayTick;   // never subscribe twice
         _snipDelay.Tick += OnSnipDelayTick;
-        _pendingSnip = (mode, delay ?? Settings.DefaultDelay);
+        _pendingSnip = (mode, delay ?? Settings.DefaultDelay, then);
         _snipDelay.Start();
     }
 
@@ -347,7 +349,7 @@ public partial class App : Application
     {
         timer.Stop();
         timer.Tick -= OnSnipDelayTick;
-        if (_pendingSnip is { } pending) StartSnip(pending.Mode, pending.Delay);
+        if (_pendingSnip is { } pending) StartSnip(pending.Mode, pending.Delay, pending.Then);
         _pendingSnip = null;
     }
 
@@ -588,6 +590,7 @@ public partial class App : Application
             case "fullScreenAll": StartSnip(SnipMode.FullScreenAll, Settings.DefaultDelay); break;
             case "activeWindow": StartSnip(SnipMode.ActiveWindow, Settings.DefaultDelay); break;
             case "history": ToggleFlyout(); break;
+            case "record": ToggleRecording(); break;
             case "cancelCountdown": Session.CancelCountdown(); break;
             case "escapeSnip": Session.EscapeOverlay(); break;
         }
@@ -633,16 +636,23 @@ public partial class App : Application
         Log.Info(closeApp ? "the app is being closed for an update" : "the Windows session is ending");
         if (!closeApp) UnregisterRestart();
         FlushSettings(wait: true);
+        _recording?.SaveBeforeExit(RecordingExitBudget);
         _hostPipe?.Dispose(); _tray?.Dispose(); Hook?.Dispose();
         _hostPipe = null; _tray = null;
         RunOnUi(Quit);
     }
+
+    /// <summary>How long an exit waits for a recording's file to be finished: the encoder drains a few frames and the
+    /// index is written, normally well under a second.</summary>
+    private static readonly TimeSpan RecordingExitBudget = TimeSpan.FromSeconds(5);
 
     /// <summary>Tears everything down and ends the message loop. WinUI has no OnExit, so the tray's Quit calls this.</summary>
     public void Quit()
     {
         Log.Debug("exit");
         FlushSettings(wait: true);
+        // A recording in progress is saved rather than lost: its file is finished before the process goes.
+        _recording?.SaveBeforeExit(RecordingExitBudget);
         _hostPipe?.Dispose(); _tray?.Dispose(); _messages?.Dispose();
         Hook?.Dispose(); Grabber?.Dispose(); Toasts?.Dispose();
         Exit();

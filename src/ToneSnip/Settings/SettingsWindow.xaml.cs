@@ -52,6 +52,8 @@ public partial class SettingsWindow : Window
     /// <summary>The chosen save folder, or null/empty for Pictures\Screenshots. Shown as read-only text, so the value
     /// is kept here. Only meaningful once the Output page has been realised.</summary>
     private string? _saveFolder;
+    /// <summary>The recordings folder as chosen, or null for the default (Videos\Screen Recordings).</summary>
+    private string? _recordFolder;
 #if TONESNIP_HARNESS
     /// <summary>The Save automatically switch was on before <see cref="ShowPage"/> turned it off for a screenshot.</summary>
     private bool _autoSaveWasOn;
@@ -192,14 +194,14 @@ public partial class SettingsWindow : Window
     private void LoadHotkeys(SnipSettings s)
     {
         HkRegion.Chord = s.Hotkeys.Region; HkWindow.Chord = s.Hotkeys.Window; HkFullAll.Chord = s.Hotkeys.FullScreenAll;
-        HkActive.Chord = s.Hotkeys.ActiveWindow; HkHistory.Chord = s.Hotkeys.History;
+        HkActive.Chord = s.Hotkeys.ActiveWindow; HkHistory.Chord = s.Hotkeys.History; HkRecord.Chord = s.Hotkeys.Record;
         ReplaceSnippingTool.IsOn = s.Hotkeys.ReplaceSnippingTool;
         foreach (HotkeyBox box in HotkeyBoxes()) box.ChordChanged += OnChanged;
         ShowConflicts(s);
     }
 
-    /// <summary>The five recorders. Call only once the Hotkeys page has been realised.</summary>
-    private HotkeyBox[] HotkeyBoxes() => new[] { HkRegion, HkWindow, HkFullAll, HkActive, HkHistory };
+    /// <summary>The six recorders. Call only once the Hotkeys page has been realised.</summary>
+    private HotkeyBox[] HotkeyBoxes() => new[] { HkRegion, HkWindow, HkFullAll, HkActive, HkHistory, HkRecord };
 
     private void LoadTonemap(SnipSettings s)
     {
@@ -229,6 +231,9 @@ public partial class SettingsWindow : Window
         ShowToast.IsOn = s.ShowToast;
         NotificationStyle.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.Notifications, s.Notification));
         HdrFile.SelectedIndex = Math.Max(0, Array.IndexOf(SnipSettings.HdrFiles, s.Hdr.File)); JxrLossless.IsOn = s.Hdr.JxrLossless; HdrClipboard.IsOn = s.Hdr.Clipboard;
+        _recordFolder = s.Record.Folder;
+        RecordFrameRate.SelectedItem = RecordFrameRate.Items.OfType<ComboBoxItem>().FirstOrDefault(i => i.Tag as string == s.Record.FrameRate.ToString(CultureInfo.InvariantCulture));
+        RecordCursor.IsOn = s.Record.Cursor;
         UpdateOutputLabels();
     }
 
@@ -268,7 +273,7 @@ public partial class SettingsWindow : Window
                 Hotkeys = new SnipHotkeys
                 {
                     Region = HkRegion.Chord, Window = HkWindow.Chord, FullScreenAll = HkFullAll.Chord,
-                    ActiveWindow = HkActive.Chord, History = HkHistory.Chord,
+                    ActiveWindow = HkActive.Chord, History = HkHistory.Chord, Record = HkRecord.Chord,
                     ReplaceSnippingTool = ReplaceSnippingTool.IsOn,
                 },
             };
@@ -289,6 +294,12 @@ public partial class SettingsWindow : Window
                 Format = TagOf(Format, s.Format), JpegQuality = JpegQuality.Value == _loadedJpegQuality ? s.JpegQuality : (int)JpegQuality.Value,
                 ShowToast = ShowToast.IsOn, Notification = TagOf(NotificationStyle, s.Notification),
                 Hdr = s.Hdr with { File = TagOf(HdrFile, s.Hdr.File), JxrLossless = JxrLossless.IsOn, Clipboard = HdrClipboard.IsOn },
+                Record = s.Record with
+                {
+                    Folder = string.IsNullOrWhiteSpace(_recordFolder) ? null : _recordFolder.Trim(),
+                    FrameRate = int.TryParse(TagOf(RecordFrameRate, ""), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? fps : s.Record.FrameRate,
+                    Cursor = RecordCursor.IsOn,
+                },
             };
         return s;
     }
@@ -362,6 +373,8 @@ public partial class SettingsWindow : Window
             ? Path.Combine(AppPaths.Pictures, SnipSettings.DefaultSaveFolderName) : _saveFolder.Trim();
         // The row, not its expander: the switch that controls it is in the expander's header.
         SaveFolderRow.IsEnabled = AutoSave.IsOn;
+        RecordFolderText.Text = string.IsNullOrWhiteSpace(_recordFolder)
+            ? Path.Combine(AppPaths.Videos, RecordSettings.DefaultFolderName) : _recordFolder.Trim();
 
         string hdrFile = TagOf(HdrFile, App.Current.Settings.Hdr.File);
         HdrCard.Description = HdrExpander.Description = hdrFile switch
@@ -530,6 +543,21 @@ public partial class SettingsWindow : Window
         if (string.IsNullOrWhiteSpace(folder.Path)) { App.Current.Log.Warn($"save folder picker: '{folder.Name}' has no file-system path"); return; }
         _saveFolder = folder.Path;
         OnChanged();   // saves and redraws the Location row
+    }
+
+    /// <summary>The recordings folder's picker, as <see cref="OnBrowse"/> is the snips'.</summary>
+    private async void OnBrowseRecordFolder(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.VideosLibrary };
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, _hwnd);
+        StorageFolder? folder;
+        try { folder = await picker.PickSingleFolderAsync(); }
+        catch (Exception ex) { App.Current.Log.Warn("recordings folder picker: " + ex.Message); return; }
+        if (folder == null) return;
+        if (string.IsNullOrWhiteSpace(folder.Path)) { App.Current.Log.Warn($"recordings folder picker: '{folder.Name}' has no file-system path"); return; }
+        _recordFolder = folder.Path;
+        OnChanged();
     }
 
     private void OnOpenLog(object sender, RoutedEventArgs e) => StartShell(AppPaths.LogPath, "open log");

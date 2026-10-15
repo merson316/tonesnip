@@ -80,6 +80,7 @@ public sealed partial class ToolbarWindow : PopupWindow
         BtnAnnotate.IsChecked = _session.Annotating;
         BtnCopyText.IsChecked = _session.Then == SnipAction.CopyText;
         BtnPin.IsChecked = _session.Then == SnipAction.Pin;
+        BtnRecord.IsChecked = _session.Then == SnipAction.Record;
         BtnPickColour.IsChecked = _session.Picking;
         if (_session.Annotating && _session.Edit != null && !_attached)
         {
@@ -237,6 +238,7 @@ public sealed partial class ToolbarWindow : PopupWindow
     /// decided.</summary>
     private void OnCopyText(object sender, RoutedEventArgs e) => ArmFromClick(SnipAction.CopyText);
     private void OnPin(object sender, RoutedEventArgs e) => ArmFromClick(SnipAction.Pin);
+    private void OnRecord(object sender, RoutedEventArgs e) => ArmFromClick(SnipAction.Record);
 
     private void ArmFromClick(SnipAction action)
     {

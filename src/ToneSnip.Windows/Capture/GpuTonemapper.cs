@@ -38,7 +38,7 @@ public sealed unsafe class GpuTonemapper
     /// <summary>The capture's device lock (<see cref="ScreenCapture"/>).</summary>
     internal object Gate { get; }
     private readonly ILog _log;
-    private readonly ID3D11ComputeShader _tonemap, _stats, _zebra;
+    private readonly ID3D11ComputeShader _tonemap, _stats, _zebra, _video;
     private readonly ID3D11Buffer _params;
 
     /// <summary>The capture's reference plus one per live frame. Touched under <see cref="Gate"/>.</summary>
@@ -70,11 +70,12 @@ public sealed unsafe class GpuTonemapper
             _tonemap = Device.CreateComputeShader(Bytecode("CSTonemap"));
             _stats = Device.CreateComputeShader(Bytecode("CSStats"));
             _zebra = Device.CreateComputeShader(Bytecode("CSZebra"));
+            _video = Device.CreateComputeShader(Bytecode("CSVideo"));
             _params = Device.CreateBuffer(new BufferDescription((uint)sizeof(Params), BindFlags.ConstantBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write));
         }
         catch
         {
-            _tonemap?.Dispose(); _stats?.Dispose(); _zebra?.Dispose();
+            _tonemap?.Dispose(); _stats?.Dispose(); _zebra?.Dispose(); _video?.Dispose();
             Context.Dispose(); Device.Dispose();
             throw;
         }
@@ -250,7 +251,7 @@ public sealed unsafe class GpuTonemapper
         if (--_refs > 0) return;
         Trim();
         _params.Dispose();
-        _tonemap.Dispose(); _stats.Dispose(); _zebra.Dispose();
+        _tonemap.Dispose(); _stats.Dispose(); _zebra.Dispose(); _video.Dispose();
         Context.Dispose();
         Device.Dispose();
     }
@@ -362,6 +363,7 @@ public sealed unsafe class GpuTonemapper
         Context.CSSetUnorderedAccessView(0, null!);
         Context.CSSetUnorderedAccessView(1, null!);
         Context.CSSetUnorderedAccessView(2, null!);
+        Context.CSSetUnorderedAccessView(3, null!);
         Context.CSSetShaderResource(0, null!);
     }
 
@@ -379,6 +381,31 @@ public sealed unsafe class GpuTonemapper
         Context.Dispatch((k.SizeX + 7) / 8, (k.SizeY + 7) / 8, 1);
         Unbind();
     }
+
+    /// <summary>
+    /// A recording's frame as NV12 (CSVideo): <paramref name="width"/> x <paramref name="height"/> pixels of
+    /// <paramref name="src"/> from (<paramref name="left"/>, <paramref name="top"/>), tonemapped with
+    /// <paramref name="curve"/>, or taken as they are from an SDR frame when it is null. The luma goes into
+    /// <paramref name="luma"/> four pixels a word, a texture <c>ceil(width / 4)</c> x <paramref name="height"/>; the
+    /// chroma into <paramref name="chroma"/>, the same width and half the height. Both sides must be even.
+    /// </summary>
+    internal void DispatchVideo(TonemapCurve? curve, ID3D11ShaderResourceView src, ID3D11UnorderedAccessView luma, ID3D11UnorderedAccessView chroma, int left, int top, int width, int height)
+    {
+        if ((width & 1) != 0 || (height & 1) != 0) throw new ArgumentException($"{width}x{height}: a video frame has even sides", nameof(width));
+        Params k = curve is { } c ? ParamsFor(c) : new Params { Mode = 4 };
+        k.SizeX = (uint)width; k.SizeY = (uint)height; k.OriginX = (uint)left; k.OriginY = (uint)top;
+        SetParams(k);
+        Context.CSSetShader(_video);
+        Context.CSSetConstantBuffer(0, _params);
+        Context.CSSetShaderResource(0, src);
+        Context.CSSetUnorderedAccessView(0, luma);
+        Context.CSSetUnorderedAccessView(3, chroma);
+        Context.Dispatch((uint)(VideoWords(width) + 7) / 8, (uint)(height / 2 + 7) / 8, 1);
+        Unbind();
+    }
+
+    /// <summary>Words a row of a video frame's luma and chroma textures hold: four bytes each.</summary>
+    internal static int VideoWords(int width) => (width + 3) / 4;
 
     /// <summary>
     /// Reads <paramref name="width"/> x <paramref name="height"/> packed BGRA pixels from the top-left of

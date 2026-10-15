@@ -10,6 +10,10 @@ public class FileNamingTests
     public void Builds_snipping_tool_style_names()
         => Assert.Equal("Snip 2026-09-04 231455.png", FileNaming.Build(new DateTime(2026, 9, 4, 23, 14, 55), "png"));
 
+    [Fact]
+    public void Recordings_are_named_like_snips()
+        => Assert.Equal("Recording 2026-09-04 231455.mp4", FileNaming.BuildRecording(new DateTime(2026, 9, 4, 23, 14, 55)));
+
     /// <summary>A non-Gregorian default calendar (Thai Buddhist, Hijri) must not change the year in the name.</summary>
     [Theory]
     [InlineData("th-TH")]

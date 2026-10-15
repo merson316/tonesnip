@@ -42,6 +42,18 @@ public static partial class Shell
         Start(psi => psi.Arguments = arguments, "open folder", log);
     }
 
+    /// <summary>Opens a screen recording in the app Windows plays video with, through Explorer as the reveal calls do.
+    /// No-op unless the path is a safe absolute path naming an .mp4 that exists, so nothing but a video is ever
+    /// opened.</summary>
+    public static void OpenVideo(string? path, ILog? log = null)
+    {
+        if (!PathGuard.IsSafeAbsolute(path)) { log?.Warn($"open video refused (not a safe absolute path): {PathGuard.Describe(path)}"); return; }
+        if (!string.Equals(Path.GetExtension(path), ".mp4", StringComparison.OrdinalIgnoreCase)) { log?.Warn("open video refused (not an .mp4): " + PathGuard.Describe(path)); return; }
+        if (!File.Exists(path)) { log?.Debug("open video skipped (file is gone): " + path); return; }
+        if (ExplorerArguments.Folder(path!) is not { } arguments) { log?.Warn("open video refused (the path cannot be quoted): " + PathGuard.Describe(path)); return; }
+        Start(psi => psi.Arguments = arguments, "open video", log);
+    }
+
     /// <summary>Whether a delete to the Recycle Bin can land there (<see cref="RecycleBin.Covers"/>): a fixed local
     /// drive. Never throws.</summary>
     public static bool RecycleBinCovers(string? path)

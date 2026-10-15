@@ -28,7 +28,8 @@ public static class SnipModes
     public static bool IsInstant(SnipMode mode) => mode is SnipMode.FullScreenAll or SnipMode.ActiveWindow;
 }
 
-/// <summary>What a finished selection is for: an ordinary snip (clipboard, save, notification), its text copied, or
-/// the snip pinned to the screen. The last two leave the clipboard's image and the save folder alone; Recent lists
-/// them with their kind.</summary>
-public enum SnipAction { Snip, CopyText, Pin }
+/// <summary>What a finished selection is for: an ordinary snip (clipboard, save, notification), its text copied, the
+/// snip pinned to the screen, or the area recorded as a video. Text and pins leave the clipboard's image and the save
+/// folder alone, and Recent lists them with their kind; a recording builds no snip at all, and goes to its own
+/// folder.</summary>
+public enum SnipAction { Snip, CopyText, Pin, Record }

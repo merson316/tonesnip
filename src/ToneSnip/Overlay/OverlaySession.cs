@@ -18,7 +18,7 @@ namespace ToneSnip.App.Overlay;
 /// themselves are plain Win32 (<see cref="OverlayWindow"/>) and know nothing about annotation documents, settings or
 /// luminance: this session is their <see cref="IOverlayHost"/>.
 /// </summary>
-public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber grabber, IntRect desktop, SnipMode mode, SnipSettings settings, ILog log) : IOverlayHost
+public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber grabber, IntRect desktop, SnipMode mode, SnipSettings settings, ILog log, SnipAction then = SnipAction.Snip) : IOverlayHost
 {
     /// <summary>The frozen frames, until <see cref="Finish"/>. A field rather than the constructor parameter so a
     /// finished session stops referring to them: the frames are pooled, and a late message or queued dispatcher turn
@@ -72,7 +72,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     public FrameStyle FrameStyle { get; } = FrameStyles.Parse(settings.SelectionFrame);
     /// <summary>What Narrator reads when the frozen desktop takes the keyboard: what the screen is for and its keys.
     /// Changes after that are spoken through the toolbar's live region (<see cref="Announce"/>).</summary>
-    public string WindowTitle => "ToneSnip: select an area. Arrow keys move the pointer, Space starts and finishes a selection, "
+    public string WindowTitle => (_then == SnipAction.Record ? "ToneSnip: select an area to record. " : "ToneSnip: select an area. ")
+                               + "Arrow keys move the pointer, Space starts and finishes a selection, "
                                + "Tab picks a window. In freeform mode Space adds a corner and Enter closes the lasso. "
                                + "R W F L switch modes, T copies text, P pins, C picks a colour, A annotates, F1 lists the keys, Escape cancels";
 
@@ -118,6 +119,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         {
             if (_annotating == value) return;
             _annotating = value;
+            // A recording has no annotations, so drawing hands the selection back to an ordinary snip.
+            if (value && _then == SnipAction.Record) _then = SnipAction.Snip;
             if (!value) CancelEditDrag();       // the mouse goes back to selection: no stroke may resume later
             if (value)
             {
@@ -189,7 +192,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
             _focus = focus ?? _windows[0];
             // The annotate state decides the dim, so it is set before the first paint rather than repainting after it.
             // The toolbar does not exist yet; it reads the state when it is first placed.
-            if (settings.AfterSelect == "annotateFirst") Annotating = true;
+            if (settings.AfterSelect == "annotateFirst" && _then != SnipAction.Record) Annotating = true;
             // ShowWindow only queues WM_PAINT, which would wait behind the toolbar's XAML build and the window
             // enumeration below: paint the frozen frames now, so they are on screen before any of that starts (and the
             // log's "overlay shown" is the time to pixels, not to the end of Show).
@@ -691,10 +694,10 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     private OverlayOutcome Outcome(IntRect region, IReadOnlyList<(int X, int Y)>? path)
         => new(region, path, -1, _edit?.Doc, _edit?.Doc.Exposure ?? 1f) { Action = _then };
 
-    private SnipAction _then;
+    private SnipAction _then = then;
 
-    /// <summary>What the next selection is for: an ordinary snip, or armed from the toolbar (or T, P) to copy its text
-    /// or pin it.</summary>
+    /// <summary>What the next selection is for: an ordinary snip, or armed from the toolbar (or T, P) to copy its text,
+    /// pin it or record it. A recording can also be armed before the screen opens (the record hotkey).</summary>
     public SnipAction Then => _then;
 
     /// <summary>Raised with a sentence for the toolbar's live region, so a screen reader hears what changed.</summary>
@@ -712,6 +715,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         if (_then != SnipAction.Snip)
         {
             SetPicking(false, quiet: true);   // the pointer is for one thing at a time
+            if (_then == SnipAction.Record && _annotating) { _annotating = false; CancelEditDrag(); RenderAllFull(); }
             if (!_pendingSelection.IsEmpty) { Finish(Outcome(_pendingSelection, _pendingPath)); return; }
             // A selection made from the keyboard, finished or not, is the one to use.
             if (!Selection.IsEmpty && _dragStart == null && Selection.Width > 1 && Selection.Height > 1) { _keyAnchor = null; Finish(Outcome(Selection, null)); return; }
@@ -721,7 +725,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         {
             SnipAction.CopyText => "Copy text: select an area to copy the text in it",
             SnipAction.Pin => "Pin to screen: select an area to pin it",
-            _ => action == SnipAction.CopyText ? "Copy text off" : "Pin to screen off",
+            SnipAction.Record => "Record: select an area to record it as a video",
+            _ => action switch { SnipAction.CopyText => "Copy text off", SnipAction.Record => "Record off", _ => "Pin to screen off" },
         });
     }
 

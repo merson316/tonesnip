@@ -336,13 +336,17 @@
                 <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphHistory}"/></toolkit:SettingsCard.HeaderIcon>
                 <local:HotkeyBox x:Name="HkHistory" Label="Recent flyout" AutomationProperties.AutomationId="Settings_HkHistory"/>
               </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Screen recording" Description="Starts a recording, or stops the one running.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRecord}"/></toolkit:SettingsCard.HeaderIcon>
+                <local:HotkeyBox x:Name="HkRecord" Label="Screen recording" AutomationProperties.AutomationId="Settings_HkRecord"/>
+              </toolkit:SettingsCard>
 
               <TextBlock Text="Windows integration" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
-              <toolkit:SettingsCard Header="Also use Win + Shift + S for region snips"
-                                    Description="Replaces the Windows Snipping Tool shortcut while ToneSnip runs.">
+              <toolkit:SettingsCard Header="Also use Win + Shift + S and Win + Shift + R"
+                                    Description="Replaces the Windows Snipping Tool shortcuts for region snips and screen recording while ToneSnip runs.">
                 <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphKeyboardShortcut}"/></toolkit:SettingsCard.HeaderIcon>
                 <ToggleSwitch x:Name="ReplaceSnippingTool" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
-                              AutomationProperties.Name="Also use Win + Shift + S for region snips"
+                              AutomationProperties.Name="Also use Win + Shift + S and Win + Shift + R"
                               AutomationProperties.AutomationId="Settings_ReplaceSnippingTool"/>
               </toolkit:SettingsCard>
               <!-- Assertive: a hotkey that will never fire is the one message here a screen-reader user must not miss.
@@ -546,6 +550,41 @@
                           AutomationProperties.Name="Notification style" AutomationProperties.AutomationId="Settings_NotificationStyle">
                   <ComboBoxItem Content="ToneSnip" Tag="tonesnip"/><ComboBoxItem Content="Windows" Tag="windows"/>
                 </ComboBox>
+              </toolkit:SettingsCard>
+
+              <TextBlock Text="Screen recording" Style="{StaticResource SectionHeader}" AutomationProperties.HeadingLevel="Level2"/>
+              <!-- The folder row has the snips' Location row's shape, with its own picker. -->
+              <toolkit:SettingsCard Header="Location" Description="Recordings are saved here as MP4.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRecording}"/></toolkit:SettingsCard.HeaderIcon>
+                <Grid ColumnSpacing="8">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="RecordFolderText" Style="{StaticResource Caption}" MaxWidth="286" VerticalAlignment="Center"
+                             MaxLines="1" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True"
+                             AutomationProperties.AutomationId="Settings_RecordFolder">
+                    <ToolTipService.ToolTip>
+                      <ToolTip Content="{Binding Text, ElementName=RecordFolderText}"
+                               IsEnabled="{Binding IsTextTrimmed, ElementName=RecordFolderText, Mode=OneWay}"/>
+                    </ToolTipService.ToolTip>
+                  </TextBlock>
+                  <Button Grid.Column="1"
+                          ToolTipService.ToolTip="Choose folder" AutomationProperties.Name="Choose the recordings folder"
+                          AutomationProperties.AutomationId="Settings_RecordFolderBrowse" Click="OnBrowseRecordFolder">
+                    <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphChooseFolder}"
+                              FontSize="{ThemeResource ControlContentThemeFontSize}"/>
+                  </Button>
+                </Grid>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Frame rate" Description="A still screen records no frames, so a higher rate costs nothing until something moves.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRecord}"/></toolkit:SettingsCard.HeaderIcon>
+                <ComboBox x:Name="RecordFrameRate" MinWidth="160" SelectionChanged="OnComboChanged"
+                          AutomationProperties.Name="Frame rate" AutomationProperties.AutomationId="Settings_RecordFrameRate">
+                  <ComboBoxItem Content="30 frames a second" Tag="30"/><ComboBoxItem Content="60 frames a second" Tag="60"/>
+                </ComboBox>
+              </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Record the mouse pointer">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphCaptureCursor}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="RecordCursor" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Record the mouse pointer" AutomationProperties.AutomationId="Settings_RecordCursor"/>
               </toolkit:SettingsCard>
             </StackPanel>
 

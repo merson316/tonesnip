@@ -51,6 +51,13 @@
   <x:String x:Key="GlyphPin">&#xE718;</x:String>
   <x:String x:Key="GlyphPickColour">&#xEF3C;</x:String>
 
+  <!-- Screen recording: the overlay bar's Record, the recording bar, and the card of a saved recording -->
+  <x:String x:Key="GlyphRecord">&#xE7C8;</x:String>
+  <x:String x:Key="GlyphRecordPause">&#xE769;</x:String>
+  <x:String x:Key="GlyphRecordResume">&#xE768;</x:String>
+  <x:String x:Key="GlyphRecordStop">&#xE71A;</x:String>
+  <x:String x:Key="GlyphRecording">&#xE714;</x:String>
+
   <!-- The Recent flyout -->
   <x:String x:Key="GlyphSettings">&#xE713;</x:String>
   <x:String x:Key="GlyphOpenInViewer">&#xE8A7;</x:String>

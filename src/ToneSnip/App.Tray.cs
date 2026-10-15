@@ -65,6 +65,9 @@ public partial class App
         })
             menu.Add(label, () => Snip(mode), accelerator: accelerator);
         menu.AddSeparator();
+        // Checked while a recording runs; choosing it then stops and saves it.
+        menu.Add("Record screen", () => ToggleRecording(fromMenu: true), () => IsRecording, Accelerator(() => Settings.Hotkeys.Record));
+        menu.AddSeparator();
         menu.AddHeader("Delay");
         foreach (int delay in SnipSettings.Delays)
             menu.Add(delay == 0 ? "None" : $"{delay} seconds", () => ApplySettings(Settings with { DefaultDelay = delay }), () => Settings.DefaultDelay == delay);

@@ -38,12 +38,17 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// <summary>Takes a snip whose selection was for something other than an ordinary snip (its text, a pin) instead of
     /// the output pipeline. Runs on the UI thread, inside the snip.</summary>
     public Func<CaptureResult, SnipAction, Task>? Divert { get; set; }
+    /// <summary>Takes a selection made to be recorded (<see cref="SnipAction.Record"/>) and starts the recording: the
+    /// area in virtual-desktop pixels and the monitors as the grab described them. No snip is built for it; the frozen
+    /// frames are already released. UI thread.</summary>
+    public Action<IntRect, IReadOnlyList<OutputInfo>>? Record { get; set; }
     /// <summary>The overlay's mode when its selection was made (<see cref="SelectInteractively"/>). UI thread.</summary>
     private SnipMode _selectedMode;
 
     /// <summary>Holds <see cref="Busy"/> for the whole run, including a delay restart that re-enters
-    /// <see cref="RunCore"/>, so a hotkey during the countdown cannot start a concurrent snip.</summary>
-    public async Task Run(SnipMode mode, int delaySeconds)
+    /// <see cref="RunCore"/>, so a hotkey during the countdown cannot start a concurrent snip. <paramref name="then"/>
+    /// arms the snip screen for something other than an ordinary snip before it opens, as its toolbar would.</summary>
+    public async Task Run(SnipMode mode, int delaySeconds, SnipAction then = SnipAction.Snip)
     {
         // Logged so a session that never ended is distinguishable from a dead hotkey.
         if (_busy) { log.Info($"{mode}: refused, the snip started {Stopwatch.GetElapsedTime(_started).TotalSeconds:F0} s ago has not finished"); return; }
@@ -70,12 +75,13 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
         _started = Stopwatch.GetTimestamp();
         // One Info line per stage (started, grabbed, overlay shown, outcome), so the production log shows how far a
         // snip got when a hotkey seems to do nothing.
-        log.Info(delaySeconds > 0 ? $"{mode}: started, {delaySeconds} s delay" : $"{mode}: started");
-        try { await RunCore(mode, delaySeconds); }
+        string armed = then == SnipAction.Snip ? "" : $", for {then}";
+        log.Info(delaySeconds > 0 ? $"{mode}: started, {delaySeconds} s delay{armed}" : $"{mode}: started{armed}");
+        try { await RunCore(mode, delaySeconds, then); }
         finally { _busy = false; Idle?.Invoke(); }
     }
 
-    private async Task RunCore(SnipMode mode, int delaySeconds)
+    private async Task RunCore(SnipMode mode, int delaySeconds, SnipAction then)
     {
         _last = Stopwatch.GetTimestamp();
         var sw = Stopwatch.StartNew();
@@ -123,7 +129,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
                     if (region.IsEmpty) region = desktop;
                     break;
                 default:
-                    (region, freeform, doc, exposure, bool restarted, retonemap, action) = await SelectInteractively(mode, outputs, desktop);
+                    (region, freeform, doc, exposure, bool restarted, retonemap, action) = await SelectInteractively(mode, outputs, desktop, then);
                     ofWindow = _selectedMode == SnipMode.Window;
                     if (region.IsEmpty)
                     {
@@ -131,6 +137,15 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
                         return;
                     }
                     break;
+            }
+            if (action == SnipAction.Record && Record != null)
+            {
+                // A recording captures the live screen, not these frames: they go before it starts, and nothing is built.
+                List<OutputInfo> monitors = outputs.Select(o => o.Info).ToList();
+                await Task.Run(() => FrameGrabber.Release(outputs));
+                log.Info($"{mode}: region {region} selected for a recording after {sw.ElapsedMilliseconds} ms");
+                Record(region, monitors);
+                return;
             }
             DebugHooks.MemoryMark("after overlay");
             SnipSettings s = settings();
@@ -292,12 +307,12 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// returns is covered by a second, log-only timer started before it: it cannot end the snip (that needs the UI
     /// thread Show is holding), but the log then says where the snip stopped.</para>
     /// </summary>
-    private async Task<(IntRect, IReadOnlyList<(int X, int Y)>?, AnnotationDoc?, float, bool, bool, SnipAction)> SelectInteractively(SnipMode mode, List<CapturedOutput> outputs, IntRect desktop)
+    private async Task<(IntRect, IReadOnlyList<(int X, int Y)>?, AnnotationDoc?, float, bool, bool, SnipAction)> SelectInteractively(SnipMode mode, List<CapturedOutput> outputs, IntRect desktop, SnipAction then)
     {
         long built = Stopwatch.GetTimestamp();
         bool painted = false;   // UI thread only
         var watchdog = new CancellationTokenSource();
-        var overlay = new Overlay.OverlaySession(outputs, grabber, desktop, mode, settings(), log);
+        var overlay = new Overlay.OverlaySession(outputs, grabber, desktop, mode, settings(), log, then);
         _overlay = overlay; _overlayMode = mode; _overlayUp = true;
         overlay.FirstPaint = () =>
         {
@@ -358,7 +373,8 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             // frames are not needed again, and must not stay on the graphics card through the countdown.
             await Task.Run(() => FrameGrabber.Release(outputs));
             _last = 0;
-            await RunCore(overlay.Mode, outcome.RestartWithDelay);
+            // What the screen was armed for carries over to the screen that opens after the delay.
+            await RunCore(overlay.Mode, outcome.RestartWithDelay, overlay.Then);
             return (IntRect.Empty, null, null, 1f, true, false, SnipAction.Snip);
         }
         // The mode can change in the overlay, so Recent is told the one the selection was made in.

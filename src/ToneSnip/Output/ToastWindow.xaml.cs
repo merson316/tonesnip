@@ -91,6 +91,7 @@ public sealed partial class ToastWindow : PopupWindow
     internal void Bind(CaptureResult r, string? thumbPath)
     {
         _result = r;
+        _video = null;
         bool saved = r.SavedPath != null;
         Core.Output.SnipNotice notice = ToastService.NoticeFor(r);
         string title = notice.Title;
@@ -127,6 +128,7 @@ public sealed partial class ToastWindow : PopupWindow
     internal void BindNotice(string title, string detail, string glyph)
     {
         _result = null;
+        _video = null;
         TitleText.Text = title;
         AutomationProperties.SetName(TitleText, title + ", " + detail);
         Controls.LiveRegion.Announce(TitleText);
@@ -141,10 +143,41 @@ public sealed partial class ToastWindow : PopupWindow
         RestartDwell();
     }
 
+    /// <summary>The recording a card shows (<see cref="BindRecording"/>); Open plays it and Show in folder reveals it.
+    /// Null on a snip's card and a notice.</summary>
+    private string? _video;
+
+    /// <summary>
+    /// Puts a finished screen recording on the card: Open plays it in the app Windows uses for video, Show in folder
+    /// reveals it, and Edit and Pin, which are for pictures, are hidden. The placeholder glyph stands in for the
+    /// thumbnail. Re-binds and re-places like <see cref="Bind"/>.
+    /// </summary>
+    internal void BindRecording(string path, string detail, string glyph)
+    {
+        _result = null;
+        _video = path;
+        const string Title = "Recording saved";
+        TitleText.Text = Title;
+        AutomationProperties.SetName(TitleText, Title + ", " + detail);
+        Controls.LiveRegion.Announce(TitleText);
+        DetailText.Text = detail;
+        AutomationProperties.SetName(Root, Title + ", " + detail);
+        ShowLinks(true);
+        FolderLink.Visibility = Visibility.Visible;
+        EditLink.Visibility = PinLink.Visibility = Visibility.Collapsed;
+        Thumb.Source = null;
+        ThumbPlaceholder.Glyph = glyph;
+        ThumbPlaceholder.Visibility = Visibility.Visible;
+        _dismissing = false;
+        if (_placed) Place();
+        RestartDwell();
+    }
+
     /// <summary>A snip's card has its links and a one-line detail; a notice has neither links nor the snip glyph.</summary>
     private void ShowLinks(bool on)
     {
         Links.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        EditLink.Visibility = PinLink.Visibility = Visibility.Visible;
         DetailText.TextWrapping = on ? TextWrapping.NoWrap : TextWrapping.Wrap;
         if (on) ThumbPlaceholder.Glyph = _thumbGlyph;
     }
@@ -251,7 +284,8 @@ public sealed partial class ToastWindow : PopupWindow
 
     private void OnOpen(object sender, RoutedEventArgs e)
     {
-        if (_result is { } r) _open(r);
+        if (_video != null) Shell.OpenVideo(_video, _log);
+        else if (_result is { } r) _open(r);
         Dismiss();
     }
 
@@ -269,7 +303,7 @@ public sealed partial class ToastWindow : PopupWindow
 
     private void OnFolder(object sender, RoutedEventArgs e)
     {
-        Shell.Reveal(_result?.SavedPath, _log);
+        Shell.Reveal(_video ?? _result?.SavedPath, _log);
         Dismiss();
     }
 

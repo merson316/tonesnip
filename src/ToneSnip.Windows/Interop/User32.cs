@@ -182,6 +182,13 @@ public static partial class User32
     /// <summary>Runtime-marshalled: <see cref="MonitorInfoEx"/> carries an inline string.</summary>
     [DllImport(Dll, CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfoW(IntPtr monitor, ref MonitorInfoEx info);
 
+    // ----- capture -----
+    /// <summary>WDA_EXCLUDEFROMCAPTURE: the window shows on screen but not in any capture of it, a recording's included.</summary>
+    public const uint WdaExcludeFromCapture = 0x11;
+    [LibraryImport(Dll, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+    /// <summary>The window's shape; the system owns <paramref name="region"/> once this succeeds.</summary>
+    [LibraryImport(Dll)] public static partial int SetWindowRgn(IntPtr hwnd, IntPtr region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
     // ----- power and session notifications -----
     [LibraryImport(Dll, SetLastError = true)] public static partial IntPtr RegisterSuspendResumeNotification(IntPtr recipient, int flags);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool UnregisterSuspendResumeNotification(IntPtr handle);

@@ -125,6 +125,46 @@ public static partial class ClipboardWriter
 
     private const uint CfUnicodeText = 13;
 
+    /// <summary><see cref="SetFile"/> through <see cref="Enqueue"/>.</summary>
+    public static Task SetFileQueued(string path, Core.Diagnostics.ILog? log = null) => Enqueue(() => SetFile(path, log));
+
+    /// <summary>
+    /// Puts one file on the clipboard as Explorer's Copy does (CF_HDROP, with a copy drop effect): a screen recording,
+    /// which then pastes as the video into a chat, a mail or a folder. Any thread.
+    /// </summary>
+    public static void SetFile(string path, Core.Diagnostics.ILog? log = null)
+    {
+        lock (WriteGate) SetFileLocked(path, log);
+    }
+
+    private static void SetFileLocked(string path, Core.Diagnostics.ILog? log)
+    {
+        bool open = false;
+        for (int i = 0; i < 10 && !(open = OpenClipboard(IntPtr.Zero)); i++) Thread.Sleep(50);
+        if (!open) throw new InvalidOperationException("clipboard is busy");
+        var handed = new List<IntPtr>(2);
+        try
+        {
+            EmptyClipboard();
+            // DROPFILES (offset of the list, a point, two BOOLs, the last saying the names are UTF-16), then the
+            // double-null-terminated list of names.
+            handed.Add(Put(CfHDrop, DropFilesHeader + (path.Length + 2) * 2L, dest =>
+            {
+                dest.Clear();
+                System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(dest, DropFilesHeader);
+                System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(dest[16..], 1);
+                MemoryMarshal.AsBytes(path.AsSpan()).CopyTo(dest[DropFilesHeader..]);
+            }));
+            try { handed.Add(Put(RegisterClipboardFormatW("Preferred DropEffect"), 4, dest => System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(dest, DropEffectCopy))); }
+            catch (Exception e) { log?.Warn("clipboard: the drop effect was not added, the file is there: " + e.Message); }
+        }
+        finally { CloseClipboard(); }
+        _ = ReleaseLocalCopiesAsync(handed, log);
+    }
+
+    private const uint CfHDrop = 15;
+    private const int DropFilesHeader = 20, DropEffectCopy = 1;
+
     /// <summary>
     /// Memory handed to SetClipboardData stays in this process until it opens and closes the clipboard again after
     /// Windows has taken its copy. So this does an empty open/close on a backoff until the handles are freed.

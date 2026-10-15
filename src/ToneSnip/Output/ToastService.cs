@@ -214,6 +214,42 @@ public sealed class ToastService : IDisposable
         });
     }
 
+    /// <summary>
+    /// A finished screen recording: on the card with Open (play it) and Show in folder, or as a Windows notification
+    /// with the same two buttons. Shown once no snip is running, as a snip's card is. UI thread.
+    /// </summary>
+    public void ShowRecording(string path, string detail, string glyph)
+    {
+        if (!string.Equals(App.Current.Settings.Notification, "windows", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowCardWhenIdle(() =>
+            {
+                try { Card().BindRecording(path, detail, glyph); }
+                catch (Exception e)
+                {
+                    _card = null;
+                    _log.Warn("toast card: " + e.Message);
+                    Fallback?.Invoke("Recording saved", detail);
+                }
+            });
+            return;
+        }
+        try
+        {
+            EnsureRegistered();
+            var builder = new AppNotificationBuilder().AddArgument("action", "play").AddArgument("path", path)
+                .AddText("Recording saved").AddText(detail)
+                .AddButton(new AppNotificationButton("Open").AddArgument("action", "play").AddArgument("path", path))
+                .AddButton(new AppNotificationButton("Show in folder").AddArgument("action", "folder").AddArgument("path", path));
+            AppNotificationManager.Default.Show(builder.BuildNotification());
+        }
+        catch (Exception e)
+        {
+            _log.Warn("toast: " + e.Message);
+            Fallback?.Invoke("Recording saved", detail);
+        }
+    }
+
     internal static SnipNotice NoticeFor(CaptureResult r) => SnipNotice.For(r.SavedPath, r.SaveAttempted, r.CopyAttempted, r.Copied);
 
     /// <summary>Hides the card immediately, without fading, so it is not captured. True when one was on
@@ -301,6 +337,7 @@ public sealed class ToastService : IDisposable
                 try
                 {
                     if (action == "folder") { Shell.Reveal(path, _log); return; }
+                    if (action == "play") { Shell.OpenVideo(path, _log); return; }
                     if (Lookup == null || await Lookup(path) is not { } found) { _log.Debug("toast: clicked, but its snip is no longer in the history: " + path); return; }
                     if (action == "edit") Edited?.Invoke(found); else Opened?.Invoke(found);
                 }

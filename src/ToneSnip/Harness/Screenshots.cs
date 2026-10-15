@@ -46,7 +46,7 @@ internal static partial class Screenshots
         "settings", "settings-general", "settings-hotkeys", "settings-tonemap", "settings-output", "settings-about",
         "editor", "editor-hdr", "editor-front", "toolbar", "toolbar-annotate",
         "countdown", "textentry", "toast-saved", "toast-copied", "toast-dwell", "toast-notice", "pin", "tray-menu",
-        "overlay-lasso", "drag-bench",
+        "overlay-lasso", "drag-bench", "record",
     };
 
     /// <summary>The rows <see cref="SeedHistory"/> seeded, so the empty-state shot can restore them.</summary>

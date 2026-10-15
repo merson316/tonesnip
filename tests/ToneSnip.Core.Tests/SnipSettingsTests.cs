@@ -73,9 +73,53 @@ public class SnipSettingsTests
         var s = new SnipSettings();
         Assert.Equal(5, s.Bindings().Count);
         Assert.Contains(s.Bindings(), b => b.Action == "window" && b.Chord == Chord.Parse("Ctrl+PrintScreen"));
+        Assert.DoesNotContain(s.Bindings(), b => b.Action == "record");
         var t = s with { Hotkeys = s.Hotkeys with { ReplaceSnippingTool = true } };
         Assert.Contains(t.Bindings(), b => b.Action == "region" && b.Chord == Chord.Parse("Win+Shift+S"));
-        Assert.Equal(6, t.Bindings().Count);
+        Assert.Contains(t.Bindings(), b => b.Action == "record" && b.Chord == Chord.Parse("Win+Shift+R"));
+        Assert.Equal(7, t.Bindings().Count);
+    }
+
+    [Fact]
+    public void A_record_hotkey_binds_on_its_own_and_beside_snipping_tools()
+    {
+        var s = new SnipSettings { Hotkeys = new SnipHotkeys { Record = "Ctrl+Alt+R" } };
+        Assert.Contains(s.Bindings(), b => b.Action == "record" && b.Chord == Chord.Parse("Ctrl+Alt+R"));
+        var both = s with { Hotkeys = s.Hotkeys with { ReplaceSnippingTool = true } };
+        Assert.Equal(2, both.Bindings().Count(b => b.Action == "record"));
+        SnipSettings bad = new SnipSettings { Hotkeys = new SnipHotkeys { Record = "Ctrl+Nonsense" } }.Sanitized(out List<string> fixes);
+        Assert.Equal("", bad.Hotkeys.Record);
+        Assert.Contains(fixes, f => f.Contains("hotkeys.record"));
+    }
+
+    [Fact]
+    public void Recording_settings_default_to_snipping_tools_and_are_sanitised()
+    {
+        var d = new SnipSettings();
+        Assert.Equal(30, d.Record.FrameRate);
+        Assert.True(d.Record.Cursor);
+        Assert.Null(d.Record.Folder);
+        Assert.Equal(Path.Combine("V", RecordSettings.DefaultFolderName), d.Record.ResolvedFolder("V"));
+        SnipSettings c = new SnipSettings { Record = new RecordSettings { FrameRate = 50, Folder = "relative\\videos" } }.Sanitized(out List<string> fixes);
+        Assert.Equal(60, c.Record.FrameRate);
+        Assert.Null(c.Record.Folder);
+        Assert.Contains(fixes, f => f.Contains("record.frameRate"));
+        Assert.Contains(fixes, f => f.Contains("record.folder"));
+        string folder = Path.Combine(Path.GetTempPath(), "Videos");
+        Assert.Equal(folder, new SnipSettings { Record = new RecordSettings { Folder = " " + folder + " " } }.Sanitized(out _).Record.Folder);
+    }
+
+    [Fact]
+    public void Recording_settings_round_trip_under_their_json_names()
+    {
+        string p = Temp("{ \"version\": 2, \"record\": { \"frameRate\": 60, \"cursor\": false }, \"hotkeys\": { \"record\": \"Win+Shift+R\" } }");
+        (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
+        Assert.Null(err);
+        Assert.Equal(60, s.Record.FrameRate);
+        Assert.False(s.Record.Cursor);
+        Assert.Equal("Win+Shift+R", s.Hotkeys.Record);
+        SnipSettingsFile.Save(p, s with { Record = s.Record with { FrameRate = 30 } });
+        Assert.Contains("\"frameRate\": 30", File.ReadAllText(p));
     }
 
     [Fact]

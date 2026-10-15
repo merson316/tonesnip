@@ -26,6 +26,17 @@ public static class AppPaths
             return string.IsNullOrWhiteSpace(profile) ? "" : Path.Combine(profile, "Pictures");
         }
     }
+    /// <summary>The Videos known folder, which recordings go under, read as <see cref="Pictures"/> is.</summary>
+    public static string Videos
+    {
+        get
+        {
+            string v = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos, Environment.SpecialFolderOption.DoNotVerify);
+            if (!string.IsNullOrWhiteSpace(v)) return v;
+            string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
+            return string.IsNullOrWhiteSpace(profile) ? "" : Path.Combine(profile, "Videos");
+        }
+    }
     public static string ExePath => Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "tonesnip" + Protocol.InstanceSuffix + ".exe");
 
     /// <summary>The single-instance mutex, suffixed so a debug build never collides with, or forwards to, the

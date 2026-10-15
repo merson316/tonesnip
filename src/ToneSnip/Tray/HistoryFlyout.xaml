@@ -87,6 +87,12 @@
         </Grid.ColumnDefinitions>
         <controls:ModeGroup x:Name="Modes" VerticalAlignment="Center" AutomationProperties.AutomationId="Flyout_Modes"
                             AutomationProperties.Name="Capture mode"/>
+        <!-- A recording, beside the modes: the snip screen opens armed to record its selection. -->
+        <Button x:Name="RecordBtn" Grid.Column="1" Style="{StaticResource GlyphButton}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                Margin="4,0,0,0" AutomationProperties.AutomationId="Flyout_RecordButton" AutomationProperties.Name="Record screen"
+                Foreground="{ThemeResource TextSecondary}" ToolTipService.ToolTip="Record screen" Click="OnRecord">
+          <FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphRecord}" FontSize="16"/>
+        </Button>
         <!-- Search and filter, shown once there is a snip to find. Each opens its row below the header; ShowFilterState
              fills a button while its row is open or it is narrowing the list, and extends its accessible name to say
              which. -->

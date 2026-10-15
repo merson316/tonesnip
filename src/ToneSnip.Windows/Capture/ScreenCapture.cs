@@ -683,14 +683,16 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         }
     }
 
-    private static GraphicsCaptureItem CreateItem(IntPtr handle, bool forWindow = false)
+    /// <summary>A capture item for a monitor (HMONITOR) or, with <paramref name="forWindow"/>, a window. Also the
+    /// recorder's.</summary>
+    internal static GraphicsCaptureItem CreateItem(IntPtr handle, bool forWindow = false)
     {
         IntPtr p = forWindow ? ItemFactory.Value.CreateForWindow(handle, ref _itemIid) : ItemFactory.Value.CreateForMonitor(handle, ref _itemIid);
         try { return GraphicsCaptureItem.FromAbi(p); }
         finally { Marshal.Release(p); }
     }
 
-    private static IDirect3DDevice WinRtDevice(ID3D11Device device)
+    internal static IDirect3DDevice WinRtDevice(ID3D11Device device)
     {
         using IDXGIDevice dxgi = device.QueryInterface<IDXGIDevice>();
         Marshal.ThrowExceptionForHR(CreateDirect3D11DeviceFromDXGIDevice(dxgi.NativePointer, out IntPtr p));
@@ -698,7 +700,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         finally { Marshal.Release(p); }
     }
 
-    private static ID3D11Texture2D TextureOf(IDirect3DSurface surface)
+    internal static ID3D11Texture2D TextureOf(IDirect3DSurface surface)
     {
         var access = WinRT.CastExtensions.As<IDirect3DDxgiInterfaceAccess>(surface);
         try
