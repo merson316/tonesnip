@@ -68,6 +68,12 @@ public class AutoExposureTests
         return img;
     }
 
+    /// <summary>The large frames the theories below share, each made once: the rows of a theory differ in the rectangle,
+    /// not the frame, and the frames are only read.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int W, int H, int Seed), HalfImage> Frames = new();
+
+    private static HalfImage Frame(int w, int h, int seed) => Frames.GetOrAdd((w, h, seed), k => Random(k.W, k.H, k.Seed));
+
     [Theory]
     [InlineData(64, 64, 1)]
     [InlineData(333, 177, 2)]
@@ -85,7 +91,7 @@ public class AutoExposureTests
     [InlineData(1233, 7, 4, 1300)]
     public void A_rectangle_of_the_frame_matches_its_crop(int x, int y, int w, int h)
     {
-        HalfImage frame = Random(1400, 1400, 7);
+        HalfImage frame = Frame(1400, 1400, 7);
         var rect = new IntRect(x, y, w, h);
         HalfImage crop = frame.Crop(rect);
         float expected = SortedPercentile99(crop);
@@ -112,7 +118,7 @@ public class AutoExposureTests
     [InlineData(5, 3, 2090, 990, 2)]     // a step that does not divide the width
     public void Samples_read_from_a_frame_give_the_same_exposure_as_the_frame_itself(int x, int y, int w, int h, int seed)
     {
-        HalfImage frame = Random(2100, 1400, seed);
+        HalfImage frame = Frame(2100, 1400, seed);
         var rect = new IntRect(x, y, w, h);
         float[] samples = new HalfFrame(frame).Luminances(rect, AutoExposure.SampleStep(rect));
         Assert.Equal(AutoExposure.Percentile99(frame, rect), AutoExposure.Percentile99(samples));

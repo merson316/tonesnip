@@ -24,7 +24,8 @@ public class PixelShadeTests
             for (int i = 0; i < row.Length; i++)
             {
                 byte expected = i % 4 == 3 ? source[i] : (byte)((source[i] * keep + 127) / 255);
-                Assert.True(expected == row[i], $"keep {keep}, byte {i}: {source[i]} -> {row[i]}, expected {expected}");
+                // The message is built only on a mismatch: interpolating it for all 265,000 bytes was most of the test's time.
+                if (expected != row[i]) Assert.Fail($"keep {keep}, byte {i}: {source[i]} -> {row[i]}, expected {expected}");
             }
         }
     }

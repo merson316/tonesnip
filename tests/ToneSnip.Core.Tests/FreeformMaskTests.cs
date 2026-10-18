@@ -128,14 +128,15 @@ public class FreeformMaskTests
             var area = IntRect.FromLtrb(rng.Next(-5, 50), rng.Next(-5, 35), rng.Next(0, 60), rng.Next(0, 45));
             var img = new BgraImage(bounds.Width, bounds.Height, (byte[])source.Clone());
             spans.ClearOutside(img, area);
+            // Inside the area, the whole-image clear's bytes; outside it, the source's untouched.
             IntRect inside = area.Intersect(bounds);
-            for (int y = 0; y < bounds.Height; y++)
-                for (int x = 0; x < bounds.Width; x++)
-                    for (int c = 0; c < 4; c++)
-                    {
-                        int i = (y * bounds.Width + x) * 4 + c;
-                        Assert.Equal(inside.Contains(x, y) ? whole[i] : source[i], img.Data[i]);
-                    }
+            var expected = (byte[])source.Clone();
+            for (int y = inside.Top; y < inside.Bottom; y++)
+            {
+                int row = (y * bounds.Width + inside.Left) * 4;
+                Array.Copy(whole, row, expected, row, inside.Width * 4);
+            }
+            Assert.Equal(expected, img.Data);
         }
     }
 
