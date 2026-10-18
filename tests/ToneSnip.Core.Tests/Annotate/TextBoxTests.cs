@@ -55,17 +55,12 @@ public class TextBoxTests
         Assert.True(on.TextBackground);
         Assert.True(on.ToStyle(0xFF123456).TextBox);
 
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "settings.json");
-        try
-        {
-            SnipSettingsFile.Save(path, new SnipSettings { Annotate = on });
-            Assert.Contains("\"textBackground\": true", File.ReadAllText(path));
-            (SnipSettings back, string? err) = SnipSettingsFile.Load(path);
-            Assert.Null(err);
-            Assert.True(back.Annotate.TextBackground);
-        }
-        finally { Directory.Delete(dir, true); }
+        using var dir = new TempDir();
+        string path = dir.Child("settings.json");
+        SnipSettingsFile.Save(path, new SnipSettings { Annotate = on });
+        Assert.Contains("\"textBackground\": true", File.ReadAllText(path));
+        (SnipSettings back, string? err) = SnipSettingsFile.Load(path);
+        Assert.Null(err);
+        Assert.True(back.Annotate.TextBackground);
     }
 }

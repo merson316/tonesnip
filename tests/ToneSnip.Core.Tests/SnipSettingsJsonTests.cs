@@ -185,16 +185,11 @@ public class SnipSettingsJsonTests
             }
             """;
         Assert.Equal(Reflected(Old), Generated(Old));
-        string path = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(path, Old);
-        try
-        {
-            (SnipSettings loaded, _) = SnipSettingsFile.Load(path);
-            SnipSettings expected = Reflected(Old).Sanitized(out _) with { AfterSelect = "edit" };
-            Assert.Equal(expected, loaded);
-            Assert.Equal((1.5f, 80, "hable", 1f, true), (loaded.Exposure, loaded.JpegQuality, loaded.Tonemap, loaded.Knee, loaded.ShowToast));
-        }
-        finally { File.Delete(path); }
+        using var dir = new TempDir();
+        (SnipSettings loaded, _) = SnipSettingsFile.Load(dir.Write("settings.json", Old));
+        SnipSettings expected = Reflected(Old).Sanitized(out _) with { AfterSelect = "edit" };
+        Assert.Equal(expected, loaded);
+        Assert.Equal((1.5f, 80, "hable", 1f, true), (loaded.Exposure, loaded.JpegQuality, loaded.Tonemap, loaded.Knee, loaded.ShowToast));
     }
 
     /// <summary>What the app writes, the reflection serializer reads back to the same settings: a downgrade to a build
@@ -202,15 +197,12 @@ public class SnipSettingsJsonTests
     [Fact]
     public void A_saved_file_reads_back_the_same_either_way()
     {
-        string path = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N") + ".json");
-        try
-        {
-            SnipSettings changed = Changed();
-            SnipSettingsFile.Save(path, changed);
-            string text = File.ReadAllText(path);
-            Assert.Equal(changed, Reflected(text));
-            Assert.Equal(changed, Generated(text));
-        }
-        finally { File.Delete(path); }
+        using var dir = new TempDir();
+        string path = dir.Child("settings.json");
+        SnipSettings changed = Changed();
+        SnipSettingsFile.Save(path, changed);
+        string text = File.ReadAllText(path);
+        Assert.Equal(changed, Reflected(text));
+        Assert.Equal(changed, Generated(text));
     }
 }

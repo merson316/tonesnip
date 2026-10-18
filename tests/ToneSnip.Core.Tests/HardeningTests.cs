@@ -19,24 +19,22 @@ public class HardeningTests
     public void Two_logs_on_one_file_from_two_threads_lose_no_lines()
     {
         // Several FileLog instances can share a path; they must share one lock or appends are lost.
-        string path = Path.Combine(Path.GetTempPath(), "tonesnip-log-" + Guid.NewGuid().ToString("N") + ".log");
-        try
-        {
-            var a = new FileLog(path);
-            var b = new FileLog(path);
-            const int n = 400;
-            Parallel.Invoke(
-                () => { for (int i = 0; i < n; i++) a.Warn("a " + i); },
-                () => { for (int i = 0; i < n; i++) b.Warn("b " + i); });
-            Assert.Equal(2 * n, File.ReadAllLines(path).Length);
-        }
-        finally { File.Delete(path); }
+        using var dir = new TempDir();
+        string path = dir.Child("tonesnip.log");
+        var a = new FileLog(path);
+        var b = new FileLog(path);
+        const int n = 400;
+        Parallel.Invoke(
+            () => { for (int i = 0; i < n; i++) a.Warn("a " + i); },
+            () => { for (int i = 0; i < n; i++) b.Warn("b " + i); });
+        Assert.Equal(2 * n, File.ReadAllLines(path).Length);
     }
 
     [Fact]
     public void A_full_log_is_rolled_to_one_previous_file_rather_than_wiped()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-roll-" + Guid.NewGuid().ToString("N"));
+        using var temp = new TempDir();
+        string dir = temp.Child("logs");   // the log creates its own folder
         string? header = FileLog.Header;
         try
         {
@@ -54,26 +52,19 @@ public class HardeningTests
             // Only one previous file is kept.
             Assert.Equal(2, Directory.GetFiles(dir).Length);
         }
-        finally
-        {
-            FileLog.Header = header;
-            try { Directory.Delete(dir, recursive: true); } catch { }
-        }
+        finally { FileLog.Header = header; }
     }
 
     [Fact]
     public void Concurrent_saves_of_one_settings_file_both_succeed_and_leave_valid_json()
     {
         // Each save needs its own temp file name, or concurrent saves collide.
-        string path = Path.Combine(Path.GetTempPath(), "tonesnip-json-" + Guid.NewGuid().ToString("N") + ".json");
-        try
-        {
-            Parallel.For(0, 64, i => JsonFile.Save(path, new SnipSettings { JpegQuality = 50 + i % 50 }));
-            (SnipSettings? back, string? err) = JsonFile.Load<SnipSettings>(path);
-            Assert.Null(err);
-            Assert.NotNull(back);
-            Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*.tmp"));
-        }
-        finally { File.Delete(path); }
+        using var dir = new TempDir();
+        string path = dir.Child("settings.json");
+        Parallel.For(0, 64, i => JsonFile.Save(path, new SnipSettings { JpegQuality = 50 + i % 50 }));
+        (SnipSettings? back, string? err) = JsonFile.Load<SnipSettings>(path);
+        Assert.Null(err);
+        Assert.NotNull(back);
+        Assert.Equal(new[] { path }, Directory.GetFiles(dir.Path));   // no .tmp left beside it
     }
 }

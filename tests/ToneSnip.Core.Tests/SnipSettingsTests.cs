@@ -4,14 +4,13 @@ using Xunit;
 
 namespace ToneSnip.Core.Tests;
 
-public class SnipSettingsTests
+public sealed class SnipSettingsTests : IDisposable
 {
-    private static string Temp(string content)
-    {
-        string p = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(p, content);
-        return p;
-    }
+    private readonly TempDir _dir = new();
+
+    public void Dispose() => _dir.Dispose();
+
+    private string Temp(string content) => _dir.Write("settings.json", content);
 
     [Fact]
     public void Defaults_match_spec()
@@ -156,26 +155,19 @@ public class SnipSettingsTests
     [Fact]
     public void Only_the_newest_copies_of_an_unreadable_file_are_kept()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-bad-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            string p = Path.Combine(dir, "settings.json");
-            File.WriteAllText(p, "{ not json");
-            string[] older = { "20200101-000000", "20210101-000000", "20220101-000000", "20230101-000000" };
-            foreach (string stamp in older) File.WriteAllText($"{p}.bad-{stamp}", "old");
-            File.WriteAllText(Path.Combine(dir, "other.json.bad-20190101-000000"), "not ours");
+        string p = Temp("{ not json");
+        string[] older = { "20200101-000000", "20210101-000000", "20220101-000000", "20230101-000000" };
+        foreach (string stamp in older) File.WriteAllText($"{p}.bad-{stamp}", "old");
+        string other = _dir.Write("other.json.bad-20190101-000000", "not ours");
 
-            (_, string? err) = SnipSettingsFile.Load(p);
+        (_, string? err) = SnipSettingsFile.Load(p);
 
-            Assert.Contains("kept as", err);
-            string[] kept = Directory.GetFiles(dir, "settings.json.bad-*").Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray()!;
-            Assert.Equal(SnipSettingsFile.BadCopiesKept, kept.Length);
-            // Today's copy and the two newest old ones survive; another file's copies are not touched.
-            Assert.Equal(new[] { "settings.json.bad-20220101-000000", "settings.json.bad-20230101-000000" }, kept.Take(2));
-            Assert.True(File.Exists(Path.Combine(dir, "other.json.bad-20190101-000000")));
-        }
-        finally { Directory.Delete(dir, recursive: true); }
+        Assert.Contains("kept as", err);
+        string[] kept = Directory.GetFiles(_dir.Path, "settings.json.bad-*").Select(Path.GetFileName).OrderBy(f => f, StringComparer.Ordinal).ToArray()!;
+        Assert.Equal(SnipSettingsFile.BadCopiesKept, kept.Length);
+        // Today's copy and the two newest old ones survive; another file's copies are not touched.
+        Assert.Equal(new[] { "settings.json.bad-20220101-000000", "settings.json.bad-20230101-000000" }, kept.Take(2));
+        Assert.True(File.Exists(other));
     }
 
     [Fact]
@@ -238,15 +230,11 @@ public class SnipSettingsTests
     [Fact]
     public void Version1_openViewerImmediately_migrates_to_edit()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "settings.json");
-        File.WriteAllText(path, "{ \"version\": 1, \"openViewerImmediately\": true }");
+        string path = Temp("{ \"version\": 1, \"openViewerImmediately\": true }");
         (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
         Assert.Null(err); Assert.Equal("edit", s.AfterSelect); Assert.Equal(2, s.Version);
         File.WriteAllText(path, "{ \"version\": 1, \"openViewerImmediately\": false, \"afterSelect\": \"annotate\" }");
         Assert.Equal("annotate", SnipSettingsFile.Load(path).Settings.AfterSelect);
-        Directory.Delete(dir, true);
     }
 
     [Fact]
@@ -301,13 +289,9 @@ public class SnipSettingsTests
     [Fact]
     public void String_version_does_not_crash_the_loader()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "settings.json");
-        File.WriteAllText(path, "{ \"version\": \"1\", \"openViewerImmediately\": true }");
+        string path = Temp("{ \"version\": \"1\", \"openViewerImmediately\": true }");
         (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
         Assert.Equal("save", s.AfterSelect);
-        Directory.Delete(dir, true);
     }
 
     [Fact]
@@ -326,18 +310,11 @@ public class SnipSettingsTests
     public void Gpu_tonemap_switch_defaults_on_and_can_be_turned_off_in_the_file()
     {
         Assert.True(new SnipSettings().Hdr.GpuTonemap);
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-tests-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            string path = Path.Combine(dir, "settings.json");
-            File.WriteAllText(path, "{ \"version\": 2, \"hdr\": { \"gpuTonemap\": false } }");
-            (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
-            Assert.Null(err);
-            Assert.False(s.Hdr.GpuTonemap);
-            Assert.Equal("none", s.Hdr.File);
-        }
-        finally { Directory.Delete(dir, true); }
+        string path = Temp("{ \"version\": 2, \"hdr\": { \"gpuTonemap\": false } }");
+        (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
+        Assert.Null(err);
+        Assert.False(s.Hdr.GpuTonemap);
+        Assert.Equal("none", s.Hdr.File);
     }
 
     /// <summary>SaveFolder reaches explorer.exe and the output pipeline as a raw path, so Sanitized validates it.</summary>
@@ -382,7 +359,6 @@ public class SnipSettingsTests
         // A file without the field also gets true, not the CLR default.
         string p = Temp("{ \"version\": 2, \"tonemap\": \"aces\" }");
         (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
-        File.Delete(p);
         Assert.Null(err);
         Assert.True(s.DeleteToRecycleBin);
     }
@@ -397,7 +373,6 @@ public class SnipSettingsTests
         Assert.Equal("none", s.Hdr.File);   // the rest of the section keeps its defaults
         SnipSettingsFile.Save(p, s with { Hdr = s.Hdr with { Clipboard = false } });
         Assert.False(SnipSettingsFile.Load(p).Settings.Hdr.Clipboard);
-        File.Delete(p);
     }
 
     [Fact]
@@ -408,7 +383,6 @@ public class SnipSettingsTests
         Assert.Equal(20, SnipSettingsFile.Load(p).Settings.HistoryLimit);
         SnipSettingsFile.Save(p, new SnipSettings { HistoryLimit = 200 });
         Assert.Equal(200, SnipSettingsFile.Load(p).Settings.HistoryLimit);
-        File.Delete(p);
     }
 
     [Theory]
@@ -434,7 +408,6 @@ public class SnipSettingsTests
         Assert.False(SnipSettingsFile.Load(p).Settings.DeleteToRecycleBin);
         SnipSettingsFile.Save(p, new SnipSettings { DeleteToRecycleBin = true });
         Assert.True(SnipSettingsFile.Load(p).Settings.DeleteToRecycleBin);
-        File.Delete(p);
     }
 
     /// <summary>A JSON bool cannot be out of range, so sanitising must leave it alone and report nothing.</summary>
@@ -458,27 +431,23 @@ public class SnipSettingsNullFieldTests
      InlineData("selectionFrame")]
     public void A_null_field_loads_as_its_default_and_says_so(string field)
     {
-        string p = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(p, $"{{\"version\":2,\"{field}\":null}}");
-        try
-        {
-            (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
-            var defaults = new SnipSettings();
-            Assert.Equal(defaults.Hotkeys, s.Hotkeys);
-            Assert.Equal(defaults.Tonemap, s.Tonemap);
-            Assert.Equal(defaults.Format, s.Format);
-            Assert.Equal(defaults.Notification, s.Notification);
-            Assert.Equal(defaults.AfterSelect, s.AfterSelect);
-            Assert.Equal(defaults.Annotate, s.Annotate);
-            Assert.Equal(defaults.Theme, s.Theme);
-            Assert.Equal(defaults.RecentFlyoutLayout, s.RecentFlyoutLayout);
-            Assert.Equal(defaults.SelectionFrame, s.SelectionFrame);
-            Assert.Equal(defaults.TrayIcon, s.TrayIcon);
-            Assert.Equal(defaults.Hdr, s.Hdr);
-            Assert.NotNull(err);
-            Assert.Contains(field, err);
-        }
-        finally { File.Delete(p); }
+        using var dir = new TempDir();
+        string p = dir.Write("settings.json", $"{{\"version\":2,\"{field}\":null}}");
+        (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
+        var defaults = new SnipSettings();
+        Assert.Equal(defaults.Hotkeys, s.Hotkeys);
+        Assert.Equal(defaults.Tonemap, s.Tonemap);
+        Assert.Equal(defaults.Format, s.Format);
+        Assert.Equal(defaults.Notification, s.Notification);
+        Assert.Equal(defaults.AfterSelect, s.AfterSelect);
+        Assert.Equal(defaults.Annotate, s.Annotate);
+        Assert.Equal(defaults.Theme, s.Theme);
+        Assert.Equal(defaults.RecentFlyoutLayout, s.RecentFlyoutLayout);
+        Assert.Equal(defaults.SelectionFrame, s.SelectionFrame);
+        Assert.Equal(defaults.TrayIcon, s.TrayIcon);
+        Assert.Equal(defaults.Hdr, s.Hdr);
+        Assert.NotNull(err);
+        Assert.Contains(field, err);
     }
 }
 
@@ -488,27 +457,20 @@ public class SettingsFileBackupTests
     public void An_unreadable_file_is_kept_beside_itself_before_defaults_are_used()
     {
         // Otherwise the next settings save would overwrite the user's file with defaults.
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "settings.json");
-        File.WriteAllText(path, "{ \"version\": 2, \"hotkeys\": { \"region\": \"F9\" ");   // cut off mid-object
+        using var dir = new TempDir();
+        string path = dir.Write("settings.json", "{ \"version\": 2, \"hotkeys\": { \"region\": \"F9\" ");   // cut off mid-object
         (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
         Assert.Equal(new SnipSettings().Hotkeys.Region, s.Hotkeys.Region);
-        string backup = Assert.Single(Directory.GetFiles(dir, "settings.json.bad-*"));
+        string backup = Assert.Single(Directory.GetFiles(dir.Path, "settings.json.bad-*"));
         Assert.Equal(File.ReadAllText(path), File.ReadAllText(backup));
         Assert.Contains(Path.GetFileName(backup), err);
-        Directory.Delete(dir, true);
     }
 
     [Fact]
     public void A_readable_file_is_not_backed_up()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "tonesnip-test-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "settings.json");
-        File.WriteAllText(path, "{ \"version\": 2 }");
-        SnipSettingsFile.Load(path);
-        Assert.Empty(Directory.GetFiles(dir, "settings.json.bad-*"));
-        Directory.Delete(dir, true);
+        using var dir = new TempDir();
+        SnipSettingsFile.Load(dir.Write("settings.json", "{ \"version\": 2 }"));
+        Assert.Empty(Directory.GetFiles(dir.Path, "settings.json.bad-*"));
     }
 }
