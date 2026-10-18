@@ -214,13 +214,9 @@ public class InteropTests
     [InlineData(0xFFFFFF00u, false)]
     public void Dark_colours_are_told_apart_by_luma(uint argb, bool dark) => Assert.Equal(dark, SystemTheme.IsDarkColour(argb));
 
-    /// <summary>A readback band: a 4 MB staging texture, never taller than the read or than D3D11 allows.</summary>
+    /// <summary>A half-float readback band is a 4 MB staging texture of 8-byte pixels. The row arithmetic (at least one
+    /// row, never taller than the read or than D3D11 allows) is ReadbackBand's, tested in Core.</summary>
     [Fact]
-    public void Half_float_readback_bands_fit_their_budget()
-    {
-        Assert.Equal(1, GpuTonemapper.HalfBandRows(1_000_000, 50));
-        Assert.Equal(50, GpuTonemapper.HalfBandRows(10, 50));
-        Assert.Equal((4 << 20) / (3840 * 8), GpuTonemapper.HalfBandRows(3840, 2160));
-        Assert.Equal(16384, GpuTonemapper.HalfBandRows(1, 100_000));
-    }
+    public void Half_float_readback_bands_are_4_mb_of_8_byte_pixels()
+        => Assert.Equal((4 << 20) / (3840 * 8), GpuTonemapper.HalfBandRows(3840, 2160));
 }

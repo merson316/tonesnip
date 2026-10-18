@@ -31,28 +31,49 @@ public sealed class SnipSettingsTests : IDisposable
         // Off, as in Snipping Tool: the pointer is rarely what a snip is for.
         Assert.False(s.CaptureCursor);
         Assert.False(s.PreciseNits);
+        // On: permanent deletion has to be chosen.
+        Assert.True(s.DeleteToRecycleBin);
+        Assert.Equal(20, s.HistoryLimit);
+        // The GPU tonemap's kill switch is on; HDR on the clipboard is off.
+        Assert.True(s.Hdr.GpuTonemap);
+        Assert.False(s.Hdr.Clipboard);
+        // The defaults are already clean: sanitising them changes nothing and reports nothing.
+        Assert.Equal(s, s.Sanitized(out List<string> fixes));
+        Assert.Empty(fixes);
     }
 
-    [Fact]
-    public void Precise_nits_round_trips_under_its_json_name()
+    /// <summary>The names in settings.json are a file format: a setting renamed in code must keep its name in the file,
+    /// or the choice is lost on upgrade. Each row is read from a hand-written file under its name, kept through
+    /// sanitising, and written back under the same name. (SnipSettingsJsonTests round-trips every setting; this pins
+    /// the names, which the generated serializer would otherwise follow from the property.)</summary>
+    [Theory]
+    [InlineData("preciseNits", "true")]
+    [InlineData("captureCursor", "true")]
+    [InlineData("deleteToRecycleBin", "false")]
+    [InlineData("historyLimit", "200")]
+    [InlineData("hdr.clipboard", "true")]
+    [InlineData("hdr.gpuTonemap", "false")]
+    [InlineData("annotate.textBackground", "true")]
+    public void A_setting_is_read_and_written_under_its_json_name(string setting, string value)
     {
-        string p = Temp("{ \"version\": 2, \"preciseNits\": true }");
+        string[] path = setting.Split('.');
+        string entry = $"\"{path[^1]}\": {value}";
+        string p = Temp(path.Length == 1 ? $"{{ \"version\": 2, {entry} }}" : $"{{ \"version\": 2, \"{path[0]}\": {{ {entry} }} }}");
         (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
         Assert.Null(err);
-        Assert.True(s.PreciseNits);
-        SnipSettingsFile.Save(p, s with { PreciseNits = false });
-        Assert.Contains("\"preciseNits\": false", File.ReadAllText(p));
+        object? loaded = Setting(s, path);
+        Assert.NotEqual(Setting(new SnipSettings(), path), loaded);   // the file's value, not the default
+        SnipSettingsFile.Save(p, s);
+        Assert.Contains(entry, File.ReadAllText(p));
+        Assert.Equal(loaded, Setting(SnipSettingsFile.Load(p).Settings, path));
     }
 
-    [Fact]
-    public void Capture_cursor_round_trips_under_its_json_name()
+    /// <summary>The setting a camelCase JSON path names, read through its properties.</summary>
+    private static object? Setting(object settings, string[] path)
     {
-        string p = Temp("{ \"version\": 2, \"captureCursor\": true }");
-        (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
-        Assert.Null(err);
-        Assert.True(s.CaptureCursor);
-        SnipSettingsFile.Save(p, s with { CaptureCursor = false });
-        Assert.Contains("\"captureCursor\": false", File.ReadAllText(p));
+        object? value = settings;
+        foreach (string name in path) value = value!.GetType().GetProperty(char.ToUpperInvariant(name[0]) + name[1..])!.GetValue(value);
+        return value;
     }
 
     [Fact]
@@ -245,45 +266,24 @@ public sealed class SnipSettingsTests : IDisposable
         Assert.Equal(0xFF123456u, new AnnotateSettings { Colour = null! }.ToStyle(0xFF123456).Color);
     }
 
-    [Fact]
-    public void Old_palette_colour_migrates_to_its_new_entry()
+    /// <summary>A colour from the old palette moves to the current colour at the same index, whatever its case, with one
+    /// fixes note; a current colour, a custom one and the accent are left alone.</summary>
+    [Theory]
+    [InlineData("#1E88E5", "#0078D4", true)]   // the legacy blue, index 4
+    [InlineData("#1e88e5", "#0078D4", true)]
+    [InlineData("#0078D4", "#0078D4", false)]
+    [InlineData("#123456", "#123456", false)]
+    [InlineData("accent", "accent", false)]
+    public void Old_palette_colours_migrate_to_their_new_entry(string stored, string expected, bool migrated)
     {
-        // The legacy blue maps to the current blue at the same index (4), with a fixes note.
-        SnipSettings s = new SnipSettings { Annotate = new AnnotateSettings { Colour = "#1E88E5" } }.Sanitized(out List<string> fixes);
-        Assert.Equal("#0078D4", s.Annotate.Colour);
-        Assert.Contains(fixes, f => f.Contains("annotate.colour") && f.Contains("#1E88E5") && f.Contains("#0078D4"));
-    }
-
-    [Fact]
-    public void Old_palette_colour_is_case_insensitive()
-    {
-        SnipSettings s = new SnipSettings { Annotate = new AnnotateSettings { Colour = "#1e88e5" } }.Sanitized(out List<string> fixes);
-        Assert.Equal("#0078D4", s.Annotate.Colour);
-        Assert.Single(fixes);
-    }
-
-    [Fact]
-    public void New_palette_colour_is_left_untouched()
-    {
-        SnipSettings s = new SnipSettings { Annotate = new AnnotateSettings { Colour = "#0078D4" } }.Sanitized(out List<string> fixes);
-        Assert.Equal("#0078D4", s.Annotate.Colour);
-        Assert.DoesNotContain(fixes, f => f.Contains("annotate.colour"));
-    }
-
-    [Fact]
-    public void Custom_colour_outside_either_palette_is_left_untouched()
-    {
-        SnipSettings s = new SnipSettings { Annotate = new AnnotateSettings { Colour = "#123456" } }.Sanitized(out List<string> fixes);
-        Assert.Equal("#123456", s.Annotate.Colour);
-        Assert.DoesNotContain(fixes, f => f.Contains("annotate.colour"));
-    }
-
-    [Fact]
-    public void Accent_colour_is_left_untouched_by_the_palette_migration()
-    {
-        SnipSettings s = new SnipSettings { Annotate = new AnnotateSettings { Colour = "accent" } }.Sanitized(out List<string> fixes);
-        Assert.Equal("accent", s.Annotate.Colour);
-        Assert.DoesNotContain(fixes, f => f.Contains("annotate.colour"));
+        SnipSettings s = new SnipSettings { Annotate = new AnnotateSettings { Colour = stored } }.Sanitized(out List<string> fixes);
+        Assert.Equal(expected, s.Annotate.Colour);
+        if (migrated)
+        {
+            string fix = Assert.Single(fixes);
+            Assert.True(fix.Contains("annotate.colour") && fix.Contains(stored, StringComparison.OrdinalIgnoreCase) && fix.Contains(expected), fix);
+        }
+        else Assert.DoesNotContain(fixes, f => f.Contains("annotate.colour"));
     }
 
     [Fact]
@@ -303,18 +303,6 @@ public sealed class SnipSettingsTests : IDisposable
         Assert.Equal("jxr", f.Hdr.File); Assert.Equal(100, f.Hdr.JxrQuality);
         Assert.Equal("none", new SnipSettings { Hdr = new HdrSettings { File = "avif" } }.Sanitized(out fixes).Hdr.File);
         Assert.Contains(fixes, x => x.Contains("hdr.file"));
-    }
-
-    /// <summary>The GPU tonemap's kill switch is on by default and survives a round trip through the file.</summary>
-    [Fact]
-    public void Gpu_tonemap_switch_defaults_on_and_can_be_turned_off_in_the_file()
-    {
-        Assert.True(new SnipSettings().Hdr.GpuTonemap);
-        string path = Temp("{ \"version\": 2, \"hdr\": { \"gpuTonemap\": false } }");
-        (SnipSettings s, string? err) = SnipSettingsFile.Load(path);
-        Assert.Null(err);
-        Assert.False(s.Hdr.GpuTonemap);
-        Assert.Equal("none", s.Hdr.File);
     }
 
     /// <summary>SaveFolder reaches explorer.exe and the output pipeline as a raw path, so Sanitized validates it.</summary>
@@ -351,40 +339,6 @@ public sealed class SnipSettingsTests : IDisposable
         Assert.DoesNotContain(fixes, x => x.Contains("saveFolder"));
     }
 
-    /// <summary>On by default: permanent deletion has to be chosen.</summary>
-    [Fact]
-    public void Delete_to_recycle_bin_defaults_on()
-    {
-        Assert.True(new SnipSettings().DeleteToRecycleBin);
-        // A file without the field also gets true, not the CLR default.
-        string p = Temp("{ \"version\": 2, \"tonemap\": \"aces\" }");
-        (SnipSettings s, string? err) = SnipSettingsFile.Load(p);
-        Assert.Null(err);
-        Assert.True(s.DeleteToRecycleBin);
-    }
-
-    [Fact]
-    public void Hdr_on_the_clipboard_is_off_by_default_and_round_trips_through_the_file()
-    {
-        Assert.False(new SnipSettings().Hdr.Clipboard);
-        string p = Temp("{ \"version\": 2, \"hdr\": { \"clipboard\": true } }");
-        SnipSettings s = SnipSettingsFile.Load(p).Settings;
-        Assert.True(s.Hdr.Clipboard);
-        Assert.Equal("none", s.Hdr.File);   // the rest of the section keeps its defaults
-        SnipSettingsFile.Save(p, s with { Hdr = s.Hdr with { Clipboard = false } });
-        Assert.False(SnipSettingsFile.Load(p).Settings.Hdr.Clipboard);
-    }
-
-    [Fact]
-    public void History_limit_defaults_to_20_and_round_trips_through_the_file()
-    {
-        Assert.Equal(20, new SnipSettings().HistoryLimit);
-        string p = Temp("{ \"version\": 2 }");
-        Assert.Equal(20, SnipSettingsFile.Load(p).Settings.HistoryLimit);
-        SnipSettingsFile.Save(p, new SnipSettings { HistoryLimit = 200 });
-        Assert.Equal(200, SnipSettingsFile.Load(p).Settings.HistoryLimit);
-    }
-
     [Theory]
     [InlineData(0, 20)]
     [InlineData(-5, 20)]
@@ -399,27 +353,6 @@ public sealed class SnipSettingsTests : IDisposable
         Assert.Equal(stored != expected, fixes.Any(f => f.StartsWith("historyLimit", StringComparison.Ordinal)));
     }
 
-    [Fact]
-    public void Delete_to_recycle_bin_round_trips_through_the_file()
-    {
-        string p = Temp("{ \"version\": 2, \"deleteToRecycleBin\": false }");
-        Assert.False(SnipSettingsFile.Load(p).Settings.DeleteToRecycleBin);
-        SnipSettingsFile.Save(p, new SnipSettings { DeleteToRecycleBin = false });
-        Assert.False(SnipSettingsFile.Load(p).Settings.DeleteToRecycleBin);
-        SnipSettingsFile.Save(p, new SnipSettings { DeleteToRecycleBin = true });
-        Assert.True(SnipSettingsFile.Load(p).Settings.DeleteToRecycleBin);
-    }
-
-    /// <summary>A JSON bool cannot be out of range, so sanitising must leave it alone and report nothing.</summary>
-    [Fact]
-    public void Delete_to_recycle_bin_is_sanitised_like_the_other_bools()
-    {
-        SnipSettings off = new SnipSettings { DeleteToRecycleBin = false }.Sanitized(out List<string> fixes);
-        Assert.False(off.DeleteToRecycleBin);
-        Assert.DoesNotContain(fixes, f => f.Contains("ecycle", StringComparison.OrdinalIgnoreCase));
-        Assert.True(new SnipSettings { DeleteToRecycleBin = true }.Sanitized(out _).DeleteToRecycleBin);
-        Assert.False(off.Sanitized(out _).DeleteToRecycleBin);
-    }
 }
 
 public class SnipSettingsNullFieldTests

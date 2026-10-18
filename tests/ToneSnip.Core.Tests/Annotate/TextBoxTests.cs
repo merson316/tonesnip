@@ -46,21 +46,14 @@ public class TextBoxTests
         Assert.True(boxed.HitTest(100 - boxed.BoxPadX + 1, 50 - boxed.BoxPadY + 1));   // on the box, off the letters
     }
 
+    /// <summary>The file side, "annotate.textBackground", is a row of SnipSettingsTests' json-name theory.</summary>
     [Fact]
-    public void The_option_round_trips_through_the_settings_and_defaults_off()
+    public void The_option_maps_to_the_setting_and_defaults_off()
     {
         Assert.False(new AnnotateSettings().TextBackground);
         Assert.False(new AnnotateSettings().ToStyle(0xFF123456).TextBox);
         AnnotateSettings on = AnnotateSettings.FromStyle(new Style(0xFFFF0000, 4, 20, TextBox: true), 0xFF123456);
         Assert.True(on.TextBackground);
         Assert.True(on.ToStyle(0xFF123456).TextBox);
-
-        using var dir = new TempDir();
-        string path = dir.Child("settings.json");
-        SnipSettingsFile.Save(path, new SnipSettings { Annotate = on });
-        Assert.Contains("\"textBackground\": true", File.ReadAllText(path));
-        (SnipSettings back, string? err) = SnipSettingsFile.Load(path);
-        Assert.Null(err);
-        Assert.True(back.Annotate.TextBackground);
     }
 }

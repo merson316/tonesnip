@@ -93,19 +93,6 @@ public class ShapeTests
     }
 
     [Fact]
-    public void Style_tables_and_strengths()
-    {
-        Assert.Equal(9, Style.Palette.Length);
-        Assert.Equal(new[] { 2, 4, 8, 12 }, Style.Widths);
-        Assert.Equal(new[] { 14, 20, 28 }, Style.TextSizes);
-        Assert.Equal(0xFFFF4A4Au, Style.Palette[0]);
-        Assert.Equal(Style.AccentPlaceholder, Style.Palette[^1]);
-        Assert.Equal(16, Style.BlurRadius(12)); Assert.Equal(24, Style.PixelBlock(12));
-        Assert.Equal(8, Style.BlurRadius(4)); Assert.Equal(16, Style.BlurRadius(8));
-        Assert.Equal(6, Style.PixelBlock(2)); Assert.Equal(24, Style.PixelBlock(8));
-    }
-
-    [Fact]
     public void Pen_bounds_follow_a_move_a_restyle_and_a_growing_stroke()
     {
         var pen = new PenShape(1, new[] { (10, 10), (50, 10), (50, 40) }, 4, 0xFFFF0000, Highlighter: false);

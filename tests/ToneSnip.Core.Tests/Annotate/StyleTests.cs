@@ -13,6 +13,7 @@ public class StyleTests
     public void Palette_length_is_pinned()
     {
         Assert.Equal(9, Style.Palette.Length);
+        Assert.Equal(0xFFFF4A4Au, Style.Palette[0]);
         // The bar's name table and divider index assume the accent placeholder is last and the rest are opaque.
         Assert.Equal(Style.AccentPlaceholder, Style.Palette[^1]);
         for (int i = 0; i < Style.Palette.Length - 1; i++)
@@ -26,4 +27,12 @@ public class StyleTests
         Assert.Equal(new[] { 2, 4, 8, 12 }, Style.Widths);
         Assert.Equal(new[] { 14, 20, 28 }, Style.TextSizes);
     }
+
+    [Theory]
+    [InlineData(2, 4, 6)]
+    [InlineData(4, 8, 12)]
+    [InlineData(8, 16, 24)]
+    [InlineData(12, 16, 24)]
+    public void Blur_and_pixelate_strengths_follow_the_width(int width, int blurRadius, int pixelBlock)
+        => Assert.Equal((blurRadius, pixelBlock), (Style.BlurRadius(width), Style.PixelBlock(width)));
 }
