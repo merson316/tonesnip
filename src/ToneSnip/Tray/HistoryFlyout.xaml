@@ -182,7 +182,8 @@
              None and item clicks off the container never reaches PointerOver. Rows open on DoubleTapped. MaxHeight
              keeps virtualisation working inside the vertical StackPanel; the code lowers it to fit the work area. Both
              layouts exist because x:Load cannot work in a Window-rooted file; the unused one stays Collapsed and
-             unbound. -->
+             unbound. A saved snip's row drags out as its file (CanDrag, HistoryFlyout.Drag.cs); the list itself
+             accepts no drop. -->
         <ListView x:Name="List" MaxHeight="440" Background="Transparent" BorderThickness="0" Padding="4,4,4,8"
                   AutomationProperties.AutomationId="Flyout_List" AutomationProperties.Name="Recent snips"
                   SelectionMode="None" IsItemClickEnabled="True" ItemContainerStyle="{StaticResource HistoryRowContainer}"
@@ -193,7 +194,8 @@
             <DataTemplate x:DataType="tray:HistoryRow">
               <Grid Background="Transparent" Tag="{x:Bind}" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}"
                     Loaded="OnRowLoaded" DoubleTapped="OnRowDoubleTapped"
-                    PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited">
+                    PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited"
+                    CanDrag="{x:Bind CanDrag, Mode=OneWay}" DragStarting="OnRowDragStarting" DropCompleted="OnRowDropCompleted">
                 <!-- The hover strip has no room for more buttons (the grid's cells are full), so the rarer commands are
                      on the context menu, in both layouts; P pins the focused row. -->
                 <Grid.ContextFlyout>
@@ -337,7 +339,8 @@
             <DataTemplate x:DataType="tray:HistoryRow">
               <Grid Background="Transparent" Tag="{x:Bind}" AutomationProperties.Name="{x:Bind AccessibleName, Mode=OneWay}"
                     Loaded="OnRowLoaded" DoubleTapped="OnRowDoubleTapped"
-                    PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited">
+                    PointerEntered="OnRowPointerEntered" PointerMoved="OnRowPointerEntered" PointerExited="OnRowPointerExited"
+                    CanDrag="{x:Bind CanDrag, Mode=OneWay}" DragStarting="OnRowDragStarting" DropCompleted="OnRowDropCompleted">
                 <Grid.ContextFlyout>
                   <MenuFlyout>
                     <MenuFlyoutItem Text="Pin to screen" Click="OnPin" Tag="{x:Bind}" KeyboardAcceleratorTextOverride="P"

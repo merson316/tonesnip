@@ -147,13 +147,17 @@ public sealed partial class HistoryFlyout : PopupWindow
         DispatcherQueue.TryEnqueue(Close);
     }
 
+    /// <summary>A drag out of the card (<see cref="DragHolds"/>) keeps it open: a drop may hand another window the
+    /// foreground, and closing the window the drag came from would cancel it. The watch closes the card once the drag
+    /// is over.</summary>
     private void OnActivated(WindowActivatedEventArgs e)
     {
-        if (e.WindowActivationState == WindowActivationState.Deactivated) Dismiss();
+        if (e.WindowActivationState == WindowActivationState.Deactivated && !_dragging) Dismiss();
     }
 
     private void OnWatch(DispatcherQueueTimer timer, object args)
     {
+        if (DragHolds()) return;
         if (User32.GetForegroundWindow() == Hwnd) { _held = true; return; }
         if (_held || (DateTime.UtcNow - _shown).TotalMilliseconds > 1500) { timer.Stop(); Dismiss(); }
     }

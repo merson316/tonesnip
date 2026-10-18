@@ -24,6 +24,8 @@
       * Every hover ends with an INJECTED pointer move (mouse_event MOUSEEVENTF_MOVE|ABSOLUTE), not
         SetCursorPos: a teleport raises no PointerExited in a XAML island, so a hover left standing makes
         the next assertion read as broken.
+      * A drag out of Recent is sent only when the window under its start is the card and the window under its end
+        is the script's own drop target (Test-RowDrag), so a drop can never land in another app.
 
     ASCII only, on purpose: Windows PowerShell 5.1 reads a UTF-8 script as ANSI and mis-parses any
     non-ASCII character in it.
@@ -63,6 +65,9 @@ Add-Type -Namespace TS -Name Win -MemberDefinition @'
 [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
 [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+[StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+[DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+[DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 '@
 
 # ---------------------------------------------------------------- plumbing
@@ -594,6 +599,222 @@ function Test-CardSteady {
         }
         if (Test-HasId $TargetPid 'Flyout_Search') { throw "the search box is still out at the end" }
         $global:LASTEXITCODE = 0
+    }
+}
+
+<#
+    Dragging a snip out of Recent onto a drop target of the script's own: a small window that logs every drag
+    entering it (the operations the source allows and whether it carries files) and every file dropped on it, one
+    line each, to drop-<window>.txt. It runs in a second, STA PowerShell, because a window in this process could not
+    answer the drag while this one waits on winapp. It never takes the foreground (WS_EX_NOACTIVATE), accepts a drop
+    only as a copy, as a program the user drops a file on would, and copies nothing itself.
+#>
+$script:DropTargetScript = @'
+param([string]$Log, [int]$Seconds)
+Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing -TypeDefinition @"
+using System;
+using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+namespace TS {
+public class DropTarget : Form {
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd, int cmd);
+    readonly string _log;
+    public DropTarget(string log) {
+        _log = log;
+        Text = "tonesnip-drop-target";
+        FormBorderStyle = FormBorderStyle.FixedToolWindow;
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(80, 80);
+        ClientSize = new Size(360, 220);
+        ShowInTaskbar = false;
+        BackColor = Color.FromArgb(48, 48, 48);
+        AllowDrop = true;
+        DragEnter += (s, e) => {
+            bool files = e.Data.GetDataPresent(DataFormats.FileDrop);
+            e.Effect = files ? (e.AllowedEffect & DragDropEffects.Copy) : DragDropEffects.None;
+            Write("enter allowed=" + e.AllowedEffect.ToString().Replace(" ", "") + " files=" + files + " formats=" + string.Join("|", e.Data.GetFormats()));
+        };
+        DragOver += (s, e) => { e.Effect = e.Data.GetDataPresent(DataFormats.FileDrop) ? (e.AllowedEffect & DragDropEffects.Copy) : DragDropEffects.None; };
+        DragDrop += (s, e) => {
+            string[] dropped = e.Data.GetData(DataFormats.FileDrop) as string[];
+            Write("drop effect=" + e.Effect + " count=" + (dropped == null ? 0 : dropped.Length));
+            if (dropped != null) foreach (string p in dropped) Write("file " + p);
+        };
+    }
+    protected override bool ShowWithoutActivation { get { return true; } }
+    // WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW
+    protected override CreateParams CreateParams {
+        get { CreateParams cp = base.CreateParams; cp.ExStyle |= 0x08000000 | 0x00000008 | 0x00000080; return cp; }
+    }
+    void Write(string line) { File.AppendAllText(_log, line + Environment.NewLine); }
+    public static void Run(string log, int seconds) {
+        // Physical pixels, the coordinates winapp and UIA report.
+        try { SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
+        DropTarget form = new DropTarget(log);
+        Timer close = new Timer { Interval = seconds * 1000 };
+        close.Tick += (s, e) => form.Close();
+        close.Start();
+        // A hidden console's first ShowWindow is taken from its STARTUPINFO, which would hide the form too: show it
+        // again, without activating it, before saying where it is.
+        Timer ready = new Timer { Interval = 400 };
+        ready.Tick += (s, e) => {
+            ready.Stop();
+            ShowWindow(form.Handle, 4);
+            Point c = form.PointToScreen(new Point(form.ClientSize.Width / 2, form.ClientSize.Height / 2));
+            form.Write("ready " + c.X + " " + c.Y);
+        };
+        ready.Start();
+        Application.Run(form);
+    }
+}
+}
+"@
+[TS.DropTarget]::Run($Log, $Seconds)
+'@
+
+# Starts the drop target and waits for its "ready x y" line. Returns @{ Proc; X; Y }, the centre of its window in
+# physical pixels, or throws.
+function Start-DropTarget {
+    param([string]$Log, [int]$Seconds)
+    $ps1 = Join-Path $OutDir 'drop-target.ps1'
+    Set-Content -Path $ps1 -Value $script:DropTargetScript -Encoding ascii
+    Remove-Item $Log -ErrorAction SilentlyContinue
+    $exe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $proc = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru -ArgumentList @(
+        '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$ps1`"", '-Log', "`"$Log`"", '-Seconds', "$Seconds")
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Milliseconds 500
+        if ($proc.HasExited) { throw "the drop target exited (code $($proc.ExitCode)) before it was up" }
+        $line = @(Get-Content $Log -ErrorAction SilentlyContinue | Where-Object { $_ -match '^ready ' })[0]
+        if ($line) {
+            $n = $line -split ' '
+            Write-Host "    drop target pid $($proc.Id) at $($n[1]),$($n[2])" -ForegroundColor DarkGray
+            return @{ Proc = $proc; X = [int]$n[1]; Y = [int]$n[2] }
+        }
+    }
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    throw "the drop target never said it was up"
+}
+
+# The process whose window is under a screen point. The thread is made per-monitor aware for the call, as winapp and
+# UIA are, so the point names the same pixel to all three.
+function Get-PidAt {
+    param([int]$X, [int]$Y)
+    $was = [TS.Win]::SetThreadDpiAwarenessContext([IntPtr](-4))
+    try {
+        $pt = New-Object 'TS.Win+POINT'
+        $pt.X = $X; $pt.Y = $Y
+        return Get-WindowPid ([TS.Win]::WindowFromPoint($pt))
+    } finally { if ($was -ne [IntPtr]::Zero) { [void][TS.Win]::SetThreadDpiAwarenessContext($was) } }
+}
+
+# A drag starts on the card and ends on the drop target, or nothing is sent: on top of the foreground guard every drag
+# passes, the window under each end is checked, so the release can only land on a window this script opened.
+function Assert-DragEnds {
+    param([int]$FromX, [int]$FromY, [int]$CardPid, [int]$ToX, [int]$ToY, [int]$TargetPid)
+    $at = Get-PidAt $FromX $FromY
+    if ($at -ne $CardPid) { throw "$($script:GuardTag): drag not sent, the window at $FromX,$FromY belongs to pid $at, not the card" }
+    $at = Get-PidAt $ToX $ToY
+    if ($at -ne $TargetPid) { throw "$($script:GuardTag): drag not sent, the window at $ToX,$ToY belongs to pid $at, not the drop target" }
+}
+
+# Drags a row by its thumbnail onto the drop target and returns the lines the target logged meanwhile. The thumbnail,
+# because the hidden action buttons sit over the middle of a row and the bottom of a cell, and a press on a button is
+# the button's.
+function Invoke-RowDrag {
+    param([int]$CardPid, [string]$Row, [string]$Window, $Target, [string]$Log)
+    $r = Get-Rect $CardPid $Row
+    if (-not $r) { throw "no bounds for $Row" }
+    $fx = [int]($r.X + 40)
+    $fy = if ($Window -like '*grid*') { [int]($r.Y + 40) } else { [int]($r.Y + $r.H / 2) }
+    Assert-DragEnds $fx $fy $CardPid $Target.X $Target.Y $Target.Proc.Id
+    $before = @(Get-Content $Log -ErrorAction SilentlyContinue).Count
+    winapp ui drag "$fx,$fy" "$($Target.X),$($Target.Y)" -a $CardPid --dwell-ms 800 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "winapp ui drag failed" }
+    Start-Sleep -Milliseconds 1500
+    return @(Get-Content $Log -ErrorAction SilentlyContinue | Select-Object -Skip $before)
+}
+
+# The file a drag dropped: one file, dropped as a copy, from a source that offered nothing but a copy.
+function Get-DroppedFile {
+    param([string[]]$Lines)
+    $enter = @($Lines | Where-Object { $_ -match '^enter ' })
+    if ($enter.Count -eq 0) { throw "no drag reached the drop target" }
+    Write-Host "        $($enter[0])" -ForegroundColor DarkGray
+    if ($enter[0] -notmatch ' files=True') { throw "the drag carries no file drop (CF_HDROP): $($enter[0])" }
+    if ($enter[0] -notmatch ' allowed=Copy ') { throw "the source allows more than a copy: $($enter[0])" }
+    $drop = @($Lines | Where-Object { $_ -match '^drop ' })
+    if ($drop.Count -ne 1) { throw "$($drop.Count) drops logged: $($Lines -join ' / ')" }
+    if ($drop[0] -ne 'drop effect=Copy count=1') { throw "the drop was '$($drop[0])', not one file copied" }
+    return ([string]@($Lines | Where-Object { $_ -match '^file ' })[0]).Substring(5)
+}
+
+<#
+    A saved snip's row drags out as its file; an unsaved one starts no drag. $Window is the hold to open
+    (flyout-row or flyout-grid); the seeded rows are the same in both layouts (HarnessData.Rows).
+#>
+function Test-RowDrag {
+    param([string]$Window, [int]$Seconds)
+    $log = Join-Path $OutDir "drop-$Window.txt"
+    $target = $null
+    try {
+        $target = Start-DropTarget $log ($Seconds + 30)
+        # A fresh card, opened after the drop target so that the card has the foreground.
+        if ($script:flyProc) { Stop-Hold $script:flyProc; $script:flyProc = $null }
+        $id = Ensure-Flyout $Window $Seconds
+        $seed = Join-Path ([IO.Path]::GetTempPath()) 'tonesnip-harness-history'
+        $rows = @(Get-Elements $id -Interactive | Where-Object { $_.type -match '^(ListItem|DataItem)$' })
+        $labelOf = { param($rid) [string](@($rows | Where-Object { $_.automationId -eq $rid })[0].name) }
+
+        # Row 3 is a window snip saved as a PNG with no HDR copy. Not row 1: a selector is also a text search, and
+        # Flyout_Row1 would also answer for Flyout_Row10.
+        Test-UI "${Window}: a saved row drags its own file out, as a copy" {
+            $title = @((& $labelOf 'Flyout_Row3') -split ', ')[0]
+            if ($title -notmatch '\.png$') { throw "Flyout_Row3 is '$title', not a saved snip" }
+            $file = Get-DroppedFile (Invoke-RowDrag $id 'Flyout_Row3' $Window $target $log)
+            Write-Host "        dropped $file" -ForegroundColor DarkGray
+            if ((Split-Path $file -Leaf) -ne $title) { throw "dropped '$file', not the row's '$title'" }
+            if ((Split-Path $file -Parent) -ne $seed) { throw "dropped '$file', which is not in $seed" }
+            if (-not (Test-Path -LiteralPath $file)) { throw "'$file' is no longer where it was" }
+            # The drop arriving is what proves the card held through the drag: closing the window a drag comes from
+            # cancels it. Whether the card is still up afterwards is not checked, since the drop leaves the foreground
+            # with the drop target here, and a card that has lost the foreground closes once the drag is over.
+        }
+        # Row 2 has a JPEG XR copy beside its PNG.
+        $id = Ensure-Flyout $Window $Seconds
+        Test-UI "${Window}: an HDR row drags its SDR file, never its HDR copy" {
+            $label = & $labelOf 'Flyout_Row2'
+            if ($label -notmatch ', HDR, JXR') { throw "Flyout_Row2 is '$label', not the row with a JPEG XR copy" }
+            $file = Get-DroppedFile (Invoke-RowDrag $id 'Flyout_Row2' $Window $target $log)
+            Write-Host "        dropped $file" -ForegroundColor DarkGray
+            if ($file -notmatch '\.png$') { throw "dropped '$file', not the PNG" }
+        }
+        # Row 4 is a pin made on the snip screen: never saved, so it has no file to drag.
+        $id = Ensure-Flyout $Window $Seconds
+        Test-UI "${Window}: an unsaved row starts no drag" {
+            $label = & $labelOf 'Flyout_Row4'
+            if ($label -notmatch '^Pinned') { throw "Flyout_Row4 is '$label', not the seeded pin" }
+            $lines = @(Invoke-RowDrag $id 'Flyout_Row4' $Window $target $log)
+            if ($lines.Count -gt 0) { throw "the drop target saw a drag: $($lines -join ' / ')" }
+            if ($script:flyProc.HasExited) { throw "the card closed" }
+            winapp ui wait-for 'Flyout_OpenFolder' -a $id -t 2000
+        }
+        # A drag leaves the row's pointer state behind it; the hover must still work.
+        $id = Ensure-Flyout $Window $Seconds
+        Test-UI "${Window}: after a drag, hovering a row still reveals its actions" {
+            winapp ui hover 'Flyout_RowOpen' -a $id --dwell-time 1200
+            if ($LASTEXITCODE -ne 0) { throw "hover failed" }
+            winapp ui wait-for 'Flyout_RowDelete' -a $id -t 3000
+        }
+        Move-PointerAway
+    } catch {
+        Add-SectionError "$Window drag" $_
+    } finally {
+        if ($target -and -not $target.Proc.HasExited) { Stop-Process -Id $target.Proc.Id -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -1354,6 +1575,8 @@ if (Should-Run 'flyout') {
             if ($name -ne 'Filter') { throw "the button is still named '$name'" }
         }
 
+        Test-RowDrag 'flyout-row' 200
+
         $id = Ensure-Flyout 'flyout-row' 200
         Test-CardSteady $id 'flyout-row'
 
@@ -1412,6 +1635,7 @@ if (Should-Run 'flyout-grid') {
         Test-A11y $id 'flyout-grid'
         $id = Ensure-Flyout 'flyout-grid' 150
         Test-CardSteady $id 'flyout-grid'
+        Test-RowDrag 'flyout-grid' 150
 
         # --- Flyout_RowFolder: does it reveal the file in Explorer? Last in the section, because Explorer
         #     taking the foreground dismisses the flyout.

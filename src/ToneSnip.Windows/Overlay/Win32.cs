@@ -21,6 +21,10 @@ public static class Win32
     /// <summary>True while <paramref name="vk"/> is held.</summary>
     public static bool KeyDown(int vk) => (User32.GetKeyState(vk) & 0x8000) != 0;
 
+    /// <summary>True while either mouse button is held, read from the device rather than from this thread's input
+    /// state, which a modal loop elsewhere (a drag) does not keep current.</summary>
+    public static bool MouseButtonHeld() => (User32.GetAsyncKeyState(0x01) & 0x8000) != 0 || (User32.GetAsyncKeyState(0x02) & 0x8000) != 0;
+
     /// <summary>
     /// The character <paramref name="vk"/> types on the current keyboard layout, with or without Shift, or '\0' for a
     /// key that types none (or a dead key). Asked without touching the keyboard's dead-key state (flag 4), so a

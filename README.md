@@ -38,7 +38,8 @@ highlights are compressed. What you paste looks like what you saw.
   announces mode changes to screen readers.
 - **Recent snips:** left-click the tray icon for new-snip buttons and your latest snips (20, or up to 200), as a list
   or a grid, with search, filters, copy, open, edit, show in folder and delete (to the Recycle Bin by default);
-  right-click a row to pin it or copy its text.
+  right-click a row to pin it or copy its text. Drag a saved snip out of the list to drop its file into a browser,
+  a chat, a terminal or a folder, as you would from Explorer (a drop always copies).
 - **Hotkeys** recorded in Settings, including PrintScreen itself and, optionally, `Win+Shift+S` in place of Snipping
   Tool.
 - **Settings** with a live tonemap preview. Follows the Windows theme, accent colour and contrast themes, and is

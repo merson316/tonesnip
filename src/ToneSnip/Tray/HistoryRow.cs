@@ -83,7 +83,7 @@ public sealed class HistoryRow : INotifyPropertyChanged
         foreach (string p in new[]
                  {
                      nameof(Title), nameof(Subtitle), nameof(AccessibleName), nameof(HdrVisibility),
-                     nameof(SdrVisibility), nameof(HdrFileVisibility), nameof(HdrFileText), nameof(KindText), nameof(KindVisibility), nameof(FolderVisibility),
+                     nameof(SdrVisibility), nameof(HdrFileVisibility), nameof(HdrFileText), nameof(KindText), nameof(KindVisibility), nameof(FolderVisibility), nameof(CanDrag),
                      nameof(DeleteTip), nameof(ShownTitle), nameof(ShownSubtitle),
                  })
             Raise(p);
@@ -131,6 +131,9 @@ public sealed class HistoryRow : INotifyPropertyChanged
     public Visibility HdrFileVisibility => Item.Entry.HdrPath != null ? Visibility.Visible : Visibility.Collapsed;
     public string HdrFileText => Item.Entry.HdrPath == null ? "" : HdrOutput.FormatOf(Item.Entry.HdrPath) switch { "jxr" => "JXR", "png" => "HDR PNG", "jpeg" => "HDR JPG", _ => "HDR file" };
     public Visibility FolderVisibility => Item.Entry.Path != null ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>Whether the row can be dragged out as its file (<see cref="HistoryList.DragFile"/>): only a saved snip.
+    /// The file itself is looked for when a drag starts.</summary>
+    public bool CanDrag => HistoryList.DragFile(Item.Entry) != null;
     public Brush HoverSolid => _style.HoverSolid;
     public Brush HoverFade => _style.HoverFade;
     public Brush DeleteGlyph => _style.Glyph;

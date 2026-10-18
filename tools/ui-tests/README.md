@@ -32,7 +32,15 @@ window, `screenshots\`, `overlay-mode-switch.mp4`. Each result is `PASS`, `FAIL`
 `-Sections settings,editor` runs a subset (`settings`, `editor`, `editor-hdr`, `flyout`, `flyout-grid`,
 `toolbar`, `toolbar-annotate`, `countdown`, `textentry`, `toast`, `toast-dwell`, `toast-notice`, `pin`, `tray-menu`, `overlay-lasso`, `gallery`);
 `-Theme light` drives the holds in the light theme; `-SkipGallery` drops the stock-control probe, which
-is the only section that opens an app other than ToneSnip.
+is the only section that opens an app other than ToneSnip and the script itself.
+
+**Drag out of Recent.** `flyout` and `flyout-grid` each drag rows onto a drop target of the script's own: a small
+no-activate window (`tonesnip-drop-target`, a second hidden PowerShell) at the top left of the primary screen that
+logs what reaches it to `drop-flyout-row.txt` / `drop-flyout-grid.txt` and copies nothing. A saved row must drop its
+own PNG as a copy, from a source that allows nothing but a copy; the HDR row its PNG and not its JPEG XR copy; the
+seeded pin no drag at all. Before each drag the script checks that the window under the press is the card and the
+window under the release is the drop target, besides the foreground guard below, so a drop cannot land elsewhere;
+keep that corner of the screen clear of always-on-top windows.
 
 **Input guard.** Raw input goes to the foreground window, whichever app owns it. So before every verb that
 injects input (`click`, `drag`, `hover`, `send-keys`, `scroll --wheel`, `touch`, `pen`) and before its own

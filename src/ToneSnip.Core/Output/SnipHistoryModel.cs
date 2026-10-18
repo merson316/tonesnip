@@ -118,6 +118,23 @@ public sealed class HistoryList
         return folderExists(RootOf(path)) ? HistoryProbe.Remove : HistoryProbe.Hide;
     }
 
+    /// <summary>The kinds of file a snip is saved as. Its HDR copy may be a PNG or JPEG too, so the extension alone does
+    /// not tell the two apart.</summary>
+    private static readonly string[] SavedFiles = { ".png", ".jpg", ".jpeg" };
+
+    /// <summary>
+    /// The file a row drags out of Recent, or null when it drags nothing: the saved PNG or JPEG itself, never the HDR copy
+    /// beside it. A snip never saved has no file. A path that fails <see cref="PathGuard.IsSafeAbsolute"/> (a hand-edited
+    /// history.json), names another kind of file or is the row's own HDR copy is never offered. Whether the file is still
+    /// there is left to the caller, which finds out off the UI thread.
+    /// </summary>
+    public static string? DragFile(HistoryEntry entry)
+    {
+        string? path = entry.Path;
+        if (!PathGuard.HasExtension(path, SavedFiles)) return null;
+        return string.Equals(path, entry.HdrPath, StringComparison.OrdinalIgnoreCase) ? null : path;
+    }
+
     /// <summary>The drive (<c>C:\</c>), share (<c>\\server\share</c>) or POSIX root a safe path starts from. Parsed by
     /// hand, as in <see cref="PathGuard"/>, so it answers the Windows way on the Linux test host too.</summary>
     private static string RootOf(string path)

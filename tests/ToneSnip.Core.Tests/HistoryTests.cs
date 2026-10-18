@@ -205,3 +205,46 @@ public class OrphanThumbTests
         Assert.Empty(d.Asked);
     }
 }
+
+/// <summary>Which file a Recent row drags out (<see cref="HistoryList.DragFile"/>).</summary>
+public class HistoryDragTests
+{
+    private static HistoryEntry Saved(string? path, string? hdrPath = null, HistoryKind kind = HistoryKind.None)
+        => new("a", path, new DateTime(2026, 9, 5, 0, 0, 0, DateTimeKind.Utc), 10, 10, hdrPath != null, "t.png", hdrPath, kind);
+
+    [Theory]
+    [InlineData(@"C:\Shots\Snip 2026-09-05 120326.png")]
+    [InlineData(@"C:\Shots\a.jpg")]
+    [InlineData(@"C:\Shots\a.JPEG")]
+    [InlineData(@"\\nas\share\Shots\a.png")]
+    public void A_saved_snip_drags_its_own_file(string path) => Assert.Equal(path, HistoryList.DragFile(Saved(path)));
+
+    [Fact]
+    public void An_hdr_snip_drags_its_sdr_file_not_its_hdr_copy()
+    {
+        Assert.Equal(@"C:\Shots\a.png", HistoryList.DragFile(Saved(@"C:\Shots\a.png", @"C:\Shots\a.jxr")));
+        Assert.Equal(@"C:\Shots\a.png", HistoryList.DragFile(Saved(@"C:\Shots\a.png", @"C:\Shots\a.hdr.png")));
+    }
+
+    [Theory]
+    [InlineData(HistoryKind.None)]          // Copied only, or a save that failed
+    [InlineData(HistoryKind.Pin)]
+    [InlineData(HistoryKind.Text)]
+    public void A_snip_never_saved_drags_nothing(HistoryKind kind) => Assert.Null(HistoryList.DragFile(Saved(null, kind: kind)));
+
+    [Theory]
+    [InlineData(@"Shots\a.png")]                   // relative
+    [InlineData(@"\\?\C:\Shots\a.png")]         // device path
+    [InlineData(@"C:\Shots\..\..\a.png")]         // climbs above its root
+    [InlineData(@"C:\Shots\CON.png")]              // a device name
+    [InlineData(@"C:\Shots\a.png:evil")]           // an alternate data stream
+    [InlineData(@"C:\Shots\a.jxr")]                // not a saved snip's kind of file
+    [InlineData(@"C:\Windows\notepad.exe")]
+    [InlineData(@"C:\Shots")]
+    [InlineData("")]
+    public void A_path_that_is_not_a_safe_saved_snip_drags_nothing(string path) => Assert.Null(HistoryList.DragFile(Saved(path)));
+
+    [Fact]
+    public void A_row_whose_file_is_its_own_hdr_copy_drags_nothing()
+        => Assert.Null(HistoryList.DragFile(Saved(@"C:\Shots\a.hdr.png", @"C:\shots\A.HDR.PNG")));
+}
