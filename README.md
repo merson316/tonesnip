@@ -1,6 +1,35 @@
-# ToneSnip
+<p align="center">
+  <img src="assets/icon-256.png" width="112" alt="">
+</p>
 
-A snipping tool for HDR desktops on Windows 11.
+<h1 align="center">ToneSnip</h1>
+
+<p align="center">
+  <b>A snipping tool for HDR desktops on Windows 11.</b><br>
+  What you paste looks like what you saw.
+</p>
+
+<p align="center">
+  <a href="https://github.com/merson316/tonesnip/releases/latest"><img src="https://img.shields.io/github/v/release/merson316/tonesnip?label=release" alt="Latest release"></a>
+  <a href="https://github.com/merson316/tonesnip/releases"><img src="https://img.shields.io/github/downloads/merson316/tonesnip/total" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/Windows-11-0078D4" alt="Windows 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/merson316/tonesnip" alt="MIT licence"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/merson316/tonesnip/releases/latest"><b>Download</b></a> ·
+  <a href="#features">Features</a> ·
+  <a href="#keys">Keys</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#building">Building</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/snip-dark.png">
+    <img src="assets/readme/snip-light.png" alt="The snip screen: a rectangle selected over a picture, with the mode, delay and drawing tools in the bar above it">
+  </picture>
+</p>
 
 With HDR on, Print Screen and the built-in Snipping Tool read an 8-bit SDR view of a floating-point framebuffer:
 HDR content clips, colours shift, and ordinary windows come out washed out or overexposed. ToneSnip captures each
@@ -45,6 +74,38 @@ highlights are compressed. What you paste looks like what you saw.
 - **Settings** with a live tonemap preview. Follows the Windows theme, accent colour and contrast themes, and is
   per-monitor DPI aware.
 - Falls back to GDI for a monitor that gives no frame (some VMs and Remote Desktop sessions).
+
+## A look around
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/editor-dark.png">
+    <img src="assets/readme/editor-light.png" width="760" alt="The editor on an HDR snip, with the exposure slider and zebra stripes marking what clips">
+  </picture>
+  <br><sub>The editor on an HDR snip: exposure stays live, and zebra stripes mark what clips.</sub>
+</p>
+
+<table align="center">
+  <tr>
+    <td align="center" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/recent-dark.png">
+        <img src="assets/readme/recent-light.png" width="300" alt="Recent snips as a grid, tagged HDR, SDR, Window, Pin and Text">
+      </picture>
+      <br><sub>Recent snips, a left-click on the tray icon away.</sub>
+    </td>
+    <td align="center" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/readme/settings-dark.png">
+        <img src="assets/readme/settings-light.png" width="520" alt="Settings, Tonemap page: tonemapper, exposure, knee and auto exposure">
+      </picture>
+      <br><sub>Tonemap settings, with a live preview of your last HDR snip.</sub>
+    </td>
+  </tr>
+</table>
+
+<sub>Screenshots are taken by the UI test harness over a synthetic test picture, in both themes; GitHub shows the one
+that matches yours.</sub>
 
 ## Requirements
 
@@ -243,6 +304,7 @@ attaches them, with `SHA256SUMS.txt`, to a draft GitHub release. The release goe
 | `tests/ToneSnip.Core.Tests` | xUnit tests for Core |
 | `tests/ToneSnip.Windows.Tests` | xUnit tests for ToneSnip.Windows on Windows: the GPU tonemap on WARP, WIC and Win32 helpers |
 | `tools/ui-tests` | The UI Automation pass, run against the debug build |
+| `tools/readme-shots` | Makes the README's screenshots from the debug build, over a plain backdrop and a synthetic picture |
 | `packaging` | MSIX manifest and certificate script |
 
 ## Limitations

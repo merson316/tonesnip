@@ -6,7 +6,8 @@ using ToneSnip.Windows.Interop;
 
 namespace ToneSnip.App;
 
-/// <summary>`--hold overlay-lasso`: a real snip screen, over a synthetic frame, for a UIA driver to use the keyboard on.</summary>
+/// <summary>`--hold overlay-lasso` and `overlay-picture`: a real snip screen over a synthetic frame, for a UIA driver to use
+/// the keyboard on, or for pictures of it.</summary>
 internal static partial class Screenshots
 {
     /// <summary>
@@ -37,5 +38,28 @@ internal static partial class Screenshots
                             : "hold: the snip screen ended without a lasso";
         app.Log.Info(said);
         Console.WriteLine(said);
+    }
+
+    /// <summary>
+    /// `--hold overlay-picture [seconds]`: the real snip screen and bar on the primary monitor, in rectangle mode, over
+    /// the synthetic HDR picture rather than a capture, for pictures of it (README) that show nothing of the desktop.
+    /// A selection dragged on it stays up with the tool row, as with "annotate" after a selection; the hold ends when
+    /// the snip screen does or the time runs out. Nothing is saved.
+    /// </summary>
+    private static async Task HoldOverlayPicture(int seconds)
+    {
+        App app = App.Current;
+        var info = new OutputInfo(0, @"\\.\DISPLAY1", _primary.Left, _primary.Top, _primary.Width, _primary.Height, true, 203f, 1000f, "Primary");
+        var outputs = new List<CapturedOutput>
+        {
+            new(info, new Core.Hdr.HalfFrame(SyntheticHalf(_primary.Width, _primary.Height)), SyntheticImage(_primary.Width, _primary.Height)),
+        };
+        var session = new Overlay.OverlaySession(outputs, null!, _primary, SnipMode.Rectangle, app.Settings with { AfterSelect = "annotate" }, app.Log);
+        Task<Overlay.OverlayOutcome> done = session.Show();
+        User32.SetCursorPos(_primary.Left + _primary.Width / 2, _primary.Top + _primary.Height / 2);
+        Console.WriteLine("hold: snip screen up over the synthetic picture");
+        if (await Task.WhenAny(done, Task.Delay(TimeSpan.FromSeconds(seconds))) != done) session.Finish(Overlay.OverlayOutcome.Cancelled);
+        await done;
+        app.Log.Info("hold: the picture snip screen ended");
     }
 }
