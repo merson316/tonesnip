@@ -41,6 +41,9 @@ highlights are compressed. What you paste looks like what you saw.
 
 - **Snips:** rectangle, window, full-screen and freeform, over a frozen preview of every monitor. A toolbar switches
   mode mid-snip and sets a 3, 5 or 10 second delay. A selection can span monitors, mixing HDR and SDR displays.
+  Window mode finds the parts inside a window as ShareX does, so a browser's page can be snipped without its tabs and
+  toolbar: the smallest part under the pointer is highlighted, and the mouse wheel steps out to the whole window and
+  back in. "Snip parts of windows" in Settings turns it off.
 - **Nits readout** on HDR monitors: luminance under the cursor, plus peak and mean inside the selection.
 - **Selection frame**, picked in Settings: Normal (an outline, with the size and nits beside the cursor), Viewfinder
   (accent corner brackets and a size label), or Guides (the selection's edges carried across the monitor, and a pixel
@@ -159,7 +162,8 @@ annotating.
 **Overlay without a mouse:** arrow keys move the pointer (`Shift` for 10 px); in rectangle mode `Space` or `Enter`
 starts a selection at the pointer and a second press finishes it. With a selection made, arrow keys move it and
 `Alt`+arrow keys resize it from the bottom-right corner (`Shift` for 10 px). In window and full-screen modes `Tab` and
-`Shift+Tab` step through the windows or monitors, and `Space` or `Enter` takes the highlighted one. With the colour
+`Shift+Tab` step through the windows or monitors, and `Space` or `Enter` takes the highlighted one; `Page Up` and
+`Page Down` step out and in as the wheel does in window mode. With the colour
 picker armed, `Space` or `Enter` copies the colour under the pointer.
 
 **Editor:** `Ctrl+C` copy, `Ctrl+T` copies the text in an area you drag on the picture (`Ctrl+Shift+T` all of it),

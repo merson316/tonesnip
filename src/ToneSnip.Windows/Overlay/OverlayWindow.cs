@@ -644,6 +644,8 @@ public sealed class OverlayWindow : IDisposable
                 if (!_releasingCapture) _host.OnCaptureLost();
                 return IntPtr.Zero;
             case Win32.WmRButtonUp: _host.OnRightClick(); return IntPtr.Zero;
+            // The high word of wParam: the signed distance turned, positive away from the user.
+            case Win32.WmMouseWheel: _host.OnWheel(Win32.HiWord(wParam)); return IntPtr.Zero;
             case Win32.WmKeyDown or Win32.WmSysKeyDown:
                 // A key while another window has the foreground can only have been posted here. Logged, as the trail for
                 // a snip screen that once ignored a posted Escape while it had no foreground.

@@ -123,6 +123,11 @@ public static partial class User32
     public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
     /// <summary>Runtime-marshalled: the generator does not marshal delegates.</summary>
     [DllImport(Dll)] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+    /// <summary>Every descendant of <paramref name="parent"/>, each window before its own children.</summary>
+    [DllImport(Dll)] public static extern bool EnumChildWindows(IntPtr parent, EnumWindowsProc cb, IntPtr lParam);
+    [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetClientRect(IntPtr hwnd, out Rect rect);
+    /// <summary>GA_PARENT (1): the parent window, never the owner.</summary>
+    [LibraryImport(Dll)] public static partial IntPtr GetAncestor(IntPtr hwnd, uint flags);
 
     // ----- painting -----
     [LibraryImport(Dll)] public static partial IntPtr GetDC(IntPtr hwnd);

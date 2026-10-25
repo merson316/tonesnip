@@ -52,6 +52,9 @@ public interface IOverlayHost
     void OnMouseDown(int x, int y);
     void OnMouseUp(int x, int y);
     void OnRightClick();
+    /// <summary>The mouse wheel turned: <paramref name="delta"/> in WHEEL_DELTA units of 120 a notch, positive away from
+    /// the user.</summary>
+    void OnWheel(int delta);
     /// <summary>The mouse capture went to something else mid-drag: the matching button-up will never arrive.</summary>
     void OnCaptureLost();
     /// <summary>A key went down: a virtual-key code plus the modifier state read from the keyboard, not from a framework.

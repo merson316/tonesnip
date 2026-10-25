@@ -37,6 +37,15 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
     /// <summary>Window-mode candidates, enumerated once per session: the desktop is frozen while the overlay is up, so
     /// hovering is a linear scan with no allocation or DWM call per move.</summary>
     private List<WindowInfo>? _windowList;
+    /// <summary>Each hovered window's frame and child windows, read the first time the pointer is over it rather than
+    /// for every window when the overlay opens.</summary>
+    private readonly Dictionary<IntPtr, WindowLayers> _layers = new();
+    /// <summary>The rectangles under the pointer in window mode, smallest first (<see cref="WindowLayers.At"/>), and how
+    /// many steps out of the smallest the wheel or Page Up has gone.</summary>
+    private readonly List<IntRect> _under = new();
+    private int _depth;
+    /// <summary>Wheel movement not yet worth a step: a touchpad scrolls in fractions of a notch.</summary>
+    private int _wheel;
     /// <summary>Lookups for the paint and input paths.</summary>
     private readonly Dictionary<IntRect, CapturedOutput> _byMonitor = new();
     private readonly Dictionary<IntPtr, OverlayWindow> _byHwnd = new();
@@ -152,7 +161,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 return;
             }
             mode = value; _dragStart = null; _path.Clear(); Selection = IntRect.Empty; Hover = IntRect.Empty;
-            _keyAnchor = null; _tabIndex = -1; _lasso.Clear();
+            _keyAnchor = null; _tabIndex = -1; _lasso.Clear(); _under.Clear(); _depth = 0;
             ToolbarChanged?.Invoke();
             Announce?.Invoke(ModeName(value));
             RenderAll();
@@ -590,7 +599,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         {
             case SnipMode.Rectangle when _dragStart != null: Selection = IntRect.FromDrag(_dragStart.Value.X, _dragStart.Value.Y, x, y).Clamp(desktop); break;
             case SnipMode.Rectangle when _keyAnchor is { } a: Selection = IntRect.FromDrag(a.X, a.Y, x, y).Clamp(desktop); break;
-            case SnipMode.Window: Hover = WindowAt(x, y)?.Bounds.Clamp(desktop) ?? IntRect.Empty; break;
+            case SnipMode.Window: Hover = WindowHover(x, y); break;
             case SnipMode.FullScreen: Hover = MonitorAt(x, y); break;
             case SnipMode.Freeform when _dragStart != null:
                 if (_path.Count == 0 || Math.Abs(_path[^1].X - x) + Math.Abs(_path[^1].Y - y) >= 2) _path.Add((x, y));
@@ -606,6 +615,49 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         _windowList ??= WindowFinder.TopLevel(_ownHwnds);
         foreach (WindowInfo w in _windowList) if (w.Bounds.Contains(x, y)) return w;
         return null;
+    }
+
+    /// <summary>
+    /// Window mode's highlight under a point: the smallest window or child window there, as ShareX picks it, such as a
+    /// browser's page without its tabs and toolbar; or one of its parents once the wheel or Page Up has stepped out. The
+    /// steps hold while the pointer stays over the same smallest rectangle and start again when it moves onto another.
+    /// </summary>
+    private IntRect WindowHover(int x, int y)
+    {
+        IntRect innermost = _under.Count > 0 ? _under[0] : IntRect.Empty;
+        if (WindowAt(x, y) is not { } w) { _under.Clear(); _depth = 0; return IntRect.Empty; }
+        if (!_layers.TryGetValue(w.Handle, out WindowLayers? layers))
+            _layers[w.Handle] = layers = WindowFinder.Layers(w, settings.DetectChildWindows);
+        layers.At(x, y, _under);
+        if (_under.Count == 0 || _under[0] != innermost) _depth = 0;
+        return LayerHover();
+    }
+
+    private IntRect LayerHover() => _under.Count == 0 ? IntRect.Empty : _under[Math.Min(_depth, _under.Count - 1)].Clamp(desktop);
+
+    /// <summary>The wheel in window mode: away from you steps out to the window around the highlight, towards you steps
+    /// back in, one step per notch.</summary>
+    public void OnWheel(int delta)
+    {
+        if (mode != SnipMode.Window || DrawingActive || _picking || _dragStart != null) return;
+        _wheel += delta;
+        int notches = _wheel / Win32.WheelDelta;
+        if (notches == 0) return;
+        _wheel -= notches * Win32.WheelDelta;
+        StepLayer(notches);
+    }
+
+    /// <summary>Steps the window-mode highlight out (positive) or in (negative) through the rectangles under the pointer,
+    /// and says where it landed.</summary>
+    private void StepLayer(int step)
+    {
+        if (_under.Count < 2) return;
+        int depth = Math.Clamp(_depth + step, 0, _under.Count - 1);
+        if (depth == _depth) return;
+        _depth = depth;
+        Hover = LayerHover();
+        Announce?.Invoke($"{(depth == _under.Count - 1 ? "Whole window" : "Part of the window")}, {Hover.Width} × {Hover.Height}");
+        RenderAll();
     }
 
     /// <summary>Where a new magnifier's lens may go: on the monitor holding the middle of its source, since each
@@ -782,6 +834,8 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 Announce?.Invoke(_lasso.RemoveCorner() ? $"Corner removed, {_lasso.Corners} left" : "Only the starting point is left; Escape clears the lasso");
                 break;
             case Win32.VkTab when !pointerBusy: CycleHover(shift ? -1 : 1); return;
+            // Page Up and Page Down step out and in as the wheel does, through what is under the pointer.
+            case Win32.VkPageUp or Win32.VkPageDown when mode == SnipMode.Window && !pointerBusy: StepLayer(vk == Win32.VkPageUp ? 1 : -1); return;
             case Win32.VkR: Mode = SnipMode.Rectangle; break;
             case Win32.VkW: Mode = SnipMode.Window; break;
             case Win32.VkF: Mode = SnipMode.FullScreen; break;
@@ -936,6 +990,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
                 IntRect r = list[_tabIndex].Bounds.Clamp(desktop);
                 if (r.IsEmpty) continue;
                 Hover = r;
+                _under.Clear(); _depth = 0;   // a whole window, not the pointer's stack, until the pointer moves again
                 string title = list[_tabIndex].Title;
                 Announce?.Invoke($"{(title.Length > 0 ? title : "Untitled window")}, {r.Width} × {r.Height}");
                 break;
@@ -977,6 +1032,7 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         // Release everything now rather than when the session is collected: the frames are pooled and the next snip
         // writes straight into them.
         _windowList = null;
+        _layers.Clear(); _under.Clear();
         _zebraMasks.Clear();
         _path.Clear(); _pendingPath = null; _lasso.Clear();
         _ownHwnds.Clear();

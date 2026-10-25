@@ -14,6 +14,7 @@ public static class Win32
 {
     // ----- virtual keys (the overlay's whole keyboard vocabulary) -----
     public const int VkBack = 0x08, VkTab = 0x09, VkReturn = 0x0D, VkShift = 0x10, VkControl = 0x11, VkMenu = 0x12, VkEscape = 0x1B, VkSpace = 0x20,
+                     VkPageUp = 0x21, VkPageDown = 0x22,
                      VkLeft = 0x25, VkUp = 0x26, VkRight = 0x27, VkDown = 0x28,
                      VkA = 0x41, VkC = 0x43, VkF = 0x46, VkL = 0x4C, VkP = 0x50, VkR = 0x52, VkT = 0x54, VkW = 0x57,
                      VkF1 = 0x70, VkFirstOem = 0xBA;
@@ -44,7 +45,9 @@ public static class Win32
     internal const uint WmDestroy = 0x0002, WmActivate = 0x0006, WmPaint = 0x000F, WmEraseBkgnd = 0x0014,
                         WmSetCursor = 0x0020, WmKeyDown = 0x0100, WmSysKeyDown = 0x0104,
                         WmMouseMove = 0x0200, WmLButtonDown = 0x0201, WmLButtonUp = 0x0202, WmRButtonUp = 0x0205,
-                        WmCaptureChanged = 0x0215;
+                        WmMouseWheel = 0x020A, WmCaptureChanged = 0x0215;
+    /// <summary>WHEEL_DELTA: one notch of a mouse wheel.</summary>
+    public const int WheelDelta = 120;
 
     // ----- styles -----
     internal const int WsPopup = unchecked((int)0x80000000);

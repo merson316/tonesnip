@@ -63,6 +63,46 @@ public static class WindowFinder
         return radius96 * Math.Max(dpi, 96) / 96.0;
     }
 
+    /// <summary>Enough for a browser, an IDE or Explorer; past it the rest of a huge tree is left out rather than walked.</summary>
+    private const int MaxChildren = 2000;
+
+    /// <summary>
+    /// What window mode can pick inside <paramref name="window"/>: its frame, and with <paramref name="children"/> the
+    /// visible child windows inside it (<see cref="WindowLayers"/>). Only window rectangles are read, never sent a
+    /// message, so a hung app cannot stall the overlay. A window that cannot be read gives its frame alone.
+    /// </summary>
+    public static WindowLayers Layers(WindowInfo window, bool children)
+    {
+        if (!children || ClientOnScreen(window.Handle) is not { } client) return new WindowLayers(window.Bounds);
+        var list = new List<ChildWindow>();
+        var index = new Dictionary<IntPtr, int>();
+        User32.EnumChildWindows(window.Handle, (hwnd, _) =>
+        {
+            if (list.Count >= MaxChildren) return false;
+            // IsWindowVisible also checks the ancestors, so a hidden tab page's controls are skipped with it.
+            if (!User32.IsWindowVisible(hwnd) || !User32.GetWindowRect(hwnd, out User32.Rect r)) return true;
+            if (ClientOnScreen(hwnd) is not { } own) return true;
+            IntPtr parent = User32.GetAncestor(hwnd, 1 /*GA_PARENT*/);
+            int p = parent == window.Handle ? -1 : index.TryGetValue(parent, out int at) ? at : int.MaxValue;
+            if (p == int.MaxValue) return true;   // its parent was skipped, so it is not on screen either
+            index[hwnd] = list.Count;
+            list.Add(new ChildWindow(IntRect.FromLtrb(r.Left, r.Top, r.Right, r.Bottom), own, p));
+            return true;
+        }, IntPtr.Zero);
+        return new WindowLayers(window.Bounds, client, list);
+    }
+
+    /// <summary>A window's client area in screen pixels. Both corners are mapped, so a right-to-left window, whose
+    /// client origin is its right edge, still gives a normal rectangle.</summary>
+    private static IntRect? ClientOnScreen(IntPtr hwnd)
+    {
+        if (!User32.GetClientRect(hwnd, out User32.Rect c)) return null;
+        var a = new User32.Point { X = c.Left, Y = c.Top };
+        var b = new User32.Point { X = c.Right, Y = c.Bottom };
+        if (!User32.ClientToScreen(hwnd, ref a) || !User32.ClientToScreen(hwnd, ref b)) return null;
+        return IntRect.FromLtrb(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y));
+    }
+
     private const int WsExLayered = 0x80000;
     private const uint LwaColorKey = 0x1, LwaAlpha = 0x2;
 

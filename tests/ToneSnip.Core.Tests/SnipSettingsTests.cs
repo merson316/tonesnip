@@ -31,6 +31,8 @@ public sealed class SnipSettingsTests : IDisposable
         // Off, as in Snipping Tool: the pointer is rarely what a snip is for.
         Assert.False(s.CaptureCursor);
         Assert.False(s.PreciseNits);
+        // On, as ShareX's "detect controls" is: a browser's page without its toolbars is what window mode is often for.
+        Assert.True(s.DetectChildWindows);
         // On: permanent deletion has to be chosen.
         Assert.True(s.DeleteToRecycleBin);
         Assert.Equal(20, s.HistoryLimit);
@@ -49,6 +51,7 @@ public sealed class SnipSettingsTests : IDisposable
     [Theory]
     [InlineData("preciseNits", "true")]
     [InlineData("captureCursor", "true")]
+    [InlineData("detectChildWindows", "false")]
     [InlineData("deleteToRecycleBin", "false")]
     [InlineData("historyLimit", "200")]
     [InlineData("hdr.clipboard", "true")]

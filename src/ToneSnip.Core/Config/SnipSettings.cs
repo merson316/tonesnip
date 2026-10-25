@@ -125,6 +125,10 @@ public sealed record SnipSettings
     /// selection snip starts from (the pointer as it was when the snip began, not the overlay's own crosshair). Off by
     /// default, as in Snipping Tool. Monitors that fall back to GDI never show it.</summary>
     public bool CaptureCursor { get; set; }
+    /// <summary>Window mode also offers the child windows inside a window, as ShareX's "detect controls" does: a
+    /// browser's page without its tabs and toolbar, an editor's text area. On by default; off, it offers whole windows
+    /// only.</summary>
+    public bool DetectChildWindows { get; set; } = true;
     public bool StartWithWindows { get; set; }
     /// <summary>Whether a snip removed from the Recent list goes to the Recycle Bin (with its HDR copy) rather than
     /// being deleted outright; on by default because a hover delete button is easy to mis-click. The cached thumbnail

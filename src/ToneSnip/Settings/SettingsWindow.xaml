@@ -262,6 +262,12 @@
                 <ToggleSwitch x:Name="CaptureCursor" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
                               AutomationProperties.Name="Capture the mouse pointer" AutomationProperties.AutomationId="Settings_CaptureCursor"/>
               </toolkit:SettingsCard>
+              <toolkit:SettingsCard Header="Snip parts of windows"
+                                    Description="Window mode picks the part under the pointer, such as a browser's page. Scroll up for the whole window.">
+                <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphChildWindows}"/></toolkit:SettingsCard.HeaderIcon>
+                <ToggleSwitch x:Name="DetectChildWindows" Style="{StaticResource SettingsToggle}" Toggled="OnToggleChanged"
+                              AutomationProperties.Name="Snip parts of windows" AutomationProperties.AutomationId="Settings_DetectChildWindows"/>
+              </toolkit:SettingsCard>
               <toolkit:SettingsCard Header="Default delay" Description="Used when a snip starts from the hotkey or the tray.">
                 <toolkit:SettingsCard.HeaderIcon><FontIcon Style="{StaticResource Glyph}" Glyph="{StaticResource GlyphDelay}"/></toolkit:SettingsCard.HeaderIcon>
                 <ComboBox x:Name="DefaultDelay" MinWidth="160" SelectionChanged="OnComboChanged"
