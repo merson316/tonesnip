@@ -153,6 +153,10 @@ Either way, a tray icon appears. To start with Windows, turn on **Start with Win
 | `Ctrl+Shift+PrintScreen` | Recent snips |
 | `Win+Shift+S` | Off by default; turn on "Also use Win + Shift + S for region snips" in Settings > Hotkeys |
 
+While an administrator window such as Task Manager is in front, Windows keeps its keys from other apps, so the
+hotkeys do nothing there, as with Snipping Tool's own PrintScreen. Click another window first, or start a snip from
+the tray icon.
+
 **Overlay:** `R` rectangle, `W` window, `F` full screen, `L` freeform; `T` copies the text of the next selection
 and `P` pins it (press again to turn off; with the tool row open, use the toolbar buttons, since `T` and `P` are
 tools there); `C` picks a colour: a pixel loupe follows the cursor, and a click or a second `C` copies the colour
