@@ -135,7 +135,8 @@ internal static partial class Screenshots
         // it runs, and `Start` reads `_failures` as soon as `app.Exit()` returns.
         if (flip != null)
         {
-            if (await Task.WhenAny(flip, Task.Delay(3000)) != flip)
+            await flip.WaitAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+            if (!flip.IsCompleted)
             {
                 _failures++;
                 app.Log.Error("hold: the theme flip had not run when the hold ended");

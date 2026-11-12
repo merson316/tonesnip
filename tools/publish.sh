@@ -11,6 +11,7 @@
 # Every target runs both test projects first.
 # Environment:
 #   TONESNIP_NO_INSTALL=1       build only: no install and no start
+#   WINDOTNET=<path to dotnet.exe>   the Windows .NET SDK to build with (default: the one in C:\Program Files\dotnet)
 #   TONESNIP_PFX=<windows path to .pfx> TONESNIP_PFX_PASSWORD=...   sign the MSIX (unsigned otherwise, which will not install)
 #   TONESNIP_NO_ANALYZER=1      skip the Windows App SDK XAML analyzer
 #   TONESNIP_ANALYZER=required  fail when the analyzer payload cannot be found (a warning otherwise)
@@ -92,7 +93,7 @@ find_analyzer
 
 # The WinUI app builds only with the Windows .NET SDK. It sees this worktree through a mapped drive letter because
 # mt.exe (which merges the Windows App SDK activation manifest in a self-contained build) cannot open UNC paths.
-WINDOTNET="/mnt/c/Program Files/dotnet/dotnet.exe"
+WINDOTNET="${WINDOTNET:-/mnt/c/Program Files/dotnet/dotnet.exe}"
 NET_EXE="/mnt/c/Windows/System32/net.exe"
 WINDRIVE=""
 WINDRIVE_PERSIST=""
@@ -158,7 +159,7 @@ test_windows() {
   unmap_wsl_drive
 }
 
-build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 10 Desktop Runtime)
+build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 11 Desktop Runtime)
   # WindowsAppSDKSelfContained=true is required: a single-file publish with a framework-dependent Windows App SDK is
   # unsupported, and every XAML window throws XamlParseException. The csproj refuses that combination.
   rm -rf dist/tonesnip

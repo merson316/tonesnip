@@ -3,7 +3,7 @@
        and CI's windows-latest runs it), and the Win32/WIC helpers that need no window or desktop. The Linux CI leg
        cannot load any of it, so this project runs only in windows.yml and tools/publish.sh. -->
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <IsPackable>false</IsPackable>

@@ -30,7 +30,8 @@ internal static partial class Screenshots
         // Over the snip screen, so the move reaches only this process's window.
         User32.SetCursorPos(_primary.Left + _primary.Width / 2, _primary.Top + _primary.Height / 2);
         Console.WriteLine("hold: snip screen up in freeform mode");
-        if (await Task.WhenAny(done, Task.Delay(TimeSpan.FromSeconds(seconds))) != done) session.Finish(Overlay.OverlayOutcome.Cancelled);
+        await ((Task)done).WaitAsync(TimeSpan.FromSeconds(seconds)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+        if (!done.IsCompleted) session.Finish(Overlay.OverlayOutcome.Cancelled);
         Overlay.OverlayOutcome outcome = await done;
         bool lasso = !outcome.Region.IsEmpty && outcome.Freeform is { Count: >= 3 };
         if (!lasso) _failures++;
@@ -58,7 +59,8 @@ internal static partial class Screenshots
         Task<Overlay.OverlayOutcome> done = session.Show();
         User32.SetCursorPos(_primary.Left + _primary.Width / 2, _primary.Top + _primary.Height / 2);
         Console.WriteLine("hold: snip screen up over the synthetic picture");
-        if (await Task.WhenAny(done, Task.Delay(TimeSpan.FromSeconds(seconds))) != done) session.Finish(Overlay.OverlayOutcome.Cancelled);
+        await ((Task)done).WaitAsync(TimeSpan.FromSeconds(seconds)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+        if (!done.IsCompleted) session.Finish(Overlay.OverlayOutcome.Cancelled);
         await done;
         app.Log.Info("hold: the picture snip screen ended");
     }

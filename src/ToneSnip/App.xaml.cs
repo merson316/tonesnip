@@ -428,7 +428,10 @@ public partial class App : Application
             {
                 await before;
                 string? path = null;
-                if (await Task.WhenAny(thumb, Task.Delay(ToastThumbWait)) == thumb) path = await thumb;
+                // WaitAsync rather than WhenAny with Task.Delay, whose timer would run on after the thumbnail is in.
+                // SuppressThrowing covers the timeout and a failed thumbnail alike; `await thumb` below rethrows the latter.
+                await ((Task)thumb).WaitAsync(ToastThumbWait).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing | ConfigureAwaitOptions.ContinueOnCapturedContext);
+                if (thumb.IsCompleted) path = await thumb;
                 else Log.Warn($"toast: the thumbnail was not written within {ToastThumbWait.TotalSeconds:0} s; shown without it");
                 Toasts.Show(r, path);
             }

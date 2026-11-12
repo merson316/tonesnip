@@ -3,7 +3,7 @@
 # The worktree is reached through a mapped drive letter, as tools/publish.sh does.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-WINDOTNET="/mnt/c/Program Files/dotnet/dotnet.exe"
+WINDOTNET="${WINDOTNET:-/mnt/c/Program Files/dotnet/dotnet.exe}"
 NET_EXE="/mnt/c/Windows/System32/net.exe"
 DRIVE=""
 for letter in W X Y V U T; do

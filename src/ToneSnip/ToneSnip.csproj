@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.22000.0</SupportedOSPlatformVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <Platforms>x64</Platforms>
@@ -34,6 +34,10 @@
          with the default a renamed exe (such as "tonesnip (1).exe") finds neither and every XAML window throws
          XamlParseException from LoadComponent. -->
     <ProjectPriFileName>resources.pri</ProjectPriFileName>
+    <!-- NETSDK1244 (new in the .NET 11 SDK) asks for IncludeAllContentForSelfExtract to be removed. The Windows App
+         SDK's SingleFile.targets sets it and fails the publish without it, since its DLL redirection needs the files
+         on disk, so the advice cannot be followed here. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);NETSDK1244</MSBuildWarningsAsMessages>
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <!-- The harness is removed from production builds by directory: everything under Harness/ is compiled out, so the

@@ -56,7 +56,7 @@ jobs:
           Write-Host "analyzer: the publishes in this job therefore prove 0 MSBuild warnings and nothing about the WUI rules."
           Write-Host "analyzer: for that claim, run tools/publish.sh on a machine that has the plugin, or set WinUIAnalyzerDir."
 
-      # .NET framework-dependent (the .NET 10 Desktop Runtime is a prerequisite), but the Windows App SDK must be
+      # .NET framework-dependent (the .NET 11 Desktop Runtime is a prerequisite), but the Windows App SDK must be
       # self-contained: single-file with a framework-dependent Windows App SDK is unsupported and every XAML window
       # throws XamlParseException. ToneSnip.csproj refuses that combination.
       - name: Publish the production exe
