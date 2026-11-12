@@ -99,6 +99,16 @@
     <ProjectReference Include="../ToneSnip.Windows/ToneSnip.Windows.csproj" />
   </ItemGroup>
 
+  <!-- Settings > About names the Windows App SDK release. It is read from the Runtime package reference, the one of
+       the four that carries the release's own number, so the page cannot fall behind an update. -->
+  <Target Name="StampWindowsAppSdkVersion" BeforeTargets="GetAssemblyAttributes">
+    <ItemGroup>
+      <WindowsAppSdkRuntimeReference Include="@(PackageReference)" Condition="'%(Identity)' == 'Microsoft.WindowsAppSDK.Runtime'" />
+      <AssemblyMetadata Include="WindowsAppSdkVersion" Value="@(WindowsAppSdkRuntimeReference->'%(Version)')" />
+    </ItemGroup>
+    <Error Condition="'@(WindowsAppSdkRuntimeReference)' == ''" Text="No Microsoft.WindowsAppSDK.Runtime package reference to read the Windows App SDK version from; Settings > About would show none." />
+  </Target>
+
   <!-- MSIX, off unless the publish asks for it: `dotnet publish -p:WindowsPackageType=MSIX
        -p:GenerateAppxPackageOnBuild=true` (tools/publish.sh msix). The default build stays unpackaged. -->
   <PropertyGroup>

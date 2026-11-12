@@ -235,7 +235,7 @@ public partial class SettingsWindow : Window
 
     private void LoadAbout()
     {
-        AboutExpander.Description = $"{typeof(App).Assembly.GetName().Version?.ToString(3)} · Windows App SDK 2.4";
+        AboutExpander.Description = $"{typeof(App).Assembly.GetName().Version?.ToString(3)} · Windows App SDK {WindowsAppSdkVersion()}";
     }
 
     /// <summary>
@@ -535,6 +535,15 @@ public partial class SettingsWindow : Window
     }
 
     private void OnOpenLog(object sender, RoutedEventArgs e) => StartShell(AppPaths.LogPath, "open log");
+
+    /// <summary>The Windows App SDK release the app was built with, which the build stamps into the assembly from the
+    /// package reference (StampWindowsAppSdkVersion in ToneSnip.csproj), so it cannot fall behind an update.</summary>
+    private static string WindowsAppSdkVersion()
+    {
+        foreach (System.Reflection.AssemblyMetadataAttribute a in typeof(App).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false))
+            if (a.Key == "WindowsAppSdkVersion" && !string.IsNullOrEmpty(a.Value)) return a.Value;
+        return "";
+    }
 
     /// <summary>ShellExecute on an app-owned target; failures (no file association, blocked browser) are logged.</summary>
     private static void StartShell(string target, string what)
