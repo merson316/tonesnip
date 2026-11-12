@@ -108,10 +108,10 @@
          The Community Toolkit still depends on Microsoft.WindowsAppSDK >= 1.6. Without the metapackage NuGet would
          restore that 1.6 package, a whole second SDK, beside these; pruning (a .NET 10 SDK restore feature) drops it
          from the graph. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.6" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.9" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.1.6" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.4.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.6.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.6.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.6.5" />
     <PrunePackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <!-- SettingsCard / SettingsExpander for the settings window. The version is the one the WinUI 3 Gallery pins
