@@ -253,7 +253,6 @@ public sealed class ToastService : IDisposable
         // overwrite the installed app's and route its toast clicks here. The Windows style falls back to the balloon.
         _log.Debug("toast: no AppNotification registration in the debug build; the Windows style falls back to the tray balloon");
 #else
-        PreloadInsightsResource();
         if (Autostart.IsPackaged) { AppNotificationManager.Default.Register(); return; }
         string icon = Path.Combine(AppPaths.Dir, "icon.ico");
         // Unpackaged: pass the display name and the extracted icon; without the icon, register without one.
@@ -261,24 +260,6 @@ public sealed class ToastService : IDisposable
         else AppNotificationManager.Default.Register();
 #endif
     }
-
-#if !TONESNIP_HARNESS
-    private const string InsightsResourceDll = "Microsoft.WindowsAppRuntime.Insights.Resource.dll";
-
-    /// <summary>
-    /// Loads the Windows App SDK's Insights resource DLL by full path, so Register's bare-name <c>LoadLibraryW</c> gets
-    /// the already-loaded module. Without it Register throws ERROR_MOD_NOT_FOUND (microsoft/WindowsAppSDK#6071; see
-    /// the IncludeInsightsResourceDll target in ToneSnip.csproj).
-    /// <para>Needed for the single-file exe, which extracts the DLL off the search path.
-    /// <c>AppContext.BaseDirectory</c> is the right folder in every build layout.</para>
-    /// </summary>
-    private void PreloadInsightsResource()
-    {
-        string path = Path.Combine(AppContext.BaseDirectory, InsightsResourceDll);
-        if (!System.Runtime.InteropServices.NativeLibrary.TryLoad(path, out _))
-            _log.Warn($"toast: {InsightsResourceDll} not loaded from {AppContext.BaseDirectory}; the Windows-style toast registration will likely fail");
-    }
-#endif
 
     /// <summary>Raised on a background thread.</summary>
     private void OnInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args) => Activate(args.Arguments);

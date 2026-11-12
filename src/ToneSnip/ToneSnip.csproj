@@ -71,31 +71,6 @@
     <Error Text="PublishSingleFile=true needs WindowsAppSDKSelfContained=true: without it the app publishes but every window throws XamlParseException when it loads. Add -p:WindowsAppSDKSelfContained=true, or drop -p:PublishSingleFile=true and publish a folder." />
   </Target>
 
-  <!-- Microsoft.WindowsAppRuntime.Insights.Resource.dll is left out of the Windows App SDK's self-contained output but
-       still loaded by AppNotificationManager.Register (2.4.0). Without it Register throws ERROR_MOD_NOT_FOUND before
-       registering the COM activator, so toast clicks and buttons never reach the app.
-       Upstream: microsoft/WindowsAppSDK#6071, fixed by #6725 but in no stable release as of 2.4.0. Once the package
-       reference carries that fix, delete this target and ToastService.PreloadInsightsResource.
-       The DLL ships only inside the framework MSIX, so it is unzipped from there; ToastService loads it by full path
-       because the SDK's bare-name load does not find it. A missing MSIX is an error, since a build without the DLL
-       would otherwise publish cleanly. -->
-  <Target Name="IncludeInsightsResourceDll" BeforeTargets="AssignTargetPaths" Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
-    <PropertyGroup>
-      <InsightsMsixArch>$(RuntimeIdentifier.Replace('win-', ''))</InsightsMsixArch>
-      <InsightsMsix>$(MicrosoftWindowsAppSDKPackageDir)tools/MSIX/win10-$(InsightsMsixArch)/Microsoft.WindowsAppRuntime.2.msix</InsightsMsix>
-      <InsightsDir>$(IntermediateOutputPath)insights/</InsightsDir>
-    </PropertyGroup>
-    <Error Condition="!Exists('$(InsightsMsix)')"
-           Text="Cannot find $(InsightsMsix), the only source of Microsoft.WindowsAppRuntime.Insights.Resource.dll. Without it AppNotificationManager.Register throws and Windows-style toasts lose their buttons and clicks. See the comment on this target." />
-    <Unzip SourceFiles="$(InsightsMsix)" DestinationFolder="$(InsightsDir)" Include="Microsoft.WindowsAppRuntime.Insights.Resource.dll" SkipUnchangedFiles="true" />
-    <Error Condition="!Exists('$(InsightsDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll')"
-           Text="$(InsightsMsix) no longer contains Microsoft.WindowsAppRuntime.Insights.Resource.dll. Check whether this Windows App SDK already carries the fix for microsoft/WindowsAppSDK#6071 before removing this target." />
-    <ItemGroup>
-      <None Include="$(InsightsDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll" Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll"
-            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    </ItemGroup>
-  </Target>
-
   <ItemGroup>
     <Using Include="System.IO" />
     <EmbeddedResource Include="../../assets/icon.ico" LogicalName="tonesnip.icon.ico" />
@@ -107,8 +82,7 @@
          AI, ML (ONNX Runtime and DirectML), Search, Widgets and DWriteCore, which the app never calls and which a
          self-contained build copies into every exe (about 60 MB of the single file, 25 MB of the MSIX). The versions
          are the ones the 2.6.5 metapackage names, so the code that runs is unchanged; to update, take the new
-         metapackage's .nuspec versions for all four together. Runtime carries no code for a self-contained app, but
-         holds the framework MSIX that IncludeInsightsResourceDll unzips.
+         metapackage's .nuspec versions for all four together.
          The Community Toolkit still depends on Microsoft.WindowsAppSDK >= 1.6. Without the metapackage NuGet would
          restore that 1.6 package, a whole second SDK, beside these; pruning (a .NET 10 SDK restore feature) drops it
          from the graph. -->
