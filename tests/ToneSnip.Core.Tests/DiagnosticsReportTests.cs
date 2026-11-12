@@ -15,9 +15,9 @@ public class DiagnosticsReportTests
         {
             Line("info", "ToneSnip 1.0.5.0 started, pid 1234"),
             Line("info", "Rectangle: grab 40 ms, region (0, 0, 10, 10), hdr=False, total 900 ms"),
-            Line("info", "hotkey region, picked up in 3 ms"),
+            Line("info", "hotkeys paused"),
             Line("warn", "settings preview: the HDR frame was not downsampled: boom"),
-            Line("info", "system resumed from sleep"),
+            Line("info", "displays on"),
             Line("debug", "exposure: pass at 1.00 in 2.0 ms"),
             Line("info", "keyboard hook re-armed (from the tray menu), 5 bindings"),
         };
@@ -73,7 +73,7 @@ public class DiagnosticsReportTests
             CapturePointer = false,
             GdiFallbacks = Array.Empty<string>(),
             Now = new DateTime(2026, 9, 27, 10, 0, 0),
-            LogLines = new[] { Line("info", "hotkey region, picked up in 3 ms") },
+            LogLines = new[] { Line("info", "hotkeys paused") },
         };
         string text = DiagnosticsReport.Format(info);
         Assert.Contains("ToneSnip 1.0.5 (installed package)", text);
@@ -82,7 +82,7 @@ public class DiagnosticsReportTests
         Assert.Contains("hook armed, last armed 2026-09-27 09:30:00, 7 arm(s)", text);
         Assert.Contains("bindings: PrintScreen=region", text);
         Assert.Contains("HDR tonemapping on the GPU", text);
-        Assert.Contains("  " + Line("info", "hotkey region, picked up in 3 ms"), text);
+        Assert.Contains("  " + Line("info", "hotkeys paused"), text);
     }
 
     [Fact]

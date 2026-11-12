@@ -23,8 +23,6 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// frame release and reclaim, the memory harness) to avoid a blocking GC during a snip, hence <c>volatile</c>.
     /// </summary>
     private volatile bool _busy;
-    /// <summary>When the snip in flight began, for the refusal line in <see cref="Run"/>. UI thread only.</summary>
-    private long _started;
     public bool Busy => _busy;
     public bool CountingDown => _countdown != null;
     public void CancelCountdown() => _countdown?.Cancel();
@@ -45,8 +43,7 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
     /// <see cref="RunCore"/>, so a hotkey during the countdown cannot start a concurrent snip.</summary>
     public async Task Run(SnipMode mode, int delaySeconds)
     {
-        // Logged so a session that never ended is distinguishable from a dead hotkey.
-        if (_busy) { log.Info($"{mode}: refused, the snip started {Stopwatch.GetElapsedTime(_started).TotalSeconds:F0} s ago has not finished"); return; }
+        if (_busy) return;
         // A new grab would only queue behind the abandoned one on the grabber's lock, busy again with nothing on screen.
         if (_abandonedGrab is { IsCompleted: false })
         {
@@ -67,7 +64,6 @@ public sealed class SnipSession(FrameGrabber grabber, OutputPipeline output, Fun
             return;
         }
         _busy = true;
-        _started = Stopwatch.GetTimestamp();
         // One Info line per stage (started, grabbed, overlay shown, outcome), so the production log shows how far a
         // snip got when a hotkey seems to do nothing.
         log.Info(delaySeconds > 0 ? $"{mode}: started, {delaySeconds} s delay" : $"{mode}: started");

@@ -186,10 +186,9 @@ public partial class App : Application
 
         _messages = new MessageWindow(Log);
         _messages.DisplayChanged += OnDisplayChanged;
-        // Logged for context on hotkey problems, and both re-arm the keyboard hook: Windows can silently drop a
-        // low-level hook across sleep or the secure desktop.
-        _messages.PowerChanged += awake => { Log.Info(awake ? "system resumed from sleep" : "system going to sleep"); if (awake) Hook?.Rearm(); };
-        _messages.SessionLockChanged += locked => { Log.Info(locked ? "session locked" : "session unlocked"); if (!locked) Hook?.Rearm(); };
+        // Both re-arm the keyboard hook: Windows can silently drop a low-level hook across sleep or the secure desktop.
+        _messages.PowerChanged += awake => { if (awake) Hook?.Rearm(); };
+        _messages.SessionLockChanged += locked => { if (!locked) Hook?.Rearm(); };
         // Idle display-off leaves the machine awake, so neither of the above fires for it. On the way back the hook is
         // re-armed and the next grab enumerates the displays afresh, since a monitor can come back reconfigured.
         _messages.DisplayPowerChanged += on =>
@@ -554,32 +553,10 @@ public partial class App : Application
         Hook.SetBindings(bindings);
     }
 
-    /// <summary>How long a hotkey may wait for the UI thread before the log says so.</summary>
-    private static readonly TimeSpan HotkeyPickupBudget = TimeSpan.FromSeconds(2);
-
-    /// <summary>
-    /// Hands a hotkey from the hook thread to the UI thread and logs its pick-up (a Warn when it was refused or slower
-    /// than <see cref="HotkeyPickupBudget"/>), so a swallowed hotkey that never acts leaves a trace.
-    /// </summary>
+    /// <summary>Hands a hotkey from the hook thread to the UI thread.</summary>
     private void DispatchHotkey(string action)
     {
-        long pressed = Stopwatch.GetTimestamp();
-        int picked = 0;
-        bool queued = Ui.TryEnqueue(() =>
-        {
-            Volatile.Write(ref picked, 1);
-            TimeSpan waited = Stopwatch.GetElapsedTime(pressed);
-            // Info for every accepted hotkey, logged here rather than on the hook thread, whose callback must not wait
-            // on the disk: the first line of a snip's trail in the production log.
-            if (waited > HotkeyPickupBudget) Log.Warn($"hotkey {action}: the UI thread picked it up {waited.TotalMilliseconds:F0} ms after the press");
-            else Log.Info($"hotkey {action}, picked up in {waited.TotalMilliseconds:F0} ms");
-            OnHotkey(action);
-        });
-        if (!queued) { Log.Warn($"hotkey {action}: the UI thread's queue refused it"); return; }
-        _ = Task.Delay(HotkeyPickupBudget).ContinueWith(_ =>
-        {
-            if (Volatile.Read(ref picked) == 0) Log.Warn($"hotkey {action}: still waiting for the UI thread {HotkeyPickupBudget.TotalSeconds:F0} s after the press");
-        }, TaskScheduler.Default);
+        if (!Ui.TryEnqueue(() => OnHotkey(action))) Log.Warn($"hotkey {action}: the UI thread's queue refused it");
     }
 
     private void OnHotkey(string action)

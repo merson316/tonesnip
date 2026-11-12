@@ -48,14 +48,13 @@ public static class DiagnosticsReport
     public const int MaxLogLines = 40;
 
     /// <summary>
-    /// What a log line is about, lower-case, for <see cref="RelevantLines"/>: the hotkey trail (the hook, a pick-up,
-    /// a refusal), what can take the hook away (sleep, the lock screen, displays off, a long GC pause), the display
-    /// and capture state, and the start line that says which build wrote the log.
+    /// What a log line is about, lower-case, for <see cref="RelevantLines"/>: the hotkeys and the hook, a refusal,
+    /// the display and capture state, and the start line that says which build wrote the log.
     /// </summary>
     private static readonly string[] Topics =
     {
-        "hotkey", "keyboard hook", "refused", "resumed", "going to sleep", "session locked", "session unlocked",
-        "displays on", "displays off", "display change", "displays changed", "the compacting collection", "gc pause", "graphics device",
+        "hotkey", "keyboard hook", "refused",
+        "displays on", "displays off", "display change", "displays changed", "graphics device",
         "using gdi", "capture:", "started, pid", "stuck",
     };
 

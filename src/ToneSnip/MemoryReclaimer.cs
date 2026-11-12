@@ -36,16 +36,11 @@ internal sealed class MemoryReclaimer
     /// A blocking, compacting gen 2 collection (including the LOH), then a re-arm of the keyboard hook: a blocking GC
     /// also stalls the hook callback, and Windows silently removes a hook that overruns LowLevelHooksTimeout.
     /// </summary>
-    /// <returns>The GC pause, for logging.</returns>
-    private TimeSpan CompactingCollect()
+    private void CompactingCollect()
     {
-        TimeSpan before = GC.GetTotalPauseDuration();
         GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
         GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-        TimeSpan pause = GC.GetTotalPauseDuration() - before;
-        if (pause > TimeSpan.FromMilliseconds(250)) _log.Warn($"memory: the compacting collection paused the process for {pause.TotalMilliseconds:F0} ms; the keyboard hook is re-armed after it");
         _hook()?.Rearm();
-        return pause;
     }
 
     /// <summary>GDI (0) or USER (1) handle count of this process, for spotting leaked bitmaps or DCs. Asked with the
@@ -85,9 +80,9 @@ internal sealed class MemoryReclaimer
                 if (held == 0) return;
                 grabber.ReleaseBuffers();
                 if (_session()?.Busy == true) { _log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers; a snip started, so the collect is left to its own reclaim"); return; }
-                TimeSpan pause = CompactingCollect();
+                CompactingCollect();
                 using var me = Process.GetCurrentProcess();
-                _log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers, managed now {GC.GetTotalMemory(false) / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB, gc pause {pause.TotalMilliseconds:F0} ms");
+                _log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers, managed now {GC.GetTotalMemory(false) / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB");
                 DebugHooks.MemoryMark("after frames released");
             }
             catch (Exception e) { _log.Warn("frame release: " + e.Message); }
@@ -115,10 +110,10 @@ internal sealed class MemoryReclaimer
             {
                 Thread.Sleep(1000);
                 if (_session()?.Busy == true) return;   // a snip started meanwhile; its Idle re-arms this
-                TimeSpan pause = CompactingCollect();
+                CompactingCollect();
                 using var me = Process.GetCurrentProcess();
                 GCMemoryInfo gc = GC.GetGCMemoryInfo();
-                _log.Info($"{label}: managed {GC.GetTotalMemory(false) / 1_048_576} MB, gc committed {gc.TotalCommittedBytes / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB, pooled frames {_grabber()?.PooledBytes / 1_048_576 ?? 0} MB, gdi {GuiResources(0)}, user {GuiResources(1)}, gc pause {pause.TotalMilliseconds:F0} ms");
+                _log.Info($"{label}: managed {GC.GetTotalMemory(false) / 1_048_576} MB, gc committed {gc.TotalCommittedBytes / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB, pooled frames {_grabber()?.PooledBytes / 1_048_576 ?? 0} MB, gdi {GuiResources(0)}, user {GuiResources(1)}");
                 DebugHooks.MemoryMark("after reclaim");   // only when TONESNIP_MEMPROBE is set
             }
             catch (Exception e) { _log.Warn("reclaim: " + e.Message); }
