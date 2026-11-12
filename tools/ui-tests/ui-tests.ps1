@@ -68,6 +68,13 @@ Add-Type -Namespace TS -Name Win -MemberDefinition @'
 [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
 [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
+[DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
 '@
 
 # ---------------------------------------------------------------- plumbing
@@ -105,6 +112,39 @@ function Assert-Foreground {
     }
     $fgName = (Get-Process -Id $fg -ErrorAction SilentlyContinue).ProcessName
     throw "$($script:GuardTag): $What not sent, the foreground window belongs to pid $fg ($fgName), not the target"
+}
+
+# Windows gives the foreground only to a process the user last worked in, so a hold started from a script (most of all
+# one started from WSL or an agent) opens behind whatever the user had in front: every raw-input test is then BLOCKED,
+# and winapp 0.8 refuses a --capture-screen screenshot or recording of a window that is not in front.
+# This brings a hold's main window forward without sending any input: the script's thread attaches to the foreground
+# thread's input queue for the one call, which is what lets SetForegroundWindow succeed.
+# It is called once, as a hold's window appears and before anything is opened in it: a later call would close an
+# open menu or flyout. It returns '' when the hold has the foreground, otherwise why not.
+function Set-Foreground {
+    param([int]$TargetPid)
+    $why = 'no window'
+    for ($try = 0; $try -lt 4; $try++) {
+        if ((Get-ForegroundPid) -eq $TargetPid) { return '' }
+        $hwnd = Get-MainHwnd $TargetPid
+        if (-not $hwnd) { Start-Sleep -Milliseconds 250; continue }
+        $unused = [uint32]0
+        # No foreground window for a moment is normal just after the last hold was stopped.
+        $fgThread = [TS.Win]::GetWindowThreadProcessId([TS.Win]::GetForegroundWindow(), [ref]$unused)
+        $me = [TS.Win]::GetCurrentThreadId()
+        $attached = $fgThread -ne 0 -and $fgThread -ne $me -and [TS.Win]::AttachThreadInput($me, $fgThread, $true)
+        try {
+            [void][TS.Win]::BringWindowToTop([IntPtr]$hwnd)
+            $took = [TS.Win]::SetForegroundWindow([IntPtr]$hwnd)
+        } finally {
+            if ($attached) { [void][TS.Win]::AttachThreadInput($me, $fgThread, $false) }
+        }
+        Start-Sleep -Milliseconds 250
+        $ex = [TS.Win]::GetWindowLongPtr([IntPtr]$hwnd, -20).ToInt64()
+        $why = "SetForegroundWindow=$took attached=$attached fgThread=$fgThread exstyle=0x$($ex.ToString('X'))"
+    }
+    if ((Get-ForegroundPid) -eq $TargetPid) { return '' }
+    return $why
 }
 
 # Shadows winapp.exe for the whole script. UIA verbs (invoke, focus, set-value, wait-for, inspect and the like)
@@ -299,7 +339,13 @@ function Start-Hold {
         Start-Sleep -Milliseconds 500
         if ($proc.HasExited) { throw "hold '$What' exited (code $($proc.ExitCode)) before a window appeared" }
         $w = Get-Json @('list-windows', '-a', "$($proc.Id)", '--json')
-        if ($w) { Start-Sleep -Milliseconds 900; Write-Host "    pid $($proc.Id)" -ForegroundColor DarkGray; return $proc }
+        if ($w) {
+            Start-Sleep -Milliseconds 900
+            $noFg = Set-Foreground $proc.Id
+            Write-Host "    pid $($proc.Id)" -ForegroundColor DarkGray
+            if ($noFg) { Write-Note "hold '$What' did not get the foreground ($noFg); its raw-input tests will be BLOCKED" }
+            return $proc
+        }
     }
     throw "hold '$What' never showed a window"
 }
@@ -315,12 +361,21 @@ function Stop-Hold {
 function Shot {
     param([int]$TargetPid, [string]$Name)
     $path = Join-Path $ShotDir "$Name.png"
-    & winapp ui screenshot -a $TargetPid --capture-screen -o $path 2>&1 | Out-Null
-    if (-not (Test-Path $path)) { Write-Note "screenshot $Name produced no file" }
+    if (Test-Path $path) { Remove-Item $path -Force }   # so a failed capture cannot pass off the last run's file
+    $said = (& winapp ui screenshot -a $TargetPid --capture-screen -o $path 2>&1 | Out-String).Trim()
+    if (-not (Test-Path $path)) {
+        # winapp 0.8 takes a screen capture of one window only, and a tooltip, menu or band is a second window of the
+        # hold. Name the main window: its screen region is captured with whatever is drawn over it.
+        $hwnd = Get-MainHwnd $TargetPid
+        if ($hwnd) { $said = (& winapp ui screenshot -w $hwnd --capture-screen -o $path 2>&1 | Out-String).Trim() }
+    }
+    if (-not (Test-Path $path)) { Write-Note "screenshot $Name produced no file: $(($said -split "`n")[0])" }
 }
 
 # The window chrome the SDK draws for us: not this app's controls, and not what the audit is about.
-$ChromeIds   = @('MinimizeButton','MaximizeButton','RestoreButton','CloseButton','NavigationViewBackButton','TogglePaneButton','SettingsItem','PaneAutoSuggestButton')
+# TitleBar is the system title bar of Settings and the editor, which winapp 0.8 began to list; it has no name of its
+# own (the window's title is the name of the window element).
+$ChromeIds   = @('TitleBar','MinimizeButton','MaximizeButton','RestoreButton','CloseButton','NavigationViewBackButton','TogglePaneButton','SettingsItem','PaneAutoSuggestButton')
 $ChromeNames = @('Minimize','Maximize','Restore','Close','System','System menu','Back','Open Navigation','Close Navigation','Settings')
 
 <#
