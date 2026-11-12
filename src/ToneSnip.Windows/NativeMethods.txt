@@ -1,0 +1,8 @@
+CUIAutomation8
+IUIAutomation2
+IUIAutomationElement
+IUIAutomationElementArray
+IUIAutomationCacheRequest
+IUIAutomationCondition
+TreeScope
+UIA_PROPERTY_ID

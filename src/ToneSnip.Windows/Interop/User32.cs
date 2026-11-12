@@ -118,6 +118,7 @@ public static partial class User32
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetLayeredWindowAttributes(IntPtr hwnd, out uint key, out byte alpha, out uint flags);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int GetWindowTextW(IntPtr hwnd, [Out] char[] text, int max);
+    [LibraryImport(Dll, StringMarshalling = StringMarshalling.Utf16)] public static partial int GetClassNameW(IntPtr hwnd, [Out] char[] name, int max);
     [LibraryImport(Dll)] [return: MarshalAs(UnmanagedType.Bool)] public static partial bool ClientToScreen(IntPtr hwnd, ref Point p);
 
     public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);

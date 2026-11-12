@@ -627,10 +627,39 @@ public sealed class OverlaySession(List<CapturedOutput> outputs, FrameGrabber gr
         IntRect innermost = _under.Count > 0 ? _under[0] : IntRect.Empty;
         if (WindowAt(x, y) is not { } w) { _under.Clear(); _depth = 0; return IntRect.Empty; }
         if (!_layers.TryGetValue(w.Handle, out WindowLayers? layers))
+        {
             _layers[w.Handle] = layers = WindowFinder.Layers(w, settings.DetectChildWindows);
+            if (settings.DetectChildWindows && !WindowFinder.DrawnByChromium(w.Handle)) ReadUiParts(w, layers);
+        }
         layers.At(x, y, _under);
         if (_under.Count == 0 || _under[0] != innermost) _depth = 0;
         return LayerHover();
+    }
+
+    /// <summary>
+    /// The parts child windows cannot show, because the app draws all of itself in one window (Firefox, a WinUI or
+    /// WPF app): asks the app's UI Automation tree for its panes, on the thread pool because the app may be slow to
+    /// answer (<see cref="UiaTree"/> bounds the wait), and adds them to the window's layers when they arrive. Until
+    /// then, and for an app that offers none, the highlight is what the child windows give, as before.
+    /// </summary>
+    private void ReadUiParts(WindowInfo w, WindowLayers layers)
+    {
+        if (Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread() is not { } ui) return;
+        _ = Task.Run(() =>
+        {
+            List<IntRect> parts = UiaTree.Parts(w.Handle, w.Bounds, out string note);
+            log.Debug("window parts from UI Automation: " + note);
+            if (parts.Count == 0) return;
+            ui.TryEnqueue(() =>
+            {
+                // The session may have ended, and dropped its layers, while the app was being asked.
+                if (_finishing || _done.Task.IsCompleted || !_layers.ContainsKey(w.Handle)) return;
+                _layers[w.Handle] = layers.WithParts(parts);
+                if (mode != SnipMode.Window || DrawingActive || _picking || _dragStart != null) return;
+                Hover = WindowHover(Cursor.X, Cursor.Y);
+                RenderAll();
+            });
+        });
     }
 
     private IntRect LayerHover() => _under.Count == 0 ? IntRect.Empty : _under[Math.Min(_depth, _under.Count - 1)].Clamp(desktop);

@@ -41,7 +41,30 @@ public sealed class WindowLayers
     /// <summary>The window's frame alone, for a window with no children or with child detection off.</summary>
     public WindowLayers(IntRect frame) : this(frame, IntRect.Empty, Array.Empty<ChildWindow>()) { }
 
+    private WindowLayers(IntRect frame, IntRect[] visible) { _frame = frame; _visible = visible; }
+
     public IntRect Frame => _frame;
+
+    /// <summary>True when some child window is a step of its own inside the frame. False for an app that draws all of
+    /// itself in one window (Firefox, a WinUI or WPF app), whose parts only UI Automation can tell apart.</summary>
+    public bool HasParts
+    {
+        get
+        {
+            foreach (IntRect r in _visible) if (!r.IsEmpty && !Hugs(r, _frame)) return true;
+            return false;
+        }
+    }
+
+    /// <summary>These layers and, with them, <paramref name="parts"/>: rectangles on screen that are not child windows,
+    /// such as the panes UI Automation reports (<see cref="UiParts"/>). Each shows only inside the frame.</summary>
+    public WindowLayers WithParts(IReadOnlyList<IntRect> parts)
+    {
+        var visible = new IntRect[_visible.Length + parts.Count];
+        _visible.CopyTo(visible, 0);
+        for (int i = 0; i < parts.Count; i++) visible[_visible.Length + i] = parts[i].Intersect(_frame);
+        return new WindowLayers(_frame, visible);
+    }
 
     /// <summary>
     /// The rectangles under (<paramref name="x"/>, <paramref name="y"/>), smallest first and the frame last, each once:

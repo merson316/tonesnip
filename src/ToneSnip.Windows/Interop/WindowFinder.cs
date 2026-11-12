@@ -92,6 +92,32 @@ public static class WindowFinder
         return new WindowLayers(window.Bounds, client, list);
     }
 
+    /// <summary>
+    /// True when the window, or a child window of it, is drawn by Chromium: Chrome, Edge, an Electron app, or a WebView2
+    /// inside another app. Such a window is not asked for its UI Automation tree (<see cref="UiaTree"/>): the first
+    /// question switches on the browser's accessibility support for as long as it runs, which slows it down, and its
+    /// page is a child window that <see cref="Layers"/> finds anyway. Only class names are read, so nothing is sent
+    /// to the app.
+    /// </summary>
+    public static bool DrawnByChromium(IntPtr window)
+    {
+        var name = new char[64];
+        bool IsChromium(IntPtr hwnd)
+        {
+            int length = User32.GetClassNameW(hwnd, name, name.Length);
+            return length > 0 && name.AsSpan(0, Math.Min(length, name.Length)).StartsWith("Chrome_", StringComparison.Ordinal);
+        }
+        if (IsChromium(window)) return true;
+        bool found = false;
+        int seen = 0;
+        User32.EnumChildWindows(window, (hwnd, _) =>
+        {
+            if (IsChromium(hwnd)) found = true;
+            return !found && ++seen < MaxChildren;
+        }, IntPtr.Zero);
+        return found;
+    }
+
     /// <summary>A window's client area in screen pixels. Both corners are mapped, so a right-to-left window, whose
     /// client origin is its right edge, still gives a normal rectangle.</summary>
     private static IntRect? ClientOnScreen(IntPtr hwnd)

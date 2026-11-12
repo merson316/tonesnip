@@ -43,7 +43,8 @@ highlights are compressed. What you paste looks like what you saw.
   mode mid-snip and sets a 3, 5 or 10 second delay. A selection can span monitors, mixing HDR and SDR displays.
   Window mode finds the parts inside a window as ShareX does, so a browser's page can be snipped without its tabs and
   toolbar: the smallest part under the pointer is highlighted, and the mouse wheel steps out to the whole window and
-  back in. "Snip parts of windows" in Settings turns it off.
+  back in. An app that draws all of itself in one window, such as Paint, is asked for its panes, lists and pages
+  instead. "Snip parts of windows" in Settings turns it off.
 - **Nits readout** on HDR monitors: luminance under the cursor, plus peak and mean inside the selection.
 - **Selection frame**, picked in Settings: Normal (an outline, with the size and nits beside the cursor), Viewfinder
   (accent corner brackets and a size label), or Guides (the selection's edges carried across the monitor, and a pixel
