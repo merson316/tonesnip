@@ -66,6 +66,8 @@ public sealed class ScreenCapture(ILog log) : IDisposable
     private readonly object _streamGate = new();
     private List<OutputHandle>? _displays;
     private ID3D11Device? _device;
+    /// <summary>True while a graphics device is held, so an idle release has something to free.</summary>
+    public bool HoldsDevice => Volatile.Read(ref _device) != null;
     private ID3D11DeviceContext? _context;
     private IDirect3DDevice? _winrtDevice;
     /// <summary>The GPU tonemap shaders on <see cref="_device"/>, made on the first HDR frame kept on it. Under

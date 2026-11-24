@@ -10,10 +10,22 @@ internal static partial class ProcessMemory
     /// bytes, which also counts non-resident committed pages.</summary>
     public static long PrivateWorkingSet()
     {
-        using var me = Process.GetCurrentProcess();
         var c = new Counters { Cb = (uint)Marshal.SizeOf<Counters>() };
-        return GetProcessMemoryInfo(me.Handle, ref c, c.Cb) ? (long)c.PrivateWorkingSetSize : me.PrivateMemorySize64;
+        if (GetProcessMemoryInfo(Windows.Interop.Kernel32.GetCurrentProcess(), ref c, c.Cb)) return (long)c.PrivateWorkingSetSize;
+        using var me = Process.GetCurrentProcess();
+        return me.PrivateMemorySize64;
     }
+
+    /// <summary>
+    /// Takes every page Windows can take back out of this process's working set (SetProcessWorkingSetSize with -1, -1),
+    /// as Windows itself does to an idle process when memory is wanted elsewhere. Nothing is freed: a page used again
+    /// comes back from the standby list, usually without a disk read. For an idle tray app this returns the memory the
+    /// last snip touched (driver heaps, the WinUI windows' pages) instead of holding it until Windows asks.
+    /// </summary>
+    public static bool TrimWorkingSet() => SetProcessWorkingSetSize(Windows.Interop.Kernel32.GetCurrentProcess(), -1, -1);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetProcessWorkingSetSize(IntPtr process, nint minimum, nint maximum);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Counters

@@ -81,7 +81,7 @@ public partial class App : Application
             // An open Settings window is showing the preview and would only decode the frame again at its next render;
             // its close packs it instead.
             if (Volatile.Read(ref _settingsWindow) == null) PackPreviewFrame();
-        });
+        }, AnyWindowOpen);
     }
 
     /// <summary>
@@ -171,7 +171,7 @@ public partial class App : Application
         };
         Session = new SnipSession(Grabber, Output, () => Settings, Log, () => PrimaryMonitor) { HideOwnWindows = HideOwnWindowsForSnip, Divert = DivertSnip };
         // On Idle rather than Output.Completed, so a cancelled snip also releases its frames.
-        Session.Idle += () => { ReclaimMemory("memory after snip"); _memory.ReleaseFramesWhenIdle(); };
+        Session.Idle += () => ReclaimMemory("memory after snip");   // and, a minute later, the idle release
         // Escape is a hotkey only while a countdown runs (cancelCountdown), or while the snip screen is up without the
         // keyboard (escapeSnip), which otherwise could not be dismissed from the keyboard.
         Hook = new KeyboardHook(Log)
@@ -373,6 +373,12 @@ public partial class App : Application
     /// logging where it landed under <paramref name="label"/>.</summary>
     public void ReclaimMemory(string label) => _memory.Reclaim(label);
 
+    /// <summary>Whether any of the app's windows is open or a snip is under way, read from the idle release's thread:
+    /// each is a reference or count the UI thread sets, and a stale read only delays a trim to the next release.</summary>
+    private bool AnyWindowOpen()
+        => Session?.Busy == true || Volatile.Read(ref _settingsWindow) != null || Volatile.Read(ref _flyout) != null
+           || _viewers.Count > 0 || _pins.Count > 0 || Toasts?.HasCard == true;
+
     /// <summary>Tray "Open last snip": the newest history row, which survives a restart and reflects saved edits,
     /// falling back to the last in-memory result.</summary>
     public async void OpenLastSnip()
@@ -519,7 +525,7 @@ public partial class App : Application
             Timing("settings opened", sw);
         }
         win.Activated += OnActivated;
-        win.WhenClosed(() => { win.Activated -= OnActivated; if (_settingsWindow == win) _settingsWindow = null; });
+        win.WhenClosed(() => { win.Activated -= OnActivated; if (_settingsWindow == win) _settingsWindow = null; _memory.ReleaseWhenIdle(); });
         win.Activate();
     }
 
@@ -541,7 +547,7 @@ public partial class App : Application
             Timing("flyout opened", sw);
         }
         flyout.Activated += OnActivated;
-        flyout.WhenClosed(() => { flyout.Activated -= OnActivated; if (_flyout == flyout) _flyout = null; });
+        flyout.WhenClosed(() => { flyout.Activated -= OnActivated; if (_flyout == flyout) _flyout = null; _memory.ReleaseWhenIdle(); });
         flyout.Open();
     }
 

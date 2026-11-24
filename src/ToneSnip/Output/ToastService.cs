@@ -33,6 +33,8 @@ public sealed class ToastService : IDisposable
     private bool _registered;
     /// <summary>The card on screen, or null; a newer snip re-binds it rather than adding a second.</summary>
     private ToastWindow? _card;
+    /// <summary>True while an in-app card is up or on its way out.</summary>
+    public bool HasCard => Volatile.Read(ref _card) != null;
     /// <summary>The cards waiting for the overlay to come down (a snip's, or a notice), oldest first, and the timer that
     /// watches for it. A queue, so a notice raised while a snip's card waits does not drop it.</summary>
     private readonly Queue<Action> _deferred = new();

@@ -8,9 +8,9 @@ using ToneSnip.Windows.Interop;
 namespace ToneSnip.App;
 
 /// <summary>
-/// Gives memory back after a snip or an editor closes: a compacting collection a second later, and the pooled frame
-/// buffers released after <see cref="FrameIdleRelease"/> without a snip, so an idle tray app returns to its startup
-/// footprint.
+/// Gives memory back after a snip or a window closes: a compacting collection a second later, and after
+/// <see cref="FrameIdleRelease"/> of quiet the pooled frames, the capture device and the working set
+/// (<see cref="ReleaseWhenIdle"/>), so an idle tray app returns to about its startup footprint.
 /// <para>The app's services are read through accessors at the moment they are needed, since they are created during
 /// startup, after this object.</para>
 /// </summary>
@@ -22,9 +22,12 @@ internal sealed class MemoryReclaimer
     private readonly Func<KeyboardHook?> _hook;
     /// <summary>Runs before the pooled buffers go: the app packs the Settings preview's frame unless Settings is open.</summary>
     private readonly Action _beforeFrameRelease;
+    /// <summary>True while any of the app's windows is open: the working set is then left alone.</summary>
+    private readonly Func<bool> _windowOpen;
 
-    public MemoryReclaimer(ILog log, Func<FrameGrabber?> grabber, Func<SnipSession?> session, Func<KeyboardHook?> hook, Action beforeFrameRelease)
+    public MemoryReclaimer(ILog log, Func<FrameGrabber?> grabber, Func<SnipSession?> session, Func<KeyboardHook?> hook, Action beforeFrameRelease, Func<bool> windowOpen)
     {
+        _windowOpen = windowOpen;
         _log = log;
         _grabber = grabber;
         _session = session;
@@ -59,13 +62,16 @@ internal sealed class MemoryReclaimer
     private int _idleTicket;
 
     /// <summary>
-    /// After <see cref="FrameIdleRelease"/> with no snip, drops the pooled frame buffers and collects, so an idle tray
-    /// app returns to its startup footprint.
-    /// <para>Dropping the buffers is safe even mid-snip (a grab holding one keeps it). The blocking collect is skipped
-    /// if a snip has started; that snip's own <c>Idle</c> reclaims later. A snip starting during the collect is delayed
-    /// by the rest of it, which is accepted.</para>
+    /// After <see cref="FrameIdleRelease"/> with no snip and no window opened or closed, gives back what the last use
+    /// left: the pooled frame buffers, the capture device (an active-window snip makes one without pooling frames), a
+    /// compacting collection, and then, with no window open, the working set (<see cref="Interop.ProcessMemory.TrimWorkingSet"/>),
+    /// so the tray app returns to about its startup footprint.
+    /// <para>Dropping the buffers is safe even mid-snip (a grab holding one keeps it). The blocking collect and the
+    /// trim are skipped if a snip has started; that snip's own <c>Idle</c> arms another release. A snip starting during
+    /// the collect is delayed by the rest of it, which is accepted. The first snip after a trim takes its pages back,
+    /// about 30 ms more on a two-monitor desktop.</para>
     /// </summary>
-    public void ReleaseFramesWhenIdle()
+    public void ReleaseWhenIdle()
     {
         int ticket = Interlocked.Increment(ref _idleTicket);
         _ = Task.Run(async () =>
@@ -77,15 +83,18 @@ internal sealed class MemoryReclaimer
                 _beforeFrameRelease();
                 FrameGrabber grabber = _grabber()!;
                 long held = grabber.PooledBytes;
-                if (held == 0) return;
-                grabber.ReleaseBuffers();
-                if (_session()?.Busy == true) { _log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers; a snip started, so the collect is left to its own reclaim"); return; }
+                if (held > 0 || grabber.HoldsDevice) grabber.ReleaseBuffers();
+                if (_session()?.Busy == true) { _log.Info($"released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled frames; a snip started, so the collect is left to its own release"); return; }
                 CompactingCollect();
+                long before = Interop.ProcessMemory.PrivateWorkingSet();
+                bool trimmed = !_windowOpen() && Interop.ProcessMemory.TrimWorkingSet();
+                if (trimmed) _hook()?.Rearm();   // its callback's pages went too; a slow first press must not lose the hook
                 using var me = Process.GetCurrentProcess();
-                _log.Info($"frames released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled buffers, managed now {GC.GetTotalMemory(false) / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, working set {me.WorkingSet64 / 1_048_576} MB, task manager {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB");
-                DebugHooks.MemoryMark("after frames released");
+                _log.Info($"released after {FrameIdleRelease.TotalMinutes:F0} min idle: {held / 1_048_576} MB of pooled frames, managed now {GC.GetTotalMemory(false) / 1_048_576} MB, private {me.PrivateMemorySize64 / 1_048_576} MB, task manager {before / 1_048_576} MB"
+                          + (trimmed ? $", {Interop.ProcessMemory.PrivateWorkingSet() / 1_048_576} MB after the working set was trimmed" : ", not trimmed: a window is open"));
+                DebugHooks.MemoryMark("after idle release");
             }
-            catch (Exception e) { _log.Warn("frame release: " + e.Message); }
+            catch (Exception e) { _log.Warn("idle release: " + e.Message); }
         });
     }
 
@@ -103,6 +112,7 @@ internal sealed class MemoryReclaimer
     /// </summary>
     public void Reclaim(string label)
     {
+        ReleaseWhenIdle();
         if (Interlocked.Exchange(ref _reclaiming, 1) == 1) return;
         _ = Task.Run(() =>
         {

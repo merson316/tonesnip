@@ -39,6 +39,8 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
 
     /// <summary>Bytes held by the pooled frame buffers.</summary>
     public long PooledBytes => _pool.Bytes;
+    /// <summary>True while the capture device is held (<see cref="ReleaseBuffers"/> releases it).</summary>
+    public bool HoldsDevice => _capture.HoldsDevice;
 
     /// <summary>
     /// The kill switch for the GPU path: TONESNIP_GPU_TONEMAP=0 or 1 when set, otherwise the <c>hdr.gpuTonemap</c>
