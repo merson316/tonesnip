@@ -86,10 +86,10 @@
          The Community Toolkit still depends on Microsoft.WindowsAppSDK >= 1.6. Without the metapackage NuGet would
          restore that 1.6 package, a whole second SDK, beside these; pruning (a .NET 10 SDK restore feature) drops it
          from the graph. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.5" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.6.5" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.6.5" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.6.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.7.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.7.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.7.0" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.7.0" />
     <PrunePackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <!-- WinUI depends on WebView2 for its WebView2 control, which the app never uses: pruned, it is not shipped
          (its projection, core and loader DLLs were about 2.5 MB of the exe). -->
