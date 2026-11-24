@@ -91,6 +91,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="2.6.5" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.6.5" />
     <PrunePackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+    <!-- WinUI depends on WebView2 for its WebView2 control, which the app never uses: pruned, it is not shipped
+         (its projection, core and loader DLLs were about 2.5 MB of the exe). -->
+    <PrunePackageReference Include="Microsoft.Web.WebView2" Version="1.0.3719.77" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <!-- SettingsCard / SettingsExpander for the settings window. The version is the one the WinUI 3 Gallery pins
          against Windows App SDK 2.4.0, so the pair is known to restore together. -->
@@ -129,6 +132,9 @@
     <PublishSingleFile>false</PublishSingleFile>
   </PropertyGroup>
   <ItemGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <!-- Left as IL, as the exe ships it: precompiled, the Windows SDK projection is 57 MB against 26 MB, for the few
+         namespaces the app calls (about 9 MB of the download, 31 MB installed). -->
+    <PublishReadyToRunExclude Include="Microsoft.Windows.SDK.NET.dll" />
     <AppxManifest Include="$(StampedAppxManifest)">
       <SubType>Designer</SubType>
     </AppxManifest>
@@ -137,6 +143,25 @@
          manifest names the unqualified file (assets\tiles\Square150x150Logo.png). -->
     <Content Include="../../assets/tiles/*.png" Link="assets\tiles\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- What a self-contained .NET adds that this app never loads: the native symbol reader for debuggers, the two
+       alternative garbage collectors (loaded only when DOTNET_GCName names one), and a second copy of the data access
+       library under its versioned name. mscordaccore.dll, mscordbi.dll and createdump.exe stay, for crash dumps. -->
+  <!-- Removed where the runtime pack's files are resolved, so neither the build output, the publish folder nor the
+       MSIX (whose layout is made from the build output) carries them. -->
+  <Target Name="DropUnusedRuntimeFiles" AfterTargets="ResolveRuntimePackAssets" Condition="'$(SelfContained)' == 'true'">
+    <ItemGroup>
+      <RuntimePackAsset Remove="@(RuntimePackAsset)"
+                        Condition="'%(Filename)%(Extension)' == 'Microsoft.DiaSymReader.Native.amd64.dll' or '%(Filename)%(Extension)' == 'clrgc.dll' or '%(Filename)%(Extension)' == 'clrgcexp.dll' or $([System.String]::Copy('%(Filename)').StartsWith('mscordaccore_'))" />
+    </ItemGroup>
+  </Target>
+  <!-- The MSIX tooling gathers its payload from its own list of the runtime's files, so they are taken out of that too. -->
+  <Target Name="DropUnusedRuntimeFilesFromPackage" AfterTargets="_ComputeAppxPackagePayload" Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <ItemGroup>
+      <AppxPackagePayload Remove="@(AppxPackagePayload)"
+                          Condition="'%(Filename)%(Extension)' == 'Microsoft.DiaSymReader.Native.amd64.dll' or '%(Filename)%(Extension)' == 'clrgc.dll' or '%(Filename)%(Extension)' == 'clrgcexp.dll' or $([System.String]::Copy('%(Filename)').StartsWith('mscordaccore_'))" />
+    </ItemGroup>
+  </Target>
 
   <!-- <Version> above is the only version number: this copies packaging/Package.appxmanifest into obj/ and sets
        Identity/@Version to $(Version).0, so $(Version) must stay three-part. -->
