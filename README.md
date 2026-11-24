@@ -114,7 +114,7 @@ that matches yours.</sub>
 ## Requirements
 
 - Windows 11. ToneSnip turns off the yellow capture border, which Windows 10 does not allow.
-- For `tonesnip.exe` only: the [.NET 11 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/11.0). The MSIX
+- For `tonesnip.exe` only: the [.NET 11 Runtime](https://dotnet.microsoft.com/download/dotnet/11.0). The MSIX
   is self-contained.
 
 ## Install
@@ -138,7 +138,7 @@ signed with it; remove it with `certutil -delstore TrustedPeople merson316`.
 
 ### Single exe
 
-Put `tonesnip.exe` somewhere permanent and run it. It carries the Windows App SDK, so only the .NET 11 Desktop Runtime
+Put `tonesnip.exe` somewhere permanent and run it. It carries the Windows App SDK, so only the .NET 11 Runtime
 is needed.
 
 Either way, a tray icon appears. To start with Windows, turn on **Start with Windows** in Settings > General.

@@ -159,7 +159,7 @@ test_windows() {
   unmap_wsl_drive
 }
 
-build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 11 Desktop Runtime)
+build_exe() {  # the production exe: single file, .NET framework-dependent (needs the .NET 11 Runtime)
   # WindowsAppSDKSelfContained=true is required: a single-file publish with a framework-dependent Windows App SDK is
   # unsupported, and every XAML window throws XamlParseException. The csproj refuses that combination.
   rm -rf dist/tonesnip
