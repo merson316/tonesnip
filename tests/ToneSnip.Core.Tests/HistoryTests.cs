@@ -96,6 +96,24 @@ public class HistoryTests
     }
 
     [Fact]
+    public void The_generated_history_serializer_writes_and_reads_what_reflection_does()
+    {
+        var entries = new List<HistoryEntry>
+        {
+            E(1) with { Kind = HistoryKind.Window | HistoryKind.Pin, Text = "hello \u00e9 \"q\"" },
+            new("id", @"C:\x\Snip.png", new DateTime(2026, 11, 24, 12, 0, 0, DateTimeKind.Utc), 3440, 1440, true, "t.png", @"C:\x\Snip.jxr"),
+        };
+        var generated = ToneSnip.Core.Output.HistoryJson.Default.ListHistoryEntry;
+        string reflected = System.Text.Json.JsonSerializer.Serialize(entries, ToneSnip.Core.Config.JsonFile.Options);
+        Assert.Equal(reflected, System.Text.Json.JsonSerializer.Serialize(entries, generated));
+        Assert.Equal(entries, System.Text.Json.JsonSerializer.Deserialize(reflected, generated));
+        // A history.json from 1.0.4 (no kind or text), with the case and number forms the reflection options accepted.
+        string old = """[{"Id":"a","path":null,"takenUtc":"2026-09-05T00:00:00Z","width":"7","height":1,"hdr":false,"thumb":"t.png",}]""";
+        Assert.Equal(System.Text.Json.JsonSerializer.Deserialize<List<HistoryEntry>>(old, ToneSnip.Core.Config.JsonFile.Options),
+                     System.Text.Json.JsonSerializer.Deserialize(old, generated));
+    }
+
+    [Fact]
     public void Kept_text_is_trimmed_capped_and_never_splits_a_surrogate_pair()
     {
         Assert.Null(HistoryList.ClipText(null));

@@ -4,8 +4,7 @@ namespace ToneSnip.Core.Config;
 
 /// <summary>
 /// settings.json's serializer, generated at compile time: loading the settings at startup then builds no reflection
-/// metadata and emits no IL, which also keeps it working under trimming. Its options are <see cref="JsonFile.Options"/>'s,
-/// which the other JSON files still use through reflection.
+/// metadata and emits no IL, which also keeps it working under trimming. Its options are <see cref="JsonFile.Options"/>'s.
 /// <para>
 /// Only <see cref="SnipSettings"/> is named: the generator follows its properties, so the nested settings, and any
 /// setting added later, are covered without touching this class.

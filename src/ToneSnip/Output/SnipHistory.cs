@@ -62,7 +62,7 @@ public sealed class SnipHistory
         // Never fatal: an unreadable history.json must not break startup.
         try
         {
-            (List<HistoryEntry>? saved, string? err) = JsonFile.Load<List<HistoryEntry>>(_path);
+            (List<HistoryEntry>? saved, string? err) = JsonFile.Load(_path, HistoryJson.Default.ListHistoryEntry);
             if (err != null) log.Warn("history: " + err);
             _list = new HistoryList(saved, limit);
         }
@@ -388,7 +388,7 @@ public sealed class SnipHistory
 
     private void Save()
     {
-        try { JsonFile.Save(_path, _list.Entries.ToList()); } catch (Exception e) { _log.Warn("history save: " + e.Message); }
+        try { JsonFile.Save(_path, _list.Entries.ToList(), HistoryJson.Default.ListHistoryEntry); } catch (Exception e) { _log.Warn("history save: " + e.Message); }
         Changed?.Invoke();
     }
 

@@ -6,6 +6,9 @@ namespace ToneSnip.Core.Config;
 
 public static class JsonFile
 {
+    /// <summary>The options every JSON file is written with. The app reads and writes through generated contexts
+    /// (<see cref="SnipSettingsJson"/>, <see cref="Output.HistoryJson"/>) declared with these same values; the tests
+    /// check each against this reflection-based reference.</summary>
     public static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -17,10 +20,10 @@ public static class JsonFile
     };
 
     /// <summary>Null value with null error means the file does not exist.</summary>
-    public static (T? Value, string? Error) Load<T>(string path) where T : class
+    public static (T? Value, string? Error) Load<T>(string path, JsonTypeInfo<T> type) where T : class
     {
         if (!File.Exists(path)) return (null, null);
-        try { return (JsonSerializer.Deserialize<T>(File.ReadAllText(path), Options), null); }
+        try { return (JsonSerializer.Deserialize(File.ReadAllText(path), type), null); }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         { return (null, $"cannot read {path}: {e.Message}; using defaults"); }
     }
@@ -29,9 +32,6 @@ public static class JsonFile
     /// Writes to a uniquely named temporary file, flushes it to disk, and moves it over <paramref name="path"/>. Saves
     /// of one file are serialised; the flush keeps a power loss after the move from leaving an empty file.
     /// </summary>
-    public static void Save<T>(string path, T value) => Save(path, stream => JsonSerializer.Serialize(stream, value, Options));
-
-    /// <summary><see cref="Save{T}(string, T)"/> through generated metadata (<see cref="SnipSettingsJson"/>).</summary>
     public static void Save<T>(string path, T value, JsonTypeInfo<T> type) => Save(path, stream => JsonSerializer.Serialize(stream, value, type));
 
     private static void Save(string path, Action<Stream> write)

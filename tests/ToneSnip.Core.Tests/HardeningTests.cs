@@ -61,8 +61,8 @@ public class HardeningTests
         // Each save needs its own temp file name, or concurrent saves collide.
         using var dir = new TempDir();
         string path = dir.Child("settings.json");
-        Parallel.For(0, 64, i => JsonFile.Save(path, new SnipSettings { JpegQuality = 50 + i % 50 }));
-        (SnipSettings? back, string? err) = JsonFile.Load<SnipSettings>(path);
+        Parallel.For(0, 64, i => JsonFile.Save(path, new SnipSettings { JpegQuality = 50 + i % 50 }, SnipSettingsJson.Default.SnipSettings));
+        (SnipSettings? back, string? err) = JsonFile.Load(path, SnipSettingsJson.Default.SnipSettings);
         Assert.Null(err);
         Assert.NotNull(back);
         Assert.Equal(new[] { path }, Directory.GetFiles(dir.Path));   // no .tmp left beside it
