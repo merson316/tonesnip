@@ -253,6 +253,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         }
     }
 
+#if TONESNIP_HARNESS
     /// <summary>
     /// An HDR frame made from CPU pixels on the capture's device, for the harnesses: synthetic frames that go through
     /// the same GPU path as captured ones. Null where that path is unavailable.
@@ -276,6 +277,7 @@ public sealed class ScreenCapture(ILog log) : IDisposable
         finally { Monitor.Exit(_gate); }
         return gpu.Upload(width, height, fill);
     }
+#endif
 
     private sealed class OutputState
     {

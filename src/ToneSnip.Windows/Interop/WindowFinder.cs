@@ -51,13 +51,13 @@ public static class WindowFinder
     /// <summary>
     /// The radius, in physical pixels, DWM rounds <paramref name="hwnd"/>'s corners with at <paramref name="dpi"/>: from
     /// its corner preference (DWMWCP_ROUND by default, 4 px at 96 DPI for DWMWCP_ROUNDSMALL), and zero when it is not
-    /// rounded: it opted out, it is maximised, or this is Windows 10, which rounds nothing. A snapped window is square
+    /// rounded: it opted out or it is maximised. A snapped window is square
     /// too but cannot be told apart here; <see cref="Core.Imaging.WindowCorners"/> uses this only when no corner of the
     /// capture says otherwise.
     /// </summary>
     public static double CornerRadius(IntPtr hwnd, int dpi)
     {
-        if (Environment.OSVersion.Version.Build < 22000 || User32.IsZoomed(hwnd)) return 0;
+        if (User32.IsZoomed(hwnd)) return 0;
         int preference = Dwmapi.DwmGetWindowAttribute(hwnd, DwmaWindowCornerPreference, out int v, sizeof(int)) == 0 ? v : 0;
         int radius96 = preference switch { 1 => 0, 3 => 4, _ => Core.Imaging.WindowCorners.Radius96 };
         return radius96 * Math.Max(dpi, 96) / 96.0;

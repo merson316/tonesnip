@@ -54,9 +54,6 @@ public static partial class ClipboardWriter
     /// </summary>
     public const string HdrFormat = "image/vnd.ms-photo";
 
-    /// <summary><see cref="Set"/> through <see cref="Enqueue"/>.</summary>
-    public static Task SetQueued(BgraImage image, byte[] png, Core.Diagnostics.ILog? log = null) => Enqueue(() => Set(image, png, log));
-
     /// <summary><see cref="SetText"/> through <see cref="Enqueue"/>.</summary>
     public static Task SetTextQueued(string text, Core.Diagnostics.ILog? log = null) => Enqueue(() => SetText(text, log));
 
