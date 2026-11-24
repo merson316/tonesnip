@@ -87,8 +87,7 @@ public static partial class SelfTest
                         bool keptCorners = true;
                         if (own.Crops.Count > 0)
                         {
-                            BgraImage? tmp = null;
-                            own.Retonemap(own.Image, 1.5f, grabber, ref tmp);
+                            own.Retonemap(own.Image, 1.5f, grabber);
                             byte afterTop = Pixel(own.Image, 0, 0)[3], afterBottom = Pixel(own.Image, 0, region.Height - 1)[3];
                             (HalfImage canvas, _, _) = Output.HdrOutput.BuildCanvas(own, settings, 0xFF0078D4);
                             float hdrAlpha = Core.Color.Transfer.HalfToFloat(canvas.Data[3]);

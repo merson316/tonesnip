@@ -55,7 +55,6 @@ public sealed class EditorSurface : UserControl
     private BgraImage? _original;        // un-annotated image in the original frame (mutated in place by re-expose)
     private BgraImage? _baseView;        // _original cropped to View (the same object as _original when there is no crop)
     private BgraImage? _target;          // rendered view (shapes over base)
-    private BgraImage? _tmp;             // re-expose scratch, kept between slider moves so dragging allocates nothing
     private CanvasBitmap? _bitmap;       // GPU copy of _target, the only thing Draw touches
     private CanvasBitmap? _checker;      // 16 px transparency tile
     private CanvasImageBrush? _checkerBrush;
@@ -634,7 +633,7 @@ public sealed class EditorSurface : UserControl
         _checkerBrush?.Dispose(); _checkerBrush = null;
         _checker?.Dispose(); _checker = null;
         _upload = null;
-        _target = null; _baseView = null; _original = null; _tmp = null; _lasso = null; _lassoSpans = null; _exposureLasso = null; _result = null; _zebraCrops = null;
+        _target = null; _baseView = null; _original = null; _lasso = null; _lassoSpans = null; _exposureLasso = null; _result = null; _zebraCrops = null;
         _canvas.RemoveFromVisualTree();
         _host.Children.Clear();
         Content = null;
@@ -657,7 +656,7 @@ public sealed class EditorSurface : UserControl
         if (_result == null || _original == null || _result.Crops.Count == 0) return false;
         // A window snip's transparent corners go back on in there, or the image and the HDR file saved from it (which
         // takes its alpha from the image) would have black corners.
-        _result.Retonemap(_original, multiplier, App.Current.Grabber, ref _tmp);
+        _result.Retonemap(_original, multiplier, App.Current.Grabber);
         // The copy restores pixels outside the lasso, so cut them again as CaptureResult.Build does (ApplyLasso
         // does not when annotate.clipToLasso is off). The spans are built on the first pass and reused by every later
         // one: rasterising the lasso again on each slider step cost as much as a small crop's tonemap.

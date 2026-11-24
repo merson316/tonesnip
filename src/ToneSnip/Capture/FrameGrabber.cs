@@ -460,8 +460,8 @@ public sealed class FrameGrabber(Func<SnipSettings> settings, ILog log) : IDispo
 
     /// <summary>Tonemaps a half-float image into an existing target of its size (no allocation); used by the editor's
     /// live exposure.</summary>
-    public void TonemapInto(HalfImage img, OutputInfo o, float exposure, BgraImage target)
-        => HalfFrame.Tonemap(img, CurveFor(o, exposure), new IntRect(0, 0, img.Width, img.Height), target, 0, 0);
+    public void TonemapInto(HalfImage img, OutputInfo o, float exposure, BgraImage target, int x = 0, int y = 0)
+        => HalfFrame.Tonemap(img, CurveFor(o, exposure), new IntRect(0, 0, img.Width, img.Height), target, x, y);
 
     /// <summary>
     /// Runs the CPU tonemap on a small image a dozen times over about two seconds, so its per-pixel code reaches the

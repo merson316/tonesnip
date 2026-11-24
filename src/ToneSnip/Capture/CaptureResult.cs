@@ -151,16 +151,14 @@ public sealed class CaptureResult
     /// was built with (not measured again: a slider tick used to re-run the percentile) into <paramref name="target"/>,
     /// the region-sized image, then puts a window snip's corners back, since the copy brings the tonemap's opaque alpha.
     /// The crops' colour is already straight (<see cref="ApplyCorners"/>), so only the alpha is set. A freeform lasso is
-    /// the caller's to cut again. <paramref name="tmp"/> is a buffer reused across passes.
+    /// the caller's to cut again. Each crop is tonemapped straight into its place in the target, with no scratch image.
     /// </summary>
-    public void Retonemap(BgraImage target, float multiplier, FrameGrabber grabber, ref BgraImage? tmp)
+    public void Retonemap(BgraImage target, float multiplier, FrameGrabber grabber)
     {
         foreach (HalfCrop c in Crops)
         {
-            if (tmp == null || tmp.Width != c.Image.Width || tmp.Height != c.Image.Height) tmp = BgraImage.Blank(c.Image.Width, c.Image.Height);
-            grabber.TonemapInto(c.Image, c.Output, c.BaseExposure * multiplier, tmp);
             IntRect dst = c.Bounds.Offset(-Region.Left, -Region.Top);
-            for (int y = 0; y < dst.Height; y++) Buffer.BlockCopy(tmp.Data, y * tmp.Width * 4, target.Data, ((dst.Top + y) * target.Width + dst.Left) * 4, dst.Width * 4);
+            grabber.TonemapInto(c.Image, c.Output, c.BaseExposure * multiplier, target, dst.Left, dst.Top);
         }
         if (Corners is { } corners && target.Width == Region.Width && target.Height == Region.Height) corners.Apply(target, straight: true);
     }
